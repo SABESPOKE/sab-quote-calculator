@@ -2675,7 +2675,10 @@ function SABQuoteTool() {
             </div>
 
             {/* Room items — shown in both modes */}
-            {dist.rooms.filter(({ roomName }) => clientViewRoomFilter === null || clientViewRoomFilter === roomName).map(({ roomName, items }) => (
+            {dist.rooms.filter(({ roomName }) => clientViewRoomFilter === null || clientViewRoomFilter === roomName).map(({ roomName, items }) => {
+              const roomSubtotal = items.reduce((s, item) => s + (item.bakedSellExVAT || 0), 0);
+              const roomVAT = roomSubtotal * (DB.settings.vat || 0.2);
+              return (
               <div key={roomName} style={{ marginBottom:32 }}>
                 <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:14, paddingBottom:7, borderBottom:"1px solid #d8d3cc" }}>{roomName}</div>
                 {items.map((item, i) => (
@@ -2687,8 +2690,14 @@ function SABQuoteTool() {
                     {clientViewMode === "itemised" && <span style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.bakedSellExVAT)}</span>}
                   </div>
                 ))}
+                <div style={{ marginTop:8, paddingTop:8 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", fontSize:11, color:"#777777" }}><span>Room subtotal (ex VAT)</span><span>{fmt(roomSubtotal)}</span></div>
+                  <div style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", fontSize:11, color:"#999999" }}><span>VAT (20%)</span><span>{fmt(roomVAT)}</span></div>
+                  <div style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", fontSize:12, color:"#1a1a1a", fontWeight:500 }}><span>Room total (inc VAT)</span><span>{fmt(roomSubtotal + roomVAT)}</span></div>
+                </div>
               </div>
-            ))}
+              );
+            })}
 
             {/* What's included — services list (no values) */}
             {dist.services.length > 0 && (
