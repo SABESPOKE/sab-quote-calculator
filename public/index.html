@@ -1038,7 +1038,7 @@ function printQuote(quote) {
   </div></body></html>`;
 
   // Inject auto-print script into the HTML document
-  const printHtml = html.replace('<\/head>', `<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400);});<\/script><\/head>`);
+  const printHtml = html.replace('<\/head>', `<script>window.addEventListener('load',function(){document.title=' ';setTimeout(function(){document.title=' ';window.print();},400);});<\/script><\/head>`);
   const blob = new Blob([printHtml], { type: "text/html; charset=utf-8" });
   const url  = URL.createObjectURL(blob);
   const w    = window.open(url, "_blank");
