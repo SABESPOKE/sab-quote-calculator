@@ -924,18 +924,52 @@ function quoteTotals(quote) {
   };
 }
 
+
+// ─── DISTRIBUTE PROJECT COSTS INTO ITEMS ──────────────────────────────────────
+// Spreads all active project costs + design fee proportionally across items
+// by their share of manufacturing sell value. Returns an array of rooms with
+// baked-in item prices and a services list for display.
+function distributeProjectCosts(quote) {
+  const t = quoteTotals(quote);
+  const overhead = t.designFee + t.survey + t.install + t.delivery + t.pm + t.consumables + t.contingency + t.warranty;
+  const rooms = [];
+  Object.entries(quote.rooms || {}).forEach(([roomName, room]) => {
+    const rDT = room.includeDesignTime !== false ? calcDesignTimePerRoom(room) : 0;
+    const bakedItems = room.items.map(item => {
+      const itemSell = item.pricing?.totalSellExVAT || 0;
+      const share = t.mfgSellExVAT > 0 ? itemSell / t.mfgSellExVAT : 0;
+      const itemOverhead = (overhead + rDT * 0) * share; // design fee already in overhead
+      // But design fee needs special handling: distribute room design to room items only
+      return {
+        ...item,
+        bakedSellExVAT: itemSell + overhead * share
+      };
+    });
+    rooms.push({ roomName, items: bakedItems });
+  });
+  // Build services list (active project costs, no values)
+  const services = [];
+  if (t.designFee > 0) services.push("Design & Drawing Service");
+  if (t.survey > 0) services.push("Site Survey");
+  if (t.install > 0) services.push("Installation & Fitting");
+  if (t.delivery > 0) services.push("Delivery & Transport");
+  if (t.pm > 0) services.push("Project Management");
+  if (t.consumables > 0) services.push("Consumables & Fixings");
+  if (t.contingency > 0) services.push("Contingency Allowance");
+  if (t.warranty > 0) services.push("Warranty & Aftercare");
+  return { rooms, services, totals: t };
+}
+
 // ─── PRINT / PDF ──────────────────────────────────────────────────────────────
 function printQuote(quote) {
   const totals = quoteTotals(quote);
-  const roomSections = Object.entries(quote.rooms || {}).map(([roomName, room]) => {
-    const roomMfg = room.items.reduce((s, i) => s + (i.pricing?.totalSellExVAT || 0), 0);
-    const roomDTCalc = calcDesignTimePerRoom(room);
-    const roomDT = room.includeDesignTime !== false ? roomDTCalc : 0;
-    const itemRows = room.items.map(i =>
-      `<tr><td class="td-desc">${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td><td class="td-price">${fmt(i.pricing?.totalSellExVAT)}</td></tr>`
+  const dist = distributeProjectCosts(quote);
+  const roomSections = dist.rooms.map(({ roomName, items }) => {
+    const roomTotal = items.reduce((s, i) => s + (i.bakedSellExVAT || 0), 0);
+    const itemRows = items.map(i =>
+      `<tr><td class="td-desc">${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td><td class="td-price">${fmt(i.bakedSellExVAT)}</td></tr>`
     ).join("");
-    const dtRow = roomDT > 0 ? `<tr class="dt-row"><td class="td-desc">Design &amp; Drawing Service</td><td class="td-price">${fmt(roomDT)}</td></tr>` : "";
-    return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}${dtRow}</tbody><tfoot><tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomMfg + roomDT)}</td></tr></tfoot></table></div>`;
+    return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}</tbody><tfoot><tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomTotal)}</td></tr></tfoot></table></div>`;
   }).join("");
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><link rel='preconnect' href='https://fonts.googleapis.com'><link rel='preconnect' href='https://fonts.gstatic.com' crossorigin><link href='https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap' rel='stylesheet'><title>Quotation — ${quote.ref}</title><style>
@@ -976,16 +1010,11 @@ function printQuote(quote) {
   <div class="client-blk"><div><div class="client-name">${quote.client}</div><div class="client-proj">${quote.project}</div></div>
   <div class="contact-info">design@stevenandrewsbespoke.com<br>www.stevenandrewsbespoke.com</div></div>
   <div class="sec-label">Scope of Works</div>${roomSections}
+  ${dist.services.length > 0 ? `<div style="margin-bottom:18px;padding:12px 16px;background:#f9f8f6;border:0.5pt solid #e0d8cc;border-radius:4px">
+  <div style="font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:8px">What's Included</div>
+  ${dist.services.map(s => `<div style="padding:3px 0;font-size:9pt;color:#5a5045">✓ ${s}</div>`).join("")}
+  </div>` : ""}
   <div class="totals-blk">
-  <div class="tot-row"><span>Manufacturing &amp; supply (ex VAT)</span><span>${fmt(totals.mfgSellExVAT)}</span></div>
-  ${totals.designFee > 0 ? `<div class="tot-row"><span>Design &amp; Drawing Service (ex VAT)</span><span>${fmt(totals.designFee)}</span></div>` : ""}
-  ${totals.survey > 0 ? `<div class="tot-row"><span>Site Survey</span><span>${fmt(totals.survey)}</span></div>` : ""}
-  ${totals.install > 0 ? `<div class="tot-row"><span>Installation &amp; Fitting</span><span>${fmt(totals.install)}</span></div>` : ""}
-  ${totals.delivery > 0 ? `<div class="tot-row"><span>Delivery &amp; Transport</span><span>${fmt(totals.delivery)}</span></div>` : ""}
-  ${totals.pm > 0 ? `<div class="tot-row"><span>Project Management</span><span>${fmt(totals.pm)}</span></div>` : ""}
-  ${totals.consumables > 0 ? `<div class="tot-row"><span>Consumables &amp; Fixings</span><span>${fmt(totals.consumables)}</span></div>` : ""}
-  ${totals.contingency > 0 ? `<div class="tot-row"><span>Contingency</span><span>${fmt(totals.contingency)}</span></div>` : ""}
-  ${totals.warranty > 0 ? `<div class="tot-row"><span>Warranty &amp; Aftercare</span><span>${fmt(totals.warranty)}</span></div>` : ""}
   <div class="tot-row"><span>Subtotal (ex VAT)</span><span>${fmt(totals.totalExVAT)}</span></div>
   <div class="tot-row"><span>VAT (20%)</span><span>${fmt(totals.vat)}</span></div>
   <div class="tot-final"><span>Total (inc VAT)</span><span>${fmt(totals.totalIncVAT)}</span></div></div>
@@ -1157,6 +1186,7 @@ function SABQuoteTool() {
   const [settingsVer, setSettingsVer] = useState(0);   // bumped to force re-render after DB mutation
   const [showRoomSetup, setShowRoomSetup] = useState(null); // room name being configured
   const [mobilePanel, setMobilePanel] = useState("items");
+  const [clientViewMode, setClientViewMode] = useState("itemised");
 
   // Persistence - save to localStorage whenever quotes change
   useEffect(() => {
@@ -2537,9 +2567,11 @@ function SABQuoteTool() {
 
       {/* ── CLIENT VIEW ── */}
       {view === "client" && activeQuote && (() => {
-        const t = quoteTotals(activeQuote);
+        const dist = distributeProjectCosts(activeQuote);
+        const t = dist.totals;
         return (
           <div style={{ maxWidth:740, margin:"0 auto", padding:"46px 30px" }}>
+            {/* Header */}
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:44, paddingBottom:28, borderBottom:"1px solid #d8d3cc" }}>
               <div>
                 <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
@@ -2554,47 +2586,46 @@ function SABQuoteTool() {
                 <div>{activeQuote.project}</div>
               </div>
             </div>
-            {Object.entries(activeQuote.rooms || {}).map(([room, data]) => {
-              const rDTCalc2 = calcDesignTimePerRoom(data); const rDT = data.includeDesignTime !== false ? rDTCalc2 : 0;
-              const rTotal = data.items.reduce((s,i) => s+(i.pricing?.totalSellExVAT||0), 0) + rDT;
-              return (
-                <div key={room} style={{ marginBottom:32 }}>
-                  <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:14, paddingBottom:7, borderBottom:"1px solid #d8d3cc" }}>{room}</div>
-                  {data.items.map((item,i) => (
-                    <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:"1px solid #d8d3cc", fontSize:12 }}>
-                      <div>
-                        <span style={{ color:"#333333" }}>{item.qty > 1 ? `${item.qty}× ` : ""}{item.description}</span>
-                        {item.params?.widthMm && <span style={{ fontSize:10, color:"#999999", marginLeft:10 }}>{item.params.widthMm}×{item.params.heightMm}{item.params.depthMm?`×${item.params.depthMm}`:""} mm</span>}
-                      </div>
-                      <span style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.pricing?.totalSellExVAT)}</span>
-                    </div>
-                  ))}
-                  {rDT > 0 && (
-                    <div style={{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:"1px solid #d8d3cc", fontSize:12 }}>
-                      <span style={{ color:"#888888", fontStyle:"italic" }}>Design &amp; Drawing Service</span>
-                      <span style={{ color:"#888888" }}>{fmt(rDT)}</span>
-                    </div>
-                  )}
-                  <div style={{ display:"flex", justifyContent:"flex-end", padding:"9px 0", fontSize:11, color:"#999999" }}>Room subtotal: {fmt(rTotal)}</div>
-                </div>
-              );
-            })}
-            <div style={{ marginTop:28, padding:"22px", background:"#f0eeeb", borderRadius:8, border:"1px solid #d8d3cc" }}>
-              {[
-                [`Manufacturing & supply (ex VAT)`, fmt(t.mfgSellExVAT)],
-                t.designFee > 0    && [`Design & Drawing Service`,      fmt(t.designFee)],
-                t.survey > 0       && [`Site Survey`,                   fmt(t.survey)],
-                t.install > 0      && [`Installation & Fitting`,        fmt(t.install)],
-                t.delivery > 0     && [`Delivery & Transport`,          fmt(t.delivery)],
-                t.pm > 0           && [`Project Management`,            fmt(t.pm)],
-                t.consumables > 0  && [`Consumables & Fixings`,         fmt(t.consumables)],
-                t.contingency > 0  && [`Contingency`,                   fmt(t.contingency)],
-                t.warranty > 0     && [`Warranty & Aftercare`,          fmt(t.warranty)],
-                [`Subtotal (ex VAT)`,                fmt(t.totalExVAT)],
-                [`VAT (20%)`,                        fmt(t.vat)],
-              ].filter(Boolean).map(([l,v]) => (
-                <div key={l} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>{l}</span><span>{v}</span></div>
+
+            {/* View toggle */}
+            <div style={{ display:"flex", gap:2, marginBottom:28 }}>
+              {[["itemised","Itemised"],["total","Total Only"]].map(([k,l]) => (
+                <button key={k} onClick={() => setClientViewMode(k)} style={{ padding:"6px 16px", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", background: clientViewMode===k ? "#c8a96e" : "transparent", color: clientViewMode===k ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
               ))}
+            </div>
+
+            {/* Itemised mode — baked-in prices per item */}
+            {clientViewMode === "itemised" && dist.rooms.map(({ roomName, items }) => (
+              <div key={roomName} style={{ marginBottom:32 }}>
+                <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:14, paddingBottom:7, borderBottom:"1px solid #d8d3cc" }}>{roomName}</div>
+                {items.map((item, i) => (
+                  <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:"1px solid #d8d3cc", fontSize:12 }}>
+                    <div>
+                      <span style={{ color:"#333333" }}>{item.qty > 1 ? item.qty + "× " : ""}{item.description}</span>
+                      {item.params?.widthMm && <span style={{ fontSize:10, color:"#999999", marginLeft:10 }}>{item.params.widthMm}×{item.params.heightMm}{item.params.depthMm ? "×" + item.params.depthMm : ""} mm</span>}
+                    </div>
+                    <span style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.bakedSellExVAT)}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            {/* What's included — services list (no values) */}
+            {dist.services.length > 0 && (
+              <div style={{ marginBottom:28, padding:"16px 20px", background:"#f9f8f6", borderRadius:6, border:"1px solid #d8d3cc" }}>
+                <div style={{ fontSize:9, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:10 }}>What’s Included</div>
+                {dist.services.map(s => (
+                  <div key={s} style={{ padding:"4px 0", fontSize:11, color:"#777777", display:"flex", alignItems:"center", gap:8 }}>
+                    <span style={{ color:"#c8a96e" }}>✓</span> {s}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Totals — clean, no line-by-line breakdown */}
+            <div style={{ marginTop:28, padding:"22px", background:"#f0eeeb", borderRadius:8, border:"1px solid #d8d3cc" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>Subtotal (ex VAT)</span><span>{fmt(t.totalExVAT)}</span></div>
+              <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>VAT (20%)</span><span>{fmt(t.vat)}</span></div>
               <div style={{ display:"flex", justifyContent:"space-between", padding:"14px 0 0", fontSize:17, color:"#c8a96e" }}><span>Total (inc VAT)</span><span>{fmt(t.totalIncVAT)}</span></div>
             </div>
             <div style={{ marginTop:36, fontSize:10, color:"#d8d3cc", lineHeight:1.9, borderTop:"1px solid #1a1815", paddingTop:20 }}>
