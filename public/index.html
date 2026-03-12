@@ -1202,6 +1202,7 @@ function SABQuoteTool() {
   const [showRoomSetup, setShowRoomSetup] = useState(null); // room name being configured
   const [mobilePanel, setMobilePanel] = useState("items");
   const [clientViewMode, setClientViewMode] = useState("itemised");
+  const [clientViewRoomFilter, setClientViewRoomFilter] = useState(null); // null = all rooms, or room name string
 
   // Persistence - save to localStorage whenever quotes change
   useEffect(() => {
@@ -1274,10 +1275,32 @@ function SABQuoteTool() {
     saveQuotes(updated); setActiveRoom(newRoomName); setNewRoomName("");
   }
 
+  function duplicateRoom(roomName) {
+    if (!activeQuoteId) return;
+    const updated = { ...quotes };
+    const original = updated[activeQuoteId].rooms[roomName];
+    if (!original) return;
+    const clone = JSON.parse(JSON.stringify(original));
+    let newName = roomName + " (copy)";
+    let n = 2;
+    while (updated[activeQuoteId].rooms[newName]) { newName = roomName + ` (copy ${n})`; n++; }
+    updated[activeQuoteId].rooms[newName] = clone;
+    saveQuotes(updated);
+    setActiveRoom(newName);
+  }
+
   function removeItem(room, idx) {
     const updated = { ...quotes };
     updated[activeQuoteId].rooms[room].items.splice(idx, 1);
     saveQuotes(updated); setExpandedItem(null);
+  }
+
+  function duplicateItem(room, idx) {
+    const updated = { ...quotes };
+    const original = updated[activeQuoteId].rooms[room].items[idx];
+    const clone = JSON.parse(JSON.stringify(original));
+    updated[activeQuoteId].rooms[room].items.splice(idx + 1, 0, clone);
+    saveQuotes(updated);
   }
 
   function toggleDesignTime(room) {
@@ -1313,6 +1336,29 @@ function SABQuoteTool() {
       const rooms = { ...q.rooms };
       const room = { ...rooms[roomName] };
       room.defaults = { ...(room.defaults || DEFAULT_ROOM_SETTINGS), [field]: val };
+      // Propagate material/drawer changes to existing items and reprice
+      if (field === "carcassMaterialKey") {
+        room.items = room.items.map(item => {
+          if (item.params && item.params.carcassMaterialKey !== undefined) {
+            const updated = { ...item, params: { ...item.params, carcassMaterialKey: val } };
+            updated.pricing = priceItem(updated);
+            return updated;
+          }
+          return item;
+        });
+      }
+      if (field === "useSolidDrawers" || field === "solidDrawerType") {
+        const defs = room.defaults;
+        room.items = room.items.map(item => {
+          if (item.params && (item.type === "cabinet" || item.type === "drawer")) {
+            const newDT = defs.useSolidDrawers ? (defs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET";
+            const updated = { ...item, params: { ...item.params, drawerType: newDT } };
+            updated.pricing = priceItem(updated);
+            return updated;
+          }
+          return item;
+        });
+      }
       rooms[roomName] = room;
       q.rooms = rooms;
       updated[activeQuoteId] = q;
@@ -1576,6 +1622,7 @@ function SABQuoteTool() {
                       <div style={{ fontSize:11, color:activeRoom===room?"#1a1a1a":"#777777" }}>{room}</div>
                       <div style={{ fontSize:9, color:"#999999" }}>{items.length} items · {fmt(mfg + dt)}</div>
                     </div>
+                    <button onClick={() => duplicateRoom(room)} style={{ padding:"5px 6px", background:"transparent", color:"#999999", border:"1px solid #d8d3cc", borderLeft:"none", cursor:"pointer", fontSize:9, fontFamily:"inherit" }} title="Duplicate room">⧉</button>
                     <button onClick={() => setShowRoomSetup(showRoomSetup === room ? null : room)} style={{ padding:"5px 8px", background: showRoomSetup===room?"#e0ddd8":"transparent", color:"#777777", border:"1px solid #d8d3cc", borderLeft:"none", borderRadius:"0 3px 3px 0", cursor:"pointer", fontSize:10, fontFamily:"inherit" }} title="Room setup">⚙</button>
                   </div>
                 );
@@ -1728,14 +1775,15 @@ function SABQuoteTool() {
                                 saveQuotes(updated);
                               }} style={{ background:"transparent", border:"none", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:"100%", padding:0, outline:"none" }} />
                             </td>
-                            <td style={{ padding:"10px", fontSize:11, color:"#777777" }}>{item.qty}</td>
-                            <td style={{ padding:"10px", fontSize:10, color:"#777777" }}>{item.params?.widthMm ? `${item.params.widthMm}` : "—"}</td>
-                            <td style={{ padding:"10px", fontSize:10, color:"#777777" }}>{item.params?.heightMm ? `${item.params.heightMm}` : "—"}</td>
-                            <td style={{ padding:"10px", fontSize:10, color:"#777777" }}>{item.params?.depthMm ? `${item.params.depthMm}` : "—"}</td>
+                            <td style={{ padding:"10px" }}><input type="number" value={item.qty || ""} onClick={e => e.stopPropagation()} onChange={e => { const v = e.target.value === "" ? 1 : Math.max(1, +e.target.value); const updated = { ...quotes }; const it = updated[activeQuoteId].rooms[activeRoom].items[idx]; it.qty = v; it.pricing = priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid transparent", color:"#777777", fontSize:11, fontFamily:"inherit", width:36, padding:0, outline:"none", textAlign:"center" }} onFocus={e=>e.target.style.borderBottomColor="#c8a96e"} onBlur={e=>e.target.style.borderBottomColor="transparent"} min={1} /></td>
+                            {["widthMm","heightMm","depthMm"].map(dim => (
+                            <td key={dim} style={{ padding:"10px" }}>{item.params?.[dim] ? <input type="number" value={item.params[dim] || ""} onClick={e => e.stopPropagation()} onChange={e => { const v = e.target.value === "" ? 0 : +e.target.value; const updated = { ...quotes }; const it = updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params[dim] = v; it.pricing = priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid transparent", color:"#777777", fontSize:10, fontFamily:"inherit", width:42, padding:0, outline:"none", textAlign:"center" }} onFocus={e=>e.target.style.borderBottomColor="#c8a96e"} onBlur={e=>e.target.style.borderBottomColor="transparent"} /> : <span style={{ fontSize:10, color:"#777777" }}>—</span>}</td>
+                            ))}
                             <td style={{ padding:"10px", fontSize:11, color:"#999999" }}>{fmt(item.pricing?.totalCost)}</td>
                             <td style={{ padding:"10px", fontSize:13, color:"#c8a96e", fontWeight:500 }}>{fmt(item.pricing?.totalSellExVAT)}</td>
                             <td style={{ padding:"10px", whiteSpace:"nowrap" }}>
                               <button onClick={e => { e.stopPropagation(); editItem(activeRoom, idx); }} style={{ background:"transparent", border:"1px solid #d8d3cc", borderRadius:3, color:"#777777", cursor:"pointer", fontSize:9, padding:"3px 7px", fontFamily:"inherit", letterSpacing:"0.06em", marginRight:5 }}>Edit</button>
+                              <button onClick={e => { e.stopPropagation(); duplicateItem(activeRoom, idx); }} style={{ background:"transparent", border:"1px solid #d8d3cc", borderRadius:3, color:"#777777", cursor:"pointer", fontSize:9, padding:"3px 7px", fontFamily:"inherit", letterSpacing:"0.06em", marginRight:5 }} title="Duplicate item">Dup</button>
                               <button onClick={e => { e.stopPropagation(); removeItem(activeRoom, idx); }} style={{ background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:15 }}>×</button>
                             </td>
                           </tr>
@@ -2611,7 +2659,15 @@ function SABQuoteTool() {
               </div>
             </div>
 
-            {/* View toggle */}
+            {/* Room filter + View toggle */}
+            {dist.rooms.length > 1 && (
+              <div style={{ display:"flex", gap:4, marginBottom:12, flexWrap:"wrap" }}>
+                <button onClick={() => setClientViewRoomFilter(null)} style={{ padding:"4px 12px", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", background: clientViewRoomFilter===null ? "#1a1a1a" : "transparent", color: clientViewRoomFilter===null ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>All Rooms</button>
+                {dist.rooms.map(({ roomName }) => (
+                  <button key={roomName} onClick={() => setClientViewRoomFilter(roomName)} style={{ padding:"4px 12px", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", background: clientViewRoomFilter===roomName ? "#1a1a1a" : "transparent", color: clientViewRoomFilter===roomName ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{roomName}</button>
+                ))}
+              </div>
+            )}
             <div style={{ display:"flex", gap:2, marginBottom:28 }}>
               {[["itemised","Itemised"],["total","Total Only"]].map(([k,l]) => (
                 <button key={k} onClick={() => setClientViewMode(k)} style={{ padding:"6px 16px", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", background: clientViewMode===k ? "#c8a96e" : "transparent", color: clientViewMode===k ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
@@ -2619,7 +2675,7 @@ function SABQuoteTool() {
             </div>
 
             {/* Room items — shown in both modes */}
-            {dist.rooms.map(({ roomName, items }) => (
+            {dist.rooms.filter(({ roomName }) => clientViewRoomFilter === null || clientViewRoomFilter === roomName).map(({ roomName, items }) => (
               <div key={roomName} style={{ marginBottom:32 }}>
                 <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:14, paddingBottom:7, borderBottom:"1px solid #d8d3cc" }}>{roomName}</div>
                 {items.map((item, i) => (
