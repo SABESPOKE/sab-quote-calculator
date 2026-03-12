@@ -190,6 +190,9 @@ const DB = {
     "MAT_MDF_FH_18":        { name: "Finsa Hydrofuga MDF 18mm",            costPerM2: 16.80, thicknessMm: 18, wasteFactor: 1.12 },
     "MAT_MDF_FH_22":        { name: "Finsa Hydrofuga MDF 22mm",            costPerM2: 20.16, thicknessMm: 22, wasteFactor: 1.12 },
     "MAT_BACK_HDF_6":       { name: "HDF Back Panel 6mm",                  costPerM2:  8.50, thicknessMm:  6, wasteFactor: 1.10 },
+    "MAT_MEL_EGGER_18":     { name: "Melamine - Egger 18mm",               costPerM2: 22.00, thicknessMm: 18, wasteFactor: 1.12 },
+    "MAT_MEL_EGGER_25":     { name: "Melamine - Egger 25mm",               costPerM2: 28.00, thicknessMm: 25, wasteFactor: 1.12 },
+    "MAT_SHINNOKI_19":      { name: "Shinnoki Board 19mm",                 costPerM2: 55.00, thicknessMm: 19, wasteFactor: 1.12 },
     "MAT_BACK_PLY_9":       { name: "Back Panel Ply 9mm",                  costPerM2: 12.00, thicknessMm:  9, wasteFactor: 1.10 },
   },
   // Door types: substrate + applied-material costs per m². Spray finishing calculated separately by area.
@@ -279,6 +282,7 @@ const DB = {
     "B_BIN":        { name:"Bin Pull-Out Cabinet",        w:600,  h:720,  d:560, doors:2, drawers:0, shelves:0, group:"Base" },
     "B_PULLOUT":    { name:"Pull-Out Base Larder",        w:300,  h:720,  d:560, doors:1, drawers:0, shelves:5, group:"Base" },
     "B_WINE":       { name:"Wine Rack Base",              w:300,  h:720,  d:560, doors:0, drawers:0, shelves:0, group:"Base" },
+    "B_OPEN":       { name:"Open Base Shelf Unit",        w:600,  h:720,  d:560, doors:0, drawers:0, shelves:2, group:"Base" },
     "B_WIDE":       { name:"Wide Base Cabinet",           w:900,  h:720,  d:560, doors:2, drawers:1, shelves:1, group:"Base" },
     // ── TALL CABINETS (carcass H=2100, D=560 unless noted) ────────────────────
     "T_LARDER":     { name:"Tall Larder Cabinet",         w:600,  h:2100, d:560, doors:2, drawers:0, shelves:5, group:"Tall" },
@@ -289,6 +293,7 @@ const DB = {
     "T_FRIDGE":     { name:"Fridge Housing",              w:600,  h:2100, d:580, doors:1, drawers:0, shelves:0, group:"Tall" },
     "T_FF":         { name:"Fridge-Freezer Housing",      w:700,  h:2100, d:580, doors:2, drawers:0, shelves:0, group:"Tall" },
     "T_BROOM":      { name:"Broom / Utility Cupboard",   w:300,  h:2100, d:560, doors:1, drawers:0, shelves:2, group:"Tall" },
+    "T_OPEN":       { name:"Open Tall Shelf Unit",        w:600,  h:2100, d:560, doors:0, drawers:0, shelves:5, group:"Tall" },
     "T_DRESSER":    { name:"Dresser Cabinet",             w:1200, h:2100, d:560, doors:4, drawers:3, shelves:4, group:"Tall" },
     "T_CORNER":     { name:"Tall Corner Cabinet",         w:600,  h:2100, d:560, doors:2, drawers:0, shelves:4, group:"Tall" },
     "T_STORE":      { name:"Tall Storage Cabinet",        w:600,  h:2100, d:560, doors:2, drawers:2, shelves:4, group:"Tall" },
@@ -1658,7 +1663,13 @@ function SABQuoteTool() {
                       {activeQuote.rooms[activeRoom].items.map((item, idx) => (
                         <>
                           <tr key={idx} onClick={() => setExpandedItem(expandedItem===idx?null:idx)} style={{ borderBottom:"1px solid #d8d3cc", cursor:"pointer" }} onMouseEnter={e => e.currentTarget.style.background="#f0eeeb"} onMouseLeave={e => e.currentTarget.style.background="transparent"}>
-                            <td style={{ padding:"10px", fontSize:12, color:"#1a1a1a" }}>{item.description}</td>
+                            <td style={{ padding:"10px", fontSize:12, color:"#1a1a1a" }}>
+                              <input value={item.description} onClick={e => e.stopPropagation()} onChange={e => {
+                                const updated = { ...quotes };
+                                updated[activeQuoteId].rooms[activeRoom].items[idx].description = e.target.value;
+                                saveQuotes(updated);
+                              }} style={{ background:"transparent", border:"none", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:"100%", padding:0, outline:"none" }} />
+                            </td>
                             <td style={{ padding:"10px", fontSize:11, color:"#777777" }}>{item.qty}</td>
                             <td style={{ padding:"10px", fontSize:10, color:"#777777" }}>{item.params?.widthMm ? `${item.params.widthMm}` : "—"}</td>
                             <td style={{ padding:"10px", fontSize:10, color:"#777777" }}>{item.params?.heightMm ? `${item.params.heightMm}` : "—"}</td>
@@ -1866,7 +1877,7 @@ function SABQuoteTool() {
                       {[["W","widthMm"],["H","heightMm"],["D","depthMm"]].map(([label,field]) => (
                         <div key={field}>
                           <label style={{ ...lbl, color: addItemForm[field] === 0 ? "#c8a96e" : "#5a5045" }}>{label}</label>
-                          <input type="number" value={addItemForm[field]} onChange={e => updateForm(field, +e.target.value)} style={{ ...inp, borderColor: addItemForm[field] === 0 ? "#c8a96e" : "#d8d3cc", background: addItemForm[field] === 0 ? "#f0eeeb" : "#f5f5f5" }} placeholder="Enter mm" />
+                          <input type="number" value={addItemForm[field] || ""} onChange={e => updateForm(field, e.target.value === "" ? 0 : +e.target.value)} style={{ ...inp, borderColor: !addItemForm[field] ? "#c8a96e" : "#d8d3cc", background: !addItemForm[field] ? "#f0eeeb" : "#f5f5f5" }} placeholder="Enter mm" />
                         </div>
                       ))}
                     </div>
@@ -1914,7 +1925,7 @@ function SABQuoteTool() {
                     <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Counts</div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
                       {[["Doors","doorCount",0,6],["Drawers","drawerCount",0,8],["Shelves","shelfCount",0,8],["Qty","qty",1,99]].map(([label,field,min,max]) => (
-                        <div key={field}><label style={lbl}>{label}</label><input type="number" min={min} max={max} value={addItemForm[field]} onChange={e => updateForm(field, +e.target.value)} style={inp} /></div>
+                        <div key={field}><label style={lbl}>{label}</label><input type="number" min={min} max={max} value={addItemForm[field] || ""} onChange={e => updateForm(field, e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                       ))}
                     </div>
                   </div>
@@ -2043,8 +2054,8 @@ function SABQuoteTool() {
                   <div style={{ marginBottom:14 }}>
                     <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Dimensions (mm)</div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                      <div><label style={lbl}>Width</label><input type="number" value={addItemForm.widthMm} onChange={e => updateForm("widthMm", +e.target.value)} style={inp} /></div>
-                      <div><label style={lbl}>Height</label><input type="number" value={addItemForm.heightMm} onChange={e => updateForm("heightMm", +e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Width</label><input type="number" value={addItemForm.widthMm || ""} onChange={e => updateForm("widthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Height</label><input type="number" value={addItemForm.heightMm || ""} onChange={e => updateForm("heightMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                     </div>
                   </div>
 
@@ -2098,7 +2109,7 @@ function SABQuoteTool() {
                   {/* Qty */}
                   <div style={{ marginBottom:14 }}>
                     <label style={lbl}>Qty</label>
-                    <input type="number" min="1" value={addItemForm.qty} onChange={e => updateForm("qty", +e.target.value)} style={{ ...inp, maxWidth:80 }} />
+                    <input type="number" min="1" value={addItemForm.qty || ""} onChange={e => updateForm("qty", e.target.value === "" ? 0 : +e.target.value)} style={{ ...inp, maxWidth:80 }} />
                   </div>
                 </div>
 
@@ -2133,11 +2144,11 @@ function SABQuoteTool() {
                   </select>
                 </div>
                 <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10, marginBottom:14 }}>
-                  <div><label style={lbl}>Opening Width (mm)</label><input type="number" value={addItemForm.widthMm} onChange={e => updateForm("widthMm", +e.target.value)} style={inp} /></div>
-                  <div><label style={lbl}>Opening Height (mm)</label><input type="number" value={addItemForm.heightMm} onChange={e => updateForm("heightMm", +e.target.value)} style={inp} /></div>
-                  <div><label style={lbl}>Labour hrs</label><input type="number" step="0.5" value={addItemForm.labourHrs} onChange={e => updateForm("labourHrs", +e.target.value)} style={inp} /></div>
+                  <div><label style={lbl}>Opening Width (mm)</label><input type="number" value={addItemForm.widthMm || ""} onChange={e => updateForm("widthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                  <div><label style={lbl}>Opening Height (mm)</label><input type="number" value={addItemForm.heightMm || ""} onChange={e => updateForm("heightMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                  <div><label style={lbl}>Labour hrs</label><input type="number" step="0.5" value={addItemForm.labourHrs || ""} onChange={e => updateForm("labourHrs", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                 </div>
-                <div style={{ marginBottom:14 }}><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty} onChange={e => updateForm("qty", +e.target.value)} style={{ ...inp, maxWidth:80 }} /></div>
+                <div style={{ marginBottom:14 }}><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty || ""} onChange={e => updateForm("qty", e.target.value === "" ? 0 : +e.target.value)} style={{ ...inp, maxWidth:80 }} /></div>
                 <div style={{ marginBottom:14 }}><label style={lbl}>Description</label><input value={addItemForm.description} onChange={e => updateForm("description", e.target.value)} style={{ ...inp, width:"100%" }} /></div>
                 {formPreview && (
                   <div style={{ background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:6, padding:"12px 16px", marginBottom:16, display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
@@ -2171,10 +2182,10 @@ function SABQuoteTool() {
                   </div>
                 </div>
                 <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:10, marginBottom:14 }}>
-                  <div><label style={lbl}>Width (mm)</label><input type="number" value={addItemForm.widthMm} onChange={e => updateForm("widthMm", +e.target.value)} style={inp} /></div>
-                  <div><label style={lbl}>Height (mm)</label><input type="number" value={addItemForm.heightMm} onChange={e => updateForm("heightMm", +e.target.value)} style={inp} /></div>
-                  <div><label style={lbl}>Depth (mm)</label><input type="number" value={addItemForm.depthMm} onChange={e => updateForm("depthMm", +e.target.value)} style={inp} /></div>
-                  <div><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty} onChange={e => updateForm("qty", +e.target.value)} style={inp} /></div>
+                  <div><label style={lbl}>Width (mm)</label><input type="number" value={addItemForm.widthMm || ""} onChange={e => updateForm("widthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                  <div><label style={lbl}>Height (mm)</label><input type="number" value={addItemForm.heightMm || ""} onChange={e => updateForm("heightMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                  <div><label style={lbl}>Depth (mm)</label><input type="number" value={addItemForm.depthMm || ""} onChange={e => updateForm("depthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                  <div><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty || ""} onChange={e => updateForm("qty", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                 </div>
                 <div style={{ marginBottom:14 }}><label style={lbl}>Description</label><input value={addItemForm.description} onChange={e => updateForm("description", e.target.value)} style={{ ...inp, width:"100%" }} /></div>
                 {formPreview && (
@@ -2204,16 +2215,16 @@ function SABQuoteTool() {
                       </select>
                     </div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
-                      <div><label style={lbl}>Width (mm)</label><input type="number" value={addItemForm.widthMm} onChange={e=>updateForm("widthMm",+e.target.value)} style={inp} /></div>
-                      <div><label style={lbl}>Height (mm)</label><input type="number" value={addItemForm.heightMm} onChange={e=>updateForm("heightMm",+e.target.value)} style={inp} /></div>
-                      <div><label style={lbl}>Thickness (mm)</label><input type="number" value={addItemForm.thicknessMm||18} onChange={e=>updateForm("thicknessMm",+e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Width (mm)</label><input type="number" value={addItemForm.widthMm || ""} onChange={e => updateForm("widthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Height (mm)</label><input type="number" value={addItemForm.heightMm || ""} onChange={e => updateForm("heightMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Thickness (mm)</label><input type="number" value={addItemForm.thicknessMm || ""} onChange={e => updateForm("thicknessMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                     </div>
                   </div>
                   <div style={{ marginBottom:14 }}>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
-                      <div><label style={lbl}>Painted faces</label><select value={addItemForm.faces||1} onChange={e=>updateForm("faces",+e.target.value)} style={{ ...sel, width:"100%" }}><option value={1}>1 face</option><option value={2}>2 faces</option></select></div>
-                      <div><label style={lbl}>Exposed edges</label><input type="number" min="0" max="4" value={addItemForm.exposedEdgeCount||2} onChange={e=>updateForm("exposedEdgeCount",+e.target.value)} style={inp} /></div>
-                      <div><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty} onChange={e=>updateForm("qty",+e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Painted faces</label><select value={addItemForm.faces || ""} onChange={e => updateForm("faces", e.target.value === "" ? 0 : +e.target.value)} style={{ ...sel, width:"100%" }}><option value={1}>1 face</option><option value={2}>2 faces</option></select></div>
+                      <div><label style={lbl}>Exposed edges</label><input type="number" min="0" max="4" value={addItemForm.exposedEdgeCount || ""} onChange={e => updateForm("exposedEdgeCount", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty || ""} onChange={e => updateForm("qty", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                     </div>
                   </div>
                 </div>
@@ -2264,16 +2275,16 @@ function SABQuoteTool() {
                       </select>
                     </div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                      <div><label style={lbl}>Length (mm)</label><input type="number" value={addItemForm.lengthMm||600} onChange={e=>updateForm("lengthMm",+e.target.value)} style={inp} /></div>
-                      <div><label style={lbl}>Depth (mm)</label><input type="number" value={addItemForm.depthMm||300} onChange={e=>updateForm("depthMm",+e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Length (mm)</label><input type="number" value={addItemForm.lengthMm || ""} onChange={e => updateForm("lengthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Depth (mm)</label><input type="number" value={addItemForm.depthMm || ""} onChange={e => updateForm("depthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                     </div>
                   </div>
                   <div style={{ marginBottom:14 }}>
                     <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Thickness</div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
-                      <div><label style={lbl}>Material T (mm)</label><input type="number" value={addItemForm.thicknessMm||18} onChange={e=>updateForm("thicknessMm",+e.target.value)} style={inp} /></div>
-                      <div><label style={lbl}>Visual T (mm)</label><input type="number" value={addItemForm.visibleThicknessMm||18} onChange={e=>updateForm("visibleThicknessMm",+e.target.value)} style={{ ...inp, borderColor: (addItemForm.visibleThicknessMm||18)>(addItemForm.thicknessMm||18)+4?"#c8a96e":"#d8d3cc" }} /></div>
-                      <div><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty} onChange={e=>updateForm("qty",+e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Material T (mm)</label><input type="number" value={addItemForm.thicknessMm || ""} onChange={e => updateForm("thicknessMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Visual T (mm)</label><input type="number" value={addItemForm.visibleThicknessMm || ""} onChange={e => updateForm("visibleThicknessMm", e.target.value === "" ? 0 : +e.target.value)} style={{ ...inp, borderColor: (addItemForm.visibleThicknessMm||18)>(addItemForm.thicknessMm||18)+4?"#c8a96e":"#d8d3cc" }} /></div>
+                      <div><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty || ""} onChange={e => updateForm("qty", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                     </div>
                     {(addItemForm.visibleThicknessMm||18)>(addItemForm.thicknessMm||18)+4 && (
                       <div style={{ fontSize:9, color:"#c8a96e", marginTop:4 }}>
@@ -2295,7 +2306,7 @@ function SABQuoteTool() {
                     </div>
                     <div style={{ marginBottom:8 }}>
                       <label style={lbl}>Faces to finish</label>
-                      <select value={addItemForm.faces||1} onChange={e=>updateForm("faces",+e.target.value)} style={{ ...sel, width:"100%" }}>
+                      <select value={addItemForm.faces || ""} onChange={e => updateForm("faces", e.target.value === "" ? 0 : +e.target.value)} style={{ ...sel, width:"100%" }}>
                         <option value={1}>Top face only</option>
                         <option value={2}>Top &amp; underside</option>
                       </select>
@@ -2336,8 +2347,8 @@ function SABQuoteTool() {
                   <div>
                     <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Quantity</div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                      <div><label style={lbl}>Linear metres</label><input type="number" step="0.25" min="0.25" value={addItemForm.metres||3} onChange={e=>updateForm("metres",+e.target.value)} style={inp} /></div>
-                      <div><label style={lbl}>Qty (runs)</label><input type="number" min="1" value={addItemForm.qty} onChange={e=>updateForm("qty",+e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Linear metres</label><input type="number" step="0.25" min="0.25" value={addItemForm.metres || ""} onChange={e => updateForm("metres", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      <div><label style={lbl}>Qty (runs)</label><input type="number" min="1" value={addItemForm.qty || ""} onChange={e => updateForm("qty", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                     </div>
                     {DB.mouldings[addItemForm.mouldingKey] && (
                       <div style={{ fontSize:9, color:"#999999", marginTop:6 }}>
@@ -2365,8 +2376,8 @@ function SABQuoteTool() {
             {addItemForm.type === "custom" && (
               <>
                 <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
-                  <div><label style={lbl}>Unit Cost ex VAT (£)</label><input type="number" value={addItemForm.unitCostExVAT} onChange={e => updateForm("unitCostExVAT", +e.target.value)} style={inp} /></div>
-                  <div><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty} onChange={e => updateForm("qty", +e.target.value)} style={inp} /></div>
+                  <div><label style={lbl}>Unit Cost ex VAT (£)</label><input type="number" value={addItemForm.unitCostExVAT || ""} onChange={e => updateForm("unitCostExVAT", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                  <div><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty || ""} onChange={e => updateForm("qty", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                 </div>
                 <div style={{ marginBottom:14 }}><label style={lbl}>Description</label><input value={addItemForm.description} onChange={e => updateForm("description", e.target.value)} style={{ ...inp, width:"100%" }} /></div>
                 <div style={{ marginBottom:14 }}><label style={lbl}>Notes</label><input value={addItemForm.notes || ""} onChange={e => updateForm("notes", e.target.value)} style={{ ...inp, width:"100%" }} /></div>
