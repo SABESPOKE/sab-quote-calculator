@@ -216,6 +216,7 @@ const DB = {
     "TIM_ASH":   { name: "European Ash",        effectivePerM3: 2100 },
   },
   drawerTypes: {
+    "DRW_SHEET":     { name: "Sheet Material Box (matches carcass)", materialCostPer: 0, labourHrs: 1.5, usesCarcassMaterial: true },
     "DRW_BIRCH_PLY": { name: "Birch Ply Box",    materialCostPer: 25, labourHrs: 1.5 },
     "DRW_SOLID_OAK": { name: "Solid Oak Box",    materialCostPer: 60, labourHrs: 4.0 },
     "DRW_SOLID_TUL": { name: "Solid Tulip Box",  materialCostPer: 35, labourHrs: 4.0 },
@@ -511,11 +512,24 @@ function calcFrameCost({ species, heightMm, widthMm, labourHrs = 3, hardwareCost
   };
 }
 
-function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 500, qty = 1, runnerCostOverride = null }) {
+function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 500, qty = 1, runnerCostOverride = null, carcassMaterialKey = null }) {
   const dt = DB.drawerTypes[drawerType];
   if (!dt) return null;
-  const widthFactor = widthMm / 500;
-  const materialCost = dt.materialCostPer * widthFactor;
+  let materialCost;
+  if (dt.usesCarcassMaterial && carcassMaterialKey) {
+    // Calculate from carcass sheet material: 2 sides + front + back + base
+    const mat = DB.materials[carcassMaterialKey];
+    if (mat) {
+      const sideArea = 2 * (depthMm / 1000) * (heightMm / 1000); // 2 sides
+      const fbArea = 2 * (widthMm / 1000) * (heightMm / 1000);   // front + back
+      const baseArea = (widthMm / 1000) * (depthMm / 1000);       // base
+      materialCost = (sideArea + fbArea + baseArea) * mat.costPerM2 * (mat.wasteFactor || 1.12);
+    } else {
+      materialCost = dt.materialCostPer * (widthMm / 500);
+    }
+  } else {
+    materialCost = dt.materialCostPer * (widthMm / 500);
+  }
   const labourCost = dt.labourHrs * er();
   const runnerCost = runnerCostOverride !== null ? runnerCostOverride : 120;
   const totalCostPerDrawer = materialCost + labourCost + runnerCost;
@@ -582,7 +596,7 @@ function calcCabinetCost({
   let drawersCost = 0;
   if (drawerCount > 0 && drawerType && DB.drawerTypes[drawerType]) {
     const runner = DB.hardware.runners[runnerKey] || DB.hardware.runners["HW_RUN_BLUM_SM"];
-    const dp = calcDrawerCost({ drawerType, widthMm: widthMm - 26, heightMm: 180, depthMm: depthMm - 50, qty: drawerCount, runnerCostOverride: runner.costPair });
+    const dp = calcDrawerCost({ drawerType, widthMm: widthMm - 26, heightMm: 180, depthMm: depthMm - 50, qty: drawerCount, runnerCostOverride: runner.costPair, carcassMaterialKey });
     drawersCost = dp ? dp.totalCost : 0;
   }
 
@@ -903,9 +917,9 @@ function quoteTotals(quote) {
   const s  = DB.settings;
   const totalItems = Object.values(quote.rooms || {}).reduce((sum, r) => sum + r.items.length, 0);
 
-  const survey      = pc.includeSurvey       ? (pc.surveyFee          ?? s.surveyFee)          : 0;
-  const install     = pc.includeInstall      ? (pc.installDays        ?? 1) * (pc.installDayRate ?? s.installDayRate) : 0;
-  const delivery    = pc.includeDelivery     ? (pc.deliveryFee        ?? s.deliveryFee)         : 0;
+  const survey      = pc.includeSurvey       ? (pc.surveyFee          ?? s.surveyFee)          * s.margin : 0;
+  const install     = pc.includeInstall      ? (pc.installDays        ?? 1) * (pc.installDayRate ?? s.installDayRate) * s.margin : 0;
+  const delivery    = pc.includeDelivery     ? (pc.deliveryFee        ?? s.deliveryFee)         * s.margin : 0;
   const pm          = pc.includePM           ? mfgSellExVAT * ((pc.pmPercent         ?? s.pmPercent)        / 100) : 0;
   const consumables = pc.includeConsumables  ? totalItems   * (pc.consumablesPerItem ?? s.consumablesPerItem) : 0;
 
@@ -951,11 +965,10 @@ function distributeProjectCosts(quote) {
   const services = [];
   if (t.designFee > 0) services.push("Design & Drawing Service");
   if (t.survey > 0) services.push("Site Survey");
-  if (t.install > 0) services.push("Installation & Fitting");
+  if (t.install > 0) services.push("Installation");
   if (t.delivery > 0) services.push("Delivery & Transport");
   if (t.pm > 0) services.push("Project Management");
   if (t.consumables > 0) services.push("Consumables & Fixings");
-  if (t.contingency > 0) services.push("Contingency Allowance");
   if (t.warranty > 0) services.push("Warranty & Aftercare");
   return { rooms, services, totals: t };
 }
@@ -1062,10 +1075,10 @@ ${html}
 
 // ─── ADD ITEM FORM DEFAULTS ───────────────────────────────────────────────────
 const ITEM_DEFAULTS = {
-  cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:720, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", hasStain:false, drawerCount:0, drawerType:"DRW_BIRCH_PLY", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", edgebandKey:"EDGE_OAK_05", qty:1, description:"" },
+  cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:720, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", hasStain:false, drawerCount:0, drawerType:"DRW_SHEET", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", edgebandKey:"EDGE_OAK_05", qty:1, description:"" },
   door:    { type:"door", widthMm:726, heightMm:2040, doorType:"SLAB_PNT", doorProfile:"slab", doorFinish:"painted", hasStain:false, hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", qty:1, description:"" },
   frame:    { type:"frame", species:"TIM_OAK", widthMm:826, heightMm:2040, labourHrs:3, qty:1, description:"" },
-  drawer:  { type:"drawer", drawerType:"DRW_BIRCH_PLY", widthMm:500, heightMm:200, depthMm:500, runnerKey:"HW_RUN_BLUM_SM", qty:1, description:"" },
+  drawer:  { type:"drawer", drawerType:"DRW_SHEET", carcassMaterialKey:"MAT_BIRCH_UNF_18", widthMm:500, heightMm:200, depthMm:500, runnerKey:"HW_RUN_BLUM_SM", qty:1, description:"" },
   endpanel: { type:"endpanel", materialKey:"MAT_BIRCH_UNF_18", widthMm:560, heightMm:720, thicknessMm:18, faces:1, exposedEdgeCount:2, finishType:"paint", hasStain:false, qty:1, description:"" },
   shelf:    { type:"shelf", materialKey:"MAT_BIRCH_PREF_18", lengthMm:600, depthMm:300, thicknessMm:18, visibleThicknessMm:18, faces:1, finishType:"lacquer", hasStain:false, qty:1, description:"" },
   moulding: { type:"moulding", mouldingKey:"MLD_SKR_MDF_95", metres:3, qty:1, description:"" },
@@ -1100,7 +1113,9 @@ const DEFAULT_ROOM_SETTINGS = {
   hasStain: false,
   hingeKey: "HW_HINGE_SM",
   handleKey: "HW_HDL_BAR128",
-  drawerType: "DRW_BIRCH_PLY",
+  drawerType: "DRW_SHEET",
+  solidDrawerType: "DRW_SOLID_OAK",
+  useSolidDrawers: false,
   runnerKey: "HW_RUN_BLUM_SM",
   frameKey: "FRAME_NONE",
   edgebandKey: "EDGE_OAK_05",
@@ -1405,7 +1420,7 @@ function SABQuoteTool() {
         : addItemForm.type === "frame"
         ? { type:"frame", qty: addItemForm.qty, params: { species: addItemForm.species, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, labourHrs: addItemForm.labourHrs } }
         : addItemForm.type === "drawer"
-        ? { type:"drawer", qty: addItemForm.qty, params: { drawerType: addItemForm.drawerType, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, depthMm: addItemForm.depthMm, runnerCostOverride: DB.hardware.runners[addItemForm.runnerKey]?.costPair } }
+        ? { type:"drawer", qty: addItemForm.qty, params: { drawerType: addItemForm.drawerType, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, depthMm: addItemForm.depthMm, runnerCostOverride: DB.hardware.runners[addItemForm.runnerKey]?.costPair, carcassMaterialKey: addItemForm.carcassMaterialKey } }
         : { type:"custom", qty: addItemForm.qty, params: { unitCostExVAT: addItemForm.unitCostExVAT, notes: addItemForm.notes } };
       return priceItem(item);
     } catch { return null; }
@@ -1420,7 +1435,7 @@ function SABQuoteTool() {
       : addItemForm.type === "frame"
       ? { type:"frame", description: addItemForm.description || `${DB.solidTimber[addItemForm.species]?.name} Frame ${addItemForm.widthMm}w`, qty: Number(addItemForm.qty), params: { species:addItemForm.species, widthMm:+addItemForm.widthMm, heightMm:+addItemForm.heightMm, labourHrs:+addItemForm.labourHrs } }
       : addItemForm.type === "drawer"
-      ? { type:"drawer", description: addItemForm.description || `${DB.drawerTypes[addItemForm.drawerType]?.name} ${addItemForm.widthMm}w`, qty: Number(addItemForm.qty), params: { drawerType:addItemForm.drawerType, widthMm:+addItemForm.widthMm, heightMm:+addItemForm.heightMm, depthMm:+addItemForm.depthMm, runnerCostOverride: DB.hardware.runners[addItemForm.runnerKey]?.costPair } }
+      ? { type:"drawer", description: addItemForm.description || `${DB.drawerTypes[addItemForm.drawerType]?.name} ${addItemForm.widthMm}w`, qty: Number(addItemForm.qty), params: { drawerType:addItemForm.drawerType, widthMm:+addItemForm.widthMm, heightMm:+addItemForm.heightMm, depthMm:+addItemForm.depthMm, runnerCostOverride: DB.hardware.runners[addItemForm.runnerKey]?.costPair, carcassMaterialKey: addItemForm.carcassMaterialKey } }
       : addItemForm.type === "endpanel"
       ? { type:"endpanel", description: addItemForm.description || `End Panel ${addItemForm.widthMm}×${addItemForm.heightMm}×${addItemForm.thicknessMm}mm — ${addItemForm.finishType}`, qty: Number(addItemForm.qty), params: { materialKey:addItemForm.materialKey||"MAT_BIRCH_UNF_18", widthMm:+addItemForm.widthMm, heightMm:+addItemForm.heightMm, thicknessMm:+addItemForm.thicknessMm||18, faces:+addItemForm.faces||1, exposedEdgeCount:+addItemForm.exposedEdgeCount||2, finishType:addItemForm.finishType||"paint", hasStain:!!addItemForm.hasStain } }
       : addItemForm.type === "shelf"
@@ -1545,9 +1560,9 @@ function SABQuoteTool() {
           {/* Left sidebar — rooms */}
           <div className={"sab-rooms-panel" + (mobilePanel === "rooms" ? " active" : "")} style={{ width:220, background:"#f5f5f5", borderRight:"1px solid #d8d3cc", display:"flex", flexDirection:"column", padding:"18px 0" }}>
             <div style={{ padding:"0 15px 14px", borderBottom:"1px solid #d8d3cc" }}>
-              <div style={{ fontSize:9, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:3 }}>{activeQuote.ref}</div>
-              <div style={{ fontSize:12, color:"#1a1a1a" }}>{activeQuote.client}</div>
-              <div style={{ fontSize:10, color:"#999999", marginTop:2 }}>{activeQuote.project}</div>
+              <input value={activeQuote.ref} onChange={e => { const u = { ...quotes }; u[activeQuoteId].ref = e.target.value; saveQuotes(u); }} style={{ fontSize:9, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:3, background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
+              <input value={activeQuote.client} onChange={e => { const u = { ...quotes }; u[activeQuoteId].client = e.target.value; saveQuotes(u); }} style={{ fontSize:12, color:"#1a1a1a", background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
+              <input value={activeQuote.project} onChange={e => { const u = { ...quotes }; u[activeQuoteId].project = e.target.value; saveQuotes(u); }} style={{ fontSize:10, color:"#999999", marginTop:2, background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
             </div>
             <div style={{ padding:"14px 15px 6px", fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase" }}>Rooms</div>
             <div style={{ flex:1, overflowY:"auto" }}>
@@ -1592,7 +1607,7 @@ function SABQuoteTool() {
     hasStain:    roomDefs.hasStain    || false,
     hingeKey:    roomDefs.hingeKey    || ITEM_DEFAULTS.cabinet.hingeKey,
     handleKey:   roomDefs.handleKey   || ITEM_DEFAULTS.cabinet.handleKey,
-    drawerType:  roomDefs.drawerType  || ITEM_DEFAULTS.cabinet.drawerType,
+    drawerType:  roomDefs.useSolidDrawers ? (roomDefs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET",
     runnerKey:   roomDefs.runnerKey   || ITEM_DEFAULTS.cabinet.runnerKey,
     doorType: PROFILE_FINISH_TO_TYPE[`${roomDefs.doorProfile||"shaker"}+${roomDefs.doorFinish||"painted"}`] || "SHAKER_PNT",
   });
@@ -1646,9 +1661,18 @@ function SABQuoteTool() {
                         </div>
                         <div>
                           <label style={miniLbl}>Drawer Box</label>
-                          <select value={rd.drawerType} onChange={e => upd("drawerType", e.target.value)} style={miniSel}>
-                            {Object.entries(DB.drawerTypes).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
-                          </select>
+                          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                            <label style={{ fontSize:9, color: rd.useSolidDrawers ? "#c8a96e" : "#999999", cursor:"pointer", whiteSpace:"nowrap" }}>
+                              <input type="checkbox" checked={!!rd.useSolidDrawers} onChange={e => { upd("useSolidDrawers", e.target.checked); }} style={{ accentColor:"#c8a96e", marginRight:3 }} />Solid
+                            </label>
+                            {rd.useSolidDrawers ? (
+                              <select value={rd.solidDrawerType || "DRW_SOLID_OAK"} onChange={e => upd("solidDrawerType", e.target.value)} style={{ ...miniSel, flex:1 }}>
+                                {Object.entries(DB.drawerTypes).filter(([k]) => k.startsWith("DRW_SOLID")).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
+                              </select>
+                            ) : (
+                              <span style={{ fontSize:9, color:"#777777" }}>Matches carcass</span>
+                            )}
+                          </div>
                         </div>
                         <div>
                           <label style={miniLbl}>Runner</label>
@@ -2594,8 +2618,8 @@ function SABQuoteTool() {
               ))}
             </div>
 
-            {/* Itemised mode — baked-in prices per item */}
-            {clientViewMode === "itemised" && dist.rooms.map(({ roomName, items }) => (
+            {/* Room items — shown in both modes */}
+            {dist.rooms.map(({ roomName, items }) => (
               <div key={roomName} style={{ marginBottom:32 }}>
                 <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:14, paddingBottom:7, borderBottom:"1px solid #d8d3cc" }}>{roomName}</div>
                 {items.map((item, i) => (
@@ -2604,7 +2628,7 @@ function SABQuoteTool() {
                       <span style={{ color:"#333333" }}>{item.qty > 1 ? item.qty + "× " : ""}{item.description}</span>
                       {item.params?.widthMm && <span style={{ fontSize:10, color:"#999999", marginLeft:10 }}>{item.params.widthMm}×{item.params.heightMm}{item.params.depthMm ? "×" + item.params.depthMm : ""} mm</span>}
                     </div>
-                    <span style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.bakedSellExVAT)}</span>
+                    {clientViewMode === "itemised" && <span style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.bakedSellExVAT)}</span>}
                   </div>
                 ))}
               </div>
