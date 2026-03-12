@@ -927,15 +927,14 @@ function quoteTotals(quote) {
 // ─── PRINT / PDF ──────────────────────────────────────────────────────────────
 function printQuote(quote) {
   const totals = quoteTotals(quote);
-  const dtPerRoom = calcDesignTimePerRoom(data);
-
   const roomSections = Object.entries(quote.rooms || {}).map(([roomName, room]) => {
     const roomMfg = room.items.reduce((s, i) => s + (i.pricing?.totalSellExVAT || 0), 0);
-    const roomDT = room.includeDesignTime !== false ? dtPerRoom : 0;
+    const roomDTCalc = calcDesignTimePerRoom(room);
+    const roomDT = room.includeDesignTime !== false ? roomDTCalc : 0;
     const itemRows = room.items.map(i =>
       `<tr><td class="td-desc">${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td><td class="td-price">${fmt(i.pricing?.totalSellExVAT)}</td></tr>`
     ).join("");
-    const dtRow = roomDT > 0 ? `<tr class="dt-row"><td class="td-desc">Design &amp; Drawing Service (3 design rounds + 2 days technical)</td><td class="td-price">${fmt(roomDT)}</td></tr>` : "";
+    const dtRow = roomDT > 0 ? `<tr class="dt-row"><td class="td-desc">Design &amp; Drawing Service</td><td class="td-price">${fmt(roomDT)}</td></tr>` : "";
     return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}${dtRow}</tbody><tfoot><tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomMfg + roomDT)}</td></tr></tfoot></table></div>`;
   }).join("");
 
@@ -2434,7 +2433,6 @@ function SABQuoteTool() {
       {/* ── MARGIN VIEW ── */}
       {view === "margin" && activeQuote && (() => {
         const t = quoteTotals(activeQuote);
-        const dtPerRoom = calcDesignTimePerRoom(data);
         return (
           <div style={{ maxWidth:920, margin:"0 auto", padding:"40px 24px" }}>
             <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:5 }}>Internal — Not for Client</div>
@@ -2540,7 +2538,6 @@ function SABQuoteTool() {
       {/* ── CLIENT VIEW ── */}
       {view === "client" && activeQuote && (() => {
         const t = quoteTotals(activeQuote);
-        const dtPerRoom = calcDesignTimePerRoom(data);
         return (
           <div style={{ maxWidth:740, margin:"0 auto", padding:"46px 30px" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:44, paddingBottom:28, borderBottom:"1px solid #d8d3cc" }}>
