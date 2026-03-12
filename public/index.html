@@ -986,8 +986,8 @@ function printQuote(quote) {
   }).join("");
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><link rel='preconnect' href='https://fonts.googleapis.com'><link rel='preconnect' href='https://fonts.gstatic.com' crossorigin><link href='https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap' rel='stylesheet'><title>Quotation — ${quote.ref}</title><style>
-  @page{margin:0;size:A4}*{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Raleway',sans-serif;font-weight:400;color:#1a1815;background:#fff;font-size:10pt;line-height:1.6;padding:16mm 20mm}
+  @page{margin:22mm 20mm;size:A4}*{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Raleway',sans-serif;font-weight:400;color:#1a1815;background:#fff;font-size:10pt;line-height:1.6;padding:0}
   .page{max-width:680px;margin:0 auto;padding:0}
   .hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0 18px;border-bottom:1pt solid #c8a96e;margin-bottom:28px}
   .brand{display:flex;align-items:center;gap:18px}.accent{width:5px;height:52px;background:#c8a96e;flex-shrink:0}
@@ -999,7 +999,7 @@ function printQuote(quote) {
   .client-name{font-size:12pt;color:#1a1815;font-weight:500;margin-bottom:3px}.client-proj{font-size:9pt;color:#5a5045;font-weight:300}
   .contact-info{text-align:right;font-size:8.5pt;color:#888888;line-height:1.8}
   .sec-label{font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:10px;padding-bottom:5px;border-bottom:0.5pt solid #e0d8cc}
-  .room-block{margin-bottom:24px}
+  .room-block{margin-bottom:24px;page-break-inside:avoid}
   .room-title{font-size:8pt;letter-spacing:.22em;text-transform:uppercase;color:#c8a96e;font-weight:700;margin-bottom:8px;padding-bottom:4px;border-bottom:0.5pt solid #ede8e0}
   .item-tbl{width:100%;border-collapse:collapse}
   .item-tbl td{padding:5.5px 0;border-bottom:0.5pt solid #f2ede6;font-size:9.5pt;vertical-align:top;font-weight:400}
@@ -1044,7 +1044,7 @@ function printQuote(quote) {
 <meta charset="utf-8">
 <title>${quote.ref} – Steven Andrews Bespoke</title>
 <style>
-  @page { size: A4; margin: 20mm 15mm; }
+  @page { size: A4; margin: 22mm 20mm; }
   body { font-family: Arial, sans-serif; font-size: 11pt; color: #1a1a1a; margin: 0; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>
