@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#1a1a1a"/>
+  <text x="256" y="200" text-anchor="middle" font-family="serif" font-weight="bold" font-size="120" fill="#c8a96e">SAB</text>
+  <line x1="136" y1="230" x2="376" y2="230" stroke="#c8a96e" stroke-width="2"/>
+  <text x="256" y="310" text-anchor="middle" font-family="sans-serif" font-weight="300" font-size="36" letter-spacing="8" fill="#c8a96e">QUOTE</text>
+  <text x="256" y="360" text-anchor="middle" font-family="sans-serif" font-weight="300" font-size="36" letter-spacing="8" fill="#c8a96e">STUDIO</text>
+</svg>
