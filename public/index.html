@@ -986,8 +986,12 @@ function printQuote(quote) {
   }).join("");
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><link rel='preconnect' href='https://fonts.googleapis.com'><link rel='preconnect' href='https://fonts.gstatic.com' crossorigin><link href='https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap' rel='stylesheet'><title> </title><style>
-  @page{margin:25mm 20mm;size:A4}*{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Raleway',sans-serif;font-weight:400;color:#1a1815;background:#fff;font-size:10pt;line-height:1.6;padding:0}
+  @page{margin:0;size:A4}*{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Raleway',sans-serif;font-weight:400;color:#1a1815;background:#fff;font-size:10pt;line-height:1.6}
+  /* Table trick: thead/tfoot repeat on every printed page as margin spacers */
+  .print-wrap{width:100%;border-collapse:collapse}
+  .print-wrap .spacer-top td,.print-wrap .spacer-bot td{height:22mm;padding:0;border:none;line-height:0;font-size:0}
+  .print-wrap .content-cell{padding:0 20mm;vertical-align:top}
   .page{max-width:680px;margin:0 auto;padding:0}
   .hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0 18px;border-bottom:1pt solid #c8a96e;margin-bottom:28px}
   .brand{display:flex;align-items:center;gap:18px}.accent{width:5px;height:52px;background:#c8a96e;flex-shrink:0}
@@ -1012,7 +1016,10 @@ function printQuote(quote) {
   .terms{margin-top:28px;font-size:7.5pt;color:#888888;font-weight:300;line-height:1.7;border-top:0.5pt solid #e0d8cc;padding-top:14px}
   .footer{margin-top:36px;text-align:center;font-size:7pt;color:#aaa;font-weight:400;letter-spacing:.12em;text-transform:uppercase}
   @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
-  </style></head><body><div class="page">
+  </style></head><body>
+  <table class="print-wrap"><thead><tr class="spacer-top"><td>&nbsp;</td></tr></thead>
+  <tfoot><tr class="spacer-bot"><td>&nbsp;</td></tr></tfoot>
+  <tbody><tr><td class="content-cell"><div class="page">
   <div class="hdr">
     <div class="brand">
       <img src="${SAB_LOGO_DARK}" alt="Steven Andrews Bespoke" style="width:72px;height:72px;display:block;border-radius:50%;flex-shrink:0;" />
@@ -1035,7 +1042,7 @@ function printQuote(quote) {
   This quotation is based on the specifications detailed above — any changes to specification may result in revised pricing.
   SABESPOKE LTD is registered in England &amp; Wales.</div>
   <div class="footer">SABESPOKE LTD — www.stevenandrewsbespoke.com</div>
-  </div></body></html>`;
+  </div></td></tr></tbody></table></body></html>`;
 
   // Inject auto-print script into the HTML document
   const printHtml = html.replace('<\/head>', `<script>window.addEventListener('load',function(){document.title=' ';setTimeout(function(){document.title=' ';window.print();},400);});<\/script><\/head>`);
