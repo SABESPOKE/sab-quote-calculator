@@ -348,10 +348,15 @@ function hingeCount(doorHeightMm) {
   return 4;
 }
 
-function calcDesignTimePerRoom() {
+function calcDesignTimePerRoom(roomData) {
   const s = DB.settings;
-  const total = (s.designRoundsPerRoom * s.designHoursPerRound + s.technicalDrawingDays * s.workingHoursPerDay) * s.designHourlyRate;
-  return total; // = (3×8 + 2×8) × £50 = 40hrs × £50 = £2,000
+  const rounds = roomData?.designRounds ?? s.designRoundsPerRoom;
+  const hrsPerRound = roomData?.designHrsPerRound ?? s.designHoursPerRound;
+  const techDays = roomData?.techDays ?? s.technicalDrawingDays;
+  const rate = roomData?.designRate ?? s.designHourlyRate;
+  const totalHrs = rounds * hrsPerRound + techDays * s.workingHoursPerDay;
+  const total = totalHrs * rate;
+  return total;
 }
 
 // ─── PRICING ENGINE ───────────────────────────────────────────────────────────
@@ -890,7 +895,7 @@ function quoteTotals(quote) {
       mfgCost += item.pricing?.totalCost || 0;
       mfgSellExVAT += item.pricing?.totalSellExVAT || 0;
     });
-    if (room.includeDesignTime !== false) designFee += calcDesignTimePerRoom();
+    if (room.includeDesignTime !== false) designFee += calcDesignTimePerRoom(room);
   });
 
   // Project-level costs
@@ -922,7 +927,7 @@ function quoteTotals(quote) {
 // ─── PRINT / PDF ──────────────────────────────────────────────────────────────
 function printQuote(quote) {
   const totals = quoteTotals(quote);
-  const dtPerRoom = calcDesignTimePerRoom();
+  const dtPerRoom = calcDesignTimePerRoom(data);
 
   const roomSections = Object.entries(quote.rooms || {}).map(([roomName, room]) => {
     const roomMfg = room.items.reduce((s, i) => s + (i.pricing?.totalSellExVAT || 0), 0);
@@ -1221,7 +1226,7 @@ function SABQuoteTool() {
   function addRoom() {
     if (!newRoomName || !activeQuoteId) return;
     const updated = { ...quotes };
-    updated[activeQuoteId].rooms[newRoomName] = { items: [], includeDesignTime: true, defaults: { ...DEFAULT_ROOM_SETTINGS } };
+    updated[activeQuoteId].rooms[newRoomName] = { items: [], includeDesignTime: true, designRounds: DB.settings.designRoundsPerRoom, designHrsPerRound: DB.settings.designHoursPerRound, techDays: DB.settings.technicalDrawingDays, designRate: DB.settings.designHourlyRate, defaults: { ...DEFAULT_ROOM_SETTINGS } };
     saveQuotes(updated); setActiveRoom(newRoomName); setNewRoomName("");
   }
 
@@ -1520,7 +1525,7 @@ function SABQuoteTool() {
               {Object.keys(activeQuote.rooms || {}).map(room => {
                 const items = activeQuote.rooms[room].items;
                 const mfg = items.reduce((s,i) => s+(i.pricing?.totalSellExVAT||0), 0);
-                const dt = activeQuote.rooms[room].includeDesignTime !== false ? calcDesignTimePerRoom() : 0;
+                const dt = activeQuote.rooms[room].includeDesignTime !== false ? calcDesignTimePerRoom(activeQuote.rooms[room]) : 0;
                 return (
                   <div key={room} style={{ display:"flex", alignItems:"stretch" }}>
                     <div onClick={() => setActiveRoom(room)} style={{ flex:1, padding:"9px 15px", cursor:"pointer", background:activeRoom===room?"#f0eeeb":"transparent", borderLeft:activeRoom===room?"2px solid #c8a96e":"2px solid transparent" }}>
@@ -1715,16 +1720,43 @@ function SABQuoteTool() {
                 )}
 
                 {/* Design time row */}
-                <div style={{ marginTop:16, padding:"12px 14px", background:"#f5f5f5", borderRadius:6, border:"1px solid #d8d3cc", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <div>
-                    <div style={{ fontSize:11, color:"#c8a96e" }}>Design &amp; Drawing Service</div>
-                    <div style={{ fontSize:10, color:"#777777", marginTop:2 }}>3 design rounds (3 days) + 2 days technical = 40hrs × £50/hr</div>
+                <div style={{ marginTop:16, padding:"12px 14px", background:"#f5f5f5", borderRadius:6, border:"1px solid #d8d3cc" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <div style={{ fontSize:11, color:"#c8a96e" }}>Design & Drawing Service</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+                      <div style={{ fontSize:14, color: activeQuote.rooms[activeRoom]?.includeDesignTime !== false ? "#c8a96e" : "#c8c3bc" }}>{fmt(calcDesignTimePerRoom(activeQuote.rooms[activeRoom]))}</div>
+                      <button onClick={() => toggleDesignTime(activeRoom)} style={{ padding:"5px 10px", background:"transparent", border:"1px solid #c8c3bc", borderRadius:3, color: activeQuote.rooms[activeRoom]?.includeDesignTime !== false ? "#c8a96e" : "#c8c3bc", cursor:"pointer", fontSize:9, fontFamily:"inherit", letterSpacing:"0.08em" }}>
+                        {activeQuote.rooms[activeRoom]?.includeDesignTime !== false ? "INCLUDED ✓" : "EXCLUDED"}
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display:"flex", alignItems:"center", gap:16 }}>
-                    <div style={{ fontSize:14, color: activeQuote.rooms[activeRoom]?.includeDesignTime !== false ? "#c8a96e" : "#c8c3bc" }}>{fmt(calcDesignTimePerRoom())}</div>
-                    <button onClick={() => toggleDesignTime(activeRoom)} style={{ padding:"5px 10px", background:"transparent", border:"1px solid #c8c3bc", borderRadius:3, color: activeQuote.rooms[activeRoom]?.includeDesignTime !== false ? "#c8a96e" : "#c8c3bc", cursor:"pointer", fontSize:9, fontFamily:"inherit", letterSpacing:"0.08em" }}>
-                      {activeQuote.rooms[activeRoom]?.includeDesignTime !== false ? "INCLUDED ✓" : "EXCLUDED"}
-                    </button>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8, marginTop:10 }}>
+                    {[
+                      ["Design rounds", "designRounds", activeQuote.rooms[activeRoom]?.designRounds ?? DB.settings.designRoundsPerRoom],
+                      ["Hrs / round", "designHrsPerRound", activeQuote.rooms[activeRoom]?.designHrsPerRound ?? DB.settings.designHoursPerRound],
+                      ["Tech days", "techDays", activeQuote.rooms[activeRoom]?.techDays ?? DB.settings.technicalDrawingDays],
+                      ["£/hr rate", "designRate", activeQuote.rooms[activeRoom]?.designRate ?? DB.settings.designHourlyRate]
+                    ].map(([label, field, val]) => (
+                      <div key={field}>
+                        <div style={{ fontSize:8, color:"#999999", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:3 }}>{label}</div>
+                        <input type="number" value={val || ""} onChange={e => {
+                          const updated = { ...quotes };
+                          updated[activeQuoteId].rooms[activeRoom][field] = e.target.value === "" ? 0 : +e.target.value;
+                          saveQuotes(updated);
+                        }} style={{ background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:3, padding:"5px 8px", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ fontSize:9, color:"#999999", marginTop:6 }}>
+                    {(() => {
+                      const rm = activeQuote.rooms[activeRoom];
+                      const rounds = rm?.designRounds ?? DB.settings.designRoundsPerRoom;
+                      const hpr = rm?.designHrsPerRound ?? DB.settings.designHoursPerRound;
+                      const td = rm?.techDays ?? DB.settings.technicalDrawingDays;
+                      const rate = rm?.designRate ?? DB.settings.designHourlyRate;
+                      const totalHrs = rounds * hpr + td * DB.settings.workingHoursPerDay;
+                      return rounds + " rounds × " + hpr + "hrs + " + td + " tech days × 8hrs = " + totalHrs + "hrs × £" + rate + "/hr";
+                    })()}
                   </div>
                 </div>
               </>
@@ -2402,7 +2434,7 @@ function SABQuoteTool() {
       {/* ── MARGIN VIEW ── */}
       {view === "margin" && activeQuote && (() => {
         const t = quoteTotals(activeQuote);
-        const dtPerRoom = calcDesignTimePerRoom();
+        const dtPerRoom = calcDesignTimePerRoom(data);
         return (
           <div style={{ maxWidth:920, margin:"0 auto", padding:"40px 24px" }}>
             <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:5 }}>Internal — Not for Client</div>
@@ -2440,7 +2472,7 @@ function SABQuoteTool() {
             {Object.entries(activeQuote.rooms || {}).map(([room, data]) => {
               const rCost = data.items.reduce((s,i) => s+(i.pricing?.totalCost||0), 0);
               const rSell = data.items.reduce((s,i) => s+(i.pricing?.totalSellExVAT||0), 0);
-              const rDT = data.includeDesignTime !== false ? dtPerRoom : 0;
+              const rDTCalc = calcDesignTimePerRoom(data); const rDT = data.includeDesignTime !== false ? rDTCalc : 0;
               return (
                 <div key={room} style={{ background:"#f0eeeb", border:"1px solid #d8d3cc", borderRadius:8, marginBottom:14, overflow:"hidden" }}>
                   <div style={{ padding:"13px 18px", background:"#f0eeeb", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -2508,7 +2540,7 @@ function SABQuoteTool() {
       {/* ── CLIENT VIEW ── */}
       {view === "client" && activeQuote && (() => {
         const t = quoteTotals(activeQuote);
-        const dtPerRoom = calcDesignTimePerRoom();
+        const dtPerRoom = calcDesignTimePerRoom(data);
         return (
           <div style={{ maxWidth:740, margin:"0 auto", padding:"46px 30px" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:44, paddingBottom:28, borderBottom:"1px solid #d8d3cc" }}>
@@ -2526,7 +2558,7 @@ function SABQuoteTool() {
               </div>
             </div>
             {Object.entries(activeQuote.rooms || {}).map(([room, data]) => {
-              const rDT = data.includeDesignTime !== false ? dtPerRoom : 0;
+              const rDTCalc2 = calcDesignTimePerRoom(data); const rDT = data.includeDesignTime !== false ? rDTCalc2 : 0;
               const rTotal = data.items.reduce((s,i) => s+(i.pricing?.totalSellExVAT||0), 0) + rDT;
               return (
                 <div key={room} style={{ marginBottom:32 }}>
