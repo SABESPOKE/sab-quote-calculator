@@ -516,17 +516,14 @@ function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 5
   const dt = DB.drawerTypes[drawerType];
   if (!dt) return null;
   let materialCost;
-  if (dt.usesCarcassMaterial && carcassMaterialKey) {
+  if (dt.usesCarcassMaterial) {
     // Calculate from carcass sheet material: 2 sides + front + back + base
-    const mat = DB.materials[carcassMaterialKey];
-    if (mat) {
-      const sideArea = 2 * (depthMm / 1000) * (heightMm / 1000); // 2 sides
-      const fbArea = 2 * (widthMm / 1000) * (heightMm / 1000);   // front + back
-      const baseArea = (widthMm / 1000) * (depthMm / 1000);       // base
-      materialCost = (sideArea + fbArea + baseArea) * mat.costPerM2 * (mat.wasteFactor || 1.12);
-    } else {
-      materialCost = dt.materialCostPer * (widthMm / 500);
-    }
+    const matKey = carcassMaterialKey || "MAT_BIRCH_UNF_18";
+    const mat = DB.materials[matKey] || DB.materials["MAT_BIRCH_UNF_18"];
+    const sideArea = 2 * (depthMm / 1000) * (heightMm / 1000); // 2 sides
+    const fbArea = 2 * (widthMm / 1000) * (heightMm / 1000);   // front + back
+    const baseArea = (widthMm / 1000) * (depthMm / 1000);       // base
+    materialCost = (sideArea + fbArea + baseArea) * mat.costPerM2 * (mat.wasteFactor || 1.12);
   } else {
     materialCost = dt.materialCostPer * (widthMm / 500);
   }
@@ -748,7 +745,7 @@ function priceItem(item) {
   if (item.type === "custom") {
     const cost = (item.params.unitCostExVAT || 0) * item.qty;
     const sell = cost * DB.settings.margin;
-    return { costPerUnit: item.params.unitCostExVAT, sellPerUnit: item.params.unitCostExVAT * DB.settings.margin, totalCost: cost, totalSellExVAT: sell, totalSellIncVAT: sell * 1.2, breakdown: {} };
+    return { costPerUnit: item.params.unitCostExVAT, sellPerUnit: item.params.unitCostExVAT * DB.settings.margin, totalCost: cost, totalSellExVAT: sell, totalSellIncVAT: sell * (1 + DB.settings.vat), breakdown: {} };
   }
   return null;
 }
@@ -952,7 +949,7 @@ function distributeProjectCosts(quote) {
     const bakedItems = room.items.map(item => {
       const itemSell = item.pricing?.totalSellExVAT || 0;
       const share = t.mfgSellExVAT > 0 ? itemSell / t.mfgSellExVAT : 0;
-      const itemOverhead = (overhead + rDT * 0) * share; // design fee already in overhead
+      const itemOverhead = overhead * share;
       // But design fee needs special handling: distribute room design to room items only
       return {
         ...item,
@@ -1277,6 +1274,16 @@ function SABQuoteTool() {
     setActiveRoom(newName);
   }
 
+  function deleteRoom(roomName) {
+    if (!activeQuoteId) return;
+    if (!window.confirm(`Delete room "${roomName}" and all its items?`)) return;
+    const updated = { ...quotes };
+    delete updated[activeQuoteId].rooms[roomName];
+    saveQuotes(updated);
+    if (activeRoom === roomName) setActiveRoom(Object.keys(updated[activeQuoteId].rooms)[0] || null);
+    setShowRoomSetup(null);
+  }
+
   function removeItem(room, idx) {
     const updated = { ...quotes };
     updated[activeQuoteId].rooms[room].items.splice(idx, 1);
@@ -1324,25 +1331,54 @@ function SABQuoteTool() {
       const rooms = { ...q.rooms };
       const room = { ...rooms[roomName] };
       room.defaults = { ...(room.defaults || DEFAULT_ROOM_SETTINGS), [field]: val };
-      // Propagate material/drawer changes to existing items and reprice
-      if (field === "carcassMaterialKey") {
+      // Propagate room default changes to existing items and reprice
+      const propagateToItems = (paramKey, newVal) => {
         room.items = room.items.map(item => {
-          if (item.params && item.params.carcassMaterialKey !== undefined) {
-            const updated = { ...item, params: { ...item.params, carcassMaterialKey: val } };
-            updated.pricing = priceItem(updated);
-            return updated;
+          if (item.params && item.params[paramKey] !== undefined) {
+            const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
+            upd.pricing = priceItem(upd);
+            return upd;
           }
           return item;
         });
+      };
+      // Direct param mappings: room default field → item param key
+      const directMappings = {
+        carcassMaterialKey: "carcassMaterialKey",
+        hingeKey: "hingeKey",
+        handleKey: "handleKey",
+        runnerKey: "runnerKey",
+        frameKey: "frameKey",
+        edgebandKey: "edgebandKey",
+        hasStain: "hasStain",
+      };
+      if (directMappings[field]) {
+        propagateToItems(directMappings[field], val);
       }
+      // Door profile/finish changes need to derive the doorType key
+      if (field === "doorProfile" || field === "doorFinish") {
+        const defs = room.defaults;
+        const newDoorType = PROFILE_FINISH_TO_TYPE[`${defs.doorProfile}+${defs.doorFinish}`];
+        if (newDoorType) {
+          room.items = room.items.map(item => {
+            if (item.params && item.params.doorType !== undefined) {
+              const upd = { ...item, params: { ...item.params, doorType: newDoorType } };
+              upd.pricing = priceItem(upd);
+              return upd;
+            }
+            return item;
+          });
+        }
+      }
+      // Drawer type changes
       if (field === "useSolidDrawers" || field === "solidDrawerType") {
         const defs = room.defaults;
         room.items = room.items.map(item => {
           if (item.params && (item.type === "cabinet" || item.type === "drawer")) {
             const newDT = defs.useSolidDrawers ? (defs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET";
-            const updated = { ...item, params: { ...item.params, drawerType: newDT } };
-            updated.pricing = priceItem(updated);
-            return updated;
+            const upd = { ...item, params: { ...item.params, drawerType: newDT } };
+            upd.pricing = priceItem(upd);
+            return upd;
           }
           return item;
         });
@@ -1611,7 +1647,8 @@ function SABQuoteTool() {
                       <div style={{ fontSize:9, color:"#999999" }}>{items.length} items · {fmt(mfg + dt)}</div>
                     </div>
                     <button onClick={() => duplicateRoom(room)} style={{ padding:"5px 6px", background:"transparent", color:"#999999", border:"1px solid #d8d3cc", borderLeft:"none", cursor:"pointer", fontSize:9, fontFamily:"inherit" }} title="Duplicate room">⧉</button>
-                    <button onClick={() => setShowRoomSetup(showRoomSetup === room ? null : room)} style={{ padding:"5px 8px", background: showRoomSetup===room?"#e0ddd8":"transparent", color:"#777777", border:"1px solid #d8d3cc", borderLeft:"none", borderRadius:"0 3px 3px 0", cursor:"pointer", fontSize:10, fontFamily:"inherit" }} title="Room setup">⚙</button>
+                    <button onClick={() => setShowRoomSetup(showRoomSetup === room ? null : room)} style={{ padding:"5px 8px", background: showRoomSetup===room?"#e0ddd8":"transparent", color:"#777777", border:"1px solid #d8d3cc", borderLeft:"none", cursor:"pointer", fontSize:10, fontFamily:"inherit" }} title="Room setup">⚙</button>
+                    <button onClick={() => deleteRoom(room)} style={{ padding:"5px 6px", background:"transparent", color:"#cc6666", border:"1px solid #d8d3cc", borderLeft:"none", borderRadius:"0 3px 3px 0", cursor:"pointer", fontSize:9, fontFamily:"inherit", opacity:0.6 }} title="Delete room">×</button>
                   </div>
                 );
               })}
@@ -2629,6 +2666,10 @@ function SABQuoteTool() {
       {view === "client" && activeQuote && (() => {
         const dist = distributeProjectCosts(activeQuote);
         const t = dist.totals;
+        const filteredRooms = dist.rooms.filter(({ roomName }) => clientViewRoomFilter === null || clientViewRoomFilter === roomName);
+        const filteredSubtotal = filteredRooms.reduce((s, r) => s + r.items.reduce((rs, i) => rs + (i.bakedSellExVAT || 0), 0), 0);
+        const filteredVAT = filteredSubtotal * (DB.settings.vat || 0.2);
+        const filteredTotal = filteredSubtotal + filteredVAT;
         return (
           <div style={{ maxWidth:740, margin:"0 auto", padding:"46px 30px" }}>
             {/* Header */}
@@ -2663,7 +2704,7 @@ function SABQuoteTool() {
             </div>
 
             {/* Room items — shown in both modes */}
-            {dist.rooms.filter(({ roomName }) => clientViewRoomFilter === null || clientViewRoomFilter === roomName).map(({ roomName, items }) => {
+            {filteredRooms.map(({ roomName, items }) => {
               const roomSubtotal = items.reduce((s, item) => s + (item.bakedSellExVAT || 0), 0);
               const roomVAT = roomSubtotal * (DB.settings.vat || 0.2);
               return (
@@ -2701,9 +2742,9 @@ function SABQuoteTool() {
 
             {/* Totals — clean, no line-by-line breakdown */}
             <div style={{ marginTop:28, padding:"22px", background:"#f0eeeb", borderRadius:8, border:"1px solid #d8d3cc" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>Subtotal (ex VAT)</span><span>{fmt(t.totalExVAT)}</span></div>
-              <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>VAT (20%)</span><span>{fmt(t.vat)}</span></div>
-              <div style={{ display:"flex", justifyContent:"space-between", padding:"14px 0 0", fontSize:17, color:"#c8a96e" }}><span>Total (inc VAT)</span><span>{fmt(t.totalIncVAT)}</span></div>
+              <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>Subtotal (ex VAT)</span><span>{fmt(filteredSubtotal)}</span></div>
+              <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>VAT (20%)</span><span>{fmt(filteredVAT)}</span></div>
+              <div style={{ display:"flex", justifyContent:"space-between", padding:"14px 0 0", fontSize:17, color:"#c8a96e" }}><span>Total (inc VAT)</span><span>{fmt(filteredTotal)}</span></div>
             </div>
             <div style={{ marginTop:36, fontSize:10, color:"#d8d3cc", lineHeight:1.9, borderTop:"1px solid #1a1815", paddingTop:20 }}>
               This quotation is valid for 30 days from the date of issue. All prices are exclusive of VAT unless stated.
