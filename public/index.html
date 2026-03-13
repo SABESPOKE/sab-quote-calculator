@@ -1188,6 +1188,7 @@ function SABQuoteTool() {
   const [mobilePanel, setMobilePanel] = useState("items");
   const [clientViewMode, setClientViewMode] = useState("itemised");
   const [clientViewRoomFilter, setClientViewRoomFilter] = useState(null); // null = all rooms, or room name string
+  const [editingRoomName, setEditingRoomName] = useState(null); // { original, current } or null
 
   // Persistence - save to localStorage whenever quotes change
   useEffect(() => {
@@ -1288,6 +1289,22 @@ function SABQuoteTool() {
     const updated = { ...quotes };
     updated[activeQuoteId].rooms[room].items.splice(idx, 1);
     saveQuotes(updated); setExpandedItem(null);
+  }
+
+  function renameRoom(oldName, newName) {
+    if (!activeQuoteId || !newName || newName === oldName) return;
+    const updated = { ...quotes };
+    const rooms = updated[activeQuoteId].rooms;
+    if (rooms[newName]) return; // name already taken
+    // Preserve insertion order by rebuilding the rooms object
+    const newRooms = {};
+    Object.entries(rooms).forEach(([k, v]) => {
+      newRooms[k === oldName ? newName : k] = v;
+    });
+    updated[activeQuoteId].rooms = newRooms;
+    saveQuotes(updated);
+    if (activeRoom === oldName) setActiveRoom(newName);
+    if (showRoomSetup === oldName) setShowRoomSetup(newName);
   }
 
   function duplicateItem(room, idx) {
@@ -1668,7 +1685,7 @@ function SABQuoteTool() {
             ) : (
               <>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                  <div style={{ fontSize:17, color:"#1a1a1a" }}>{activeRoom}</div>
+                  <input value={editingRoomName && editingRoomName.original === activeRoom ? editingRoomName.current : activeRoom} onChange={e => setEditingRoomName({ original: activeRoom, current: e.target.value })} onFocus={e => { setEditingRoomName({ original: activeRoom, current: activeRoom }); e.target.style.borderBottomColor="#c8a96e"; }} onBlur={e => { e.target.style.borderBottomColor="transparent"; if (editingRoomName && editingRoomName.current && editingRoomName.current !== editingRoomName.original) { renameRoom(editingRoomName.original, editingRoomName.current); } setEditingRoomName(null); }} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { setEditingRoomName(null); e.target.blur(); } }} style={{ fontSize:17, color:"#1a1a1a", background:"transparent", border:"none", borderBottom:"1px solid transparent", padding:0, fontFamily:"inherit", fontWeight:400, outline:"none", width:"100%" }} />
                   <button onClick={() => {
   const roomDefs = (activeQuote?.rooms?.[activeRoom]?.defaults) || {};
   setAddItemForm({
