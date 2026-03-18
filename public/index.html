@@ -1190,6 +1190,19 @@ function SABQuoteTool() {
   const [clientViewRoomFilter, setClientViewRoomFilter] = useState(null); // null = all rooms, or room name string
   const [editingRoomName, setEditingRoomName] = useState(null); // { original, current } or null
 
+  // Deep link: navigate to a specific quote via URL hash (e.g. #/quote/Q123...)
+  useEffect(() => {
+    const hash = window.location.hash;
+    const match = hash.match(/^#\/quote\/(Q\d+)$/);
+    if (match && quotes[match[1]]) {
+      setActiveQuoteId(match[1]);
+      const rooms = Object.keys(quotes[match[1]].rooms || {});
+      if (rooms.length) setActiveRoom(rooms[0]);
+      setView("build");
+      window.location.hash = '';
+    }
+  }, [quotes]);
+
   // Persistence - save to localStorage whenever quotes change
   useEffect(() => {
     try { localStorage.setItem('sab_quotes', JSON.stringify(quotes)); } catch {}
