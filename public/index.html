@@ -99,18 +99,18 @@ function SABLogo({ size = 44, style = {} }) {
 // ─── PRICING DATABASE ──────────────────────────────────────────────────────────
 const DB = {
   settings: {
-    labourRate: 50,         // £/hr direct labour
+    labourRate: 30,         // £/hr direct labour
     overheadRate: 37,       // £/hr overhead absorption (shop costs per labour hour)
-    margin: 2.25,           // sell price multiplier on manufacturing cost
+    margin: 2.0,            // sell price multiplier on manufacturing cost
     vat: 0.20,
-    designRoundsPerRoom: 3,     // number of design iterations per room
+    designRoundsPerRoom: 2,     // number of design iterations per room
     designHoursPerRound: 8,     // hours per design round (1 working day)
     technicalDrawingDays: 2,    // days to produce technical drawings
     workingHoursPerDay: 8,
     designHourlyRate: 50,       // £/hr billed to client for design time
     // ── Carcass assembly labour (adjustable) ──────────────────────────────────
-    carcassBaseHrs: 2.5,        // hrs for reference 600×720×560 cabinet (was 4.0 — reduced to reflect realistic bench time)
-    carcassShelfHrs: 0.25,      // additional hrs per shelf fitted
+    carcassBaseHrs: 1,          // hrs for reference 600×720×560 cabinet
+    carcassShelfHrs: 0,         // additional hrs per shelf fitted
     carcassDrawerPrepHrs: 0.5,  // additional hrs when any drawers are present
     // ── Project-level cost defaults (all adjustable) ──────────────────────────
     surveyFee: 250,             // £ flat — site survey visit (per project)
@@ -338,6 +338,23 @@ const EDGEBAND_TYPES = {
 
 // Materials that DON'T need edgebanding (natural ply edge is fine / pre-edged)
 const NO_EDGE_MATERIALS = new Set(["MAT_BIRCH_UNF_18","MAT_BIRCH_UNF_12","MAT_BIRCH_UNF_25"]);
+
+// Restore saved settings from localStorage (deep merge over defaults)
+try {
+  const saved = JSON.parse(localStorage.getItem('sab_db_settings'));
+  if (saved) {
+    function deepMerge(target, source) {
+      for (const key of Object.keys(source)) {
+        if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) && target[key] && typeof target[key] === 'object') {
+          deepMerge(target[key], source[key]);
+        } else {
+          target[key] = source[key];
+        }
+      }
+    }
+    deepMerge(DB, saved);
+  }
+} catch {}
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const fmt = n => `£${(n || 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1465,6 +1482,8 @@ function SABQuoteTool() {
     let obj = DB;
     for (let i = 0; i < path.length - 1; i++) obj = obj[path[i]];
     obj[path[path.length - 1]] = Number(val);
+    // Persist all DB settings to localStorage so they survive page reloads
+    try { localStorage.setItem('sab_db_settings', JSON.stringify(DB)); } catch {}
     const recalced = recalcAllQuotes(quotes);
     saveQuotes(recalced);
     setSettingsVer(v => v + 1);
