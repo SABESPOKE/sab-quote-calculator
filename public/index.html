@@ -216,8 +216,8 @@ const DB = {
     "TIM_ASH":   { name: "European Ash",        effectivePerM3: 2100 },
   },
   drawerTypes: {
-    "DRW_SHEET":     { name: "Sheet Material Box (matches carcass)", materialCostPer: 0, labourHrs: 1.5, usesCarcassMaterial: true },
-    "DRW_BIRCH_PLY": { name: "Birch Ply Box",    materialCostPer: 25, labourHrs: 1.5 },
+    "DRW_SHEET":     { name: "Sheet Material Box (matches carcass)", materialCostPer: 0, labourHrs: 0.3, usesCarcassMaterial: true },
+    "DRW_BIRCH_PLY": { name: "Birch Ply Box",    materialCostPer: 25, labourHrs: 0.5 },
     "DRW_SOLID_OAK": { name: "Solid Oak Box",    materialCostPer: 60, labourHrs: 4.0 },
     "DRW_SOLID_TUL": { name: "Solid Tulip Box",  materialCostPer: 35, labourHrs: 4.0 },
     "DRW_SOLID_WAL": { name: "Solid Walnut Box", materialCostPer: 90, labourHrs: 4.0 },
@@ -230,10 +230,7 @@ const DB = {
       "HW_HINGE_BUTT":  { name: "Butt Hinge Pair (2.5\")",       costEach: 2.80 },
     },
     runners: {
-      "HW_RUN_BASIC":    { name: "Basic runner (pair)",                costPair: 22.00 },
-      "HW_RUN_BLUM_TAN": { name: "Blum Tandem (pair)",                costPair: 68.00 },
-      "HW_RUN_BLUM_MOV": { name: "Blum Movento (pair)",               costPair: 95.00 },
-      "HW_RUN_BLUM_SM":  { name: "Blum Movento soft-close (pair)",    costPair: 120.00 },
+      "HW_RUN_BLUM_SM":  { name: "Blum Movento soft-close (pair)",    costPair: 40.00 },
     },
     handles: {
       "HW_HDL_NONE":   { name: "No handle",          costEach: 0 },
@@ -545,7 +542,7 @@ function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 5
     materialCost = dt.materialCostPer * (widthMm / 500);
   }
   const labourCost = dt.labourHrs * er();
-  const runnerCost = runnerCostOverride !== null ? runnerCostOverride : 120;
+  const runnerCost = runnerCostOverride !== null ? runnerCostOverride : 40;
   const totalCostPerDrawer = materialCost + labourCost + runnerCost;
   const sellExVAT = totalCostPerDrawer * DB.settings.margin;
   return {
