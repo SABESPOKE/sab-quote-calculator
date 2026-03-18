@@ -597,6 +597,24 @@ function calcCabinetCost({
     drawersCost = dp ? dp.totalCost : 0;
   }
 
+  // ── Drawer fronts (priced like doors when drawers have a painted/finished door type) ──
+  let drawerFrontsCost = 0;
+  const drawerFrontHeights = [];
+  if (drawerCount > 0 && doorType && DB.doorTypes[doorType]) {
+    const topRailMm = 32;
+    const gapMm = 3;
+    const usableHeight = heightMm - topRailMm;
+    const totalGaps = gapMm * (drawerCount - 1);
+    const availableHeight = usableHeight - totalGaps;
+    const defaultFrontH = Math.round(availableHeight / drawerCount);
+    for (let i = 0; i < drawerCount; i++) drawerFrontHeights.push(defaultFrontH);
+    const frontW = widthMm - 4; // drawer fronts span full cabinet width
+    for (const fh of drawerFrontHeights) {
+      const dfp = calcDoorCost({ doorType, widthMm: frontW > 0 ? frontW : widthMm - 4, heightMm: fh, qty: 1, hingeCost: 0, handleCost: 0, sprayFinish: true, hasStain });
+      if (dfp) drawerFrontsCost += dfp.totalCost;
+    }
+  }
+
   // ── Face frame ──────────────────────────────────────────────────────────
   const frameResult = calcCabinetFaceFrameCost({
     frameKey: frameKey || "FRAME_NONE",
@@ -618,7 +636,7 @@ function calcCabinetCost({
     qty: 1
   }) : { costPerUnit: 0, total: 0, totalM: 0 };
 
-  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + doorsCost + drawersCost + frameResult.total + edgebandResult.total;
+  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total;
   const totalCost = totalCostPerUnit * qty;
   const sellExVAT = totalCost * DB.settings.margin;
 
@@ -628,7 +646,7 @@ function calcCabinetCost({
     totalCost,
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
-    breakdown: { carcassMaterial: carcassMaterialCost, carcassLabour: carcassLabourCost, carcassHardware, doors: doorsCost, drawers: drawersCost, frame: frameResult.total, edgeband: edgebandResult.total, assemblyHrs },
+    breakdown: { carcassMaterial: carcassMaterialCost, carcassLabour: carcassLabourCost, carcassHardware, doors: doorsCost, drawers: drawersCost, drawerFronts: drawerFrontsCost, frame: frameResult.total, edgeband: edgebandResult.total, assemblyHrs },
   };
 }
 
@@ -2208,12 +2226,13 @@ function SABQuoteTool() {
                         <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Sell inc VAT</div><div style={{ fontSize:15, color:"#1a1a1a" }}>{fmt(formPreview.totalSellIncVAT)}</div></div>
                       </div>
                       {formPreview.breakdown && (
-                        <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, paddingTop:10, borderTop:"1px solid #f0eeeb" }}>
+                        <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:6, paddingTop:10, borderTop:"1px solid #f0eeeb" }}>
                           {[
                             ["Carcass mat", formPreview.breakdown.carcassMaterial],
                             ["Assembly", formPreview.breakdown.carcassLabour],
                             ["Hardware", formPreview.breakdown.carcassHardware],
                             ["Doors", formPreview.breakdown.doors],
+                            ["Drw Fronts", formPreview.breakdown.drawerFronts],
                             ["Drawers", formPreview.breakdown.drawers],
                           ].map(([label, val]) => (
                             <div key={label}>
