@@ -768,6 +768,20 @@ function priceItem(item) {
   return null;
 }
 
+// Ensure every item in a quotes object has pricing calculated
+function ensurePricing(quotesObj) {
+  for (const q of Object.values(quotesObj)) {
+    for (const room of Object.values(q.rooms || {})) {
+      for (const item of (room.items || [])) {
+        if (!item.pricing || !item.pricing.totalSellExVAT) {
+          try { item.pricing = priceItem(item); } catch {}
+        }
+      }
+    }
+  }
+  return quotesObj;
+}
+
 // ─── AI CHAT ENGINE ───────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are the pricing assistant for Steven Andrews Bespoke, a high-end bespoke joinery workshop.
 You help build quotes by interpreting natural language descriptions and returning structured pricing data.
@@ -1141,7 +1155,7 @@ function SABQuoteTool() {
   const [quotes, setQuotes] = useState(() => {
     try {
       const saved = localStorage.getItem('sab_quotes');
-      return saved ? JSON.parse(saved) : {};
+      return saved ? ensurePricing(JSON.parse(saved)) : {};
     } catch { return {}; }
   });
   const [dbReady, setDbReady] = useState(false);
@@ -1160,7 +1174,7 @@ function SABQuoteTool() {
             const server = merged[id] && merged[id].updated_at ? new Date(merged[id].updated_at) : new Date(0);
             if (!merged[id] || local > server) merged[id] = q;
           }
-          return merged;
+          return ensurePricing(merged);
         });
       });
     }).catch(() => {});
@@ -1175,7 +1189,7 @@ function SABQuoteTool() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quotes })
       }).then(r => r.json()).then(res => {
-        if (res.quotes) setQuotes(res.quotes);
+        if (res.quotes) setQuotes(ensurePricing(res.quotes));
       }).catch(() => {});
     };
     const onVisible = () => { if (document.visibilityState === 'visible') doSync(); };
