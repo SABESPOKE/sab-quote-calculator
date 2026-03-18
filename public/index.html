@@ -768,18 +768,24 @@ function priceItem(item) {
   return null;
 }
 
-// Ensure every item in a quotes object has pricing calculated
+// Ensure every item in a quotes object has pricing calculated.
+// Returns a new object so React detects the state change.
 function ensurePricing(quotesObj) {
-  for (const q of Object.values(quotesObj)) {
-    for (const room of Object.values(q.rooms || {})) {
-      for (const item of (room.items || [])) {
-        if (!item.pricing || !item.pricing.totalSellExVAT) {
-          try { item.pricing = priceItem(item); } catch {}
-        }
-      }
+  const result = {};
+  for (const [id, q] of Object.entries(quotesObj)) {
+    const newRooms = {};
+    for (const [roomName, room] of Object.entries(q.rooms || {})) {
+      newRooms[roomName] = {
+        ...room,
+        items: (room.items || []).map(item => {
+          if (item.pricing && item.pricing.totalSellExVAT) return item;
+          try { return { ...item, pricing: priceItem(item) }; } catch { return item; }
+        }),
+      };
     }
+    result[id] = { ...q, rooms: newRooms };
   }
-  return quotesObj;
+  return result;
 }
 
 // ─── AI CHAT ENGINE ───────────────────────────────────────────────────────────
