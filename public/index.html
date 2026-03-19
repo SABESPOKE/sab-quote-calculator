@@ -200,13 +200,13 @@ const DB = {
   // hasQuirk = true for profiled doors where the groove/rebate adds spray time (shaker, framed)
   // shakerStileWidthMm = width of the frame member (used to calculate inner quirk perimeter)
   doorTypes: {
-    "SLAB_PNT":      { name: "Slab – Painted",         baseCostPerM2: 20, finishCostPerM2:  0, extraLabourPerM2: 0.40, baseLabourHrs: 0.75, hasQuirk: false, shakerStileWidthMm: 0,   finishType: "paint"   },
-    "SLAB_VEN":      { name: "Slab – Veneered",        baseCostPerM2: 20, finishCostPerM2: 30, extraLabourPerM2: 0.60, baseLabourHrs: 1.00, hasQuirk: false, shakerStileWidthMm: 0,   finishType: "lacquer" },
-    "SLAB_CUST_VEN": { name: "Slab – Custom Veneer",   baseCostPerM2: 20, finishCostPerM2: 55, extraLabourPerM2: 1.00, baseLabourHrs: 1.25, hasQuirk: false, shakerStileWidthMm: 0,   finishType: "lacquer" },
-    "SHAKER_PNT":    { name: "Shaker – Painted",       baseCostPerM2: 26, finishCostPerM2:  0, extraLabourPerM2: 0.50, baseLabourHrs: 1.00, hasQuirk: true,  shakerStileWidthMm: 70,  finishType: "paint"   },
-    "SHAKER_VEN":    { name: "Shaker – Veneered",      baseCostPerM2: 26, finishCostPerM2: 30, extraLabourPerM2: 0.70, baseLabourHrs: 1.25, hasQuirk: true,  shakerStileWidthMm: 70,  finishType: "lacquer" },
-    "J_GROOVE":      { name: "Slab – J-Groove Handle", baseCostPerM2: 22, finishCostPerM2:  0, extraLabourPerM2: 0.50, baseLabourHrs: 0.75, hasQuirk: false, shakerStileWidthMm: 0,   finishType: "paint"   },
-    "FRAMED_INSET":  { name: "Framed – Inset",         baseCostPerM2: 40, finishCostPerM2:  0, extraLabourPerM2: 1.00, baseLabourHrs: 2.00, hasQuirk: true,  shakerStileWidthMm: 80,  finishType: "paint"   },
+    "SLAB_PNT":      { name: "Slab – Painted",         baseCostPerM2: 20, finishCostPerM2:  0, extraLabourPerM2: 0.40, baseLabourHrs: 0.35, hasQuirk: false, shakerStileWidthMm: 0,   finishType: "paint"   },
+    "SLAB_VEN":      { name: "Slab – Veneered",        baseCostPerM2: 20, finishCostPerM2: 30, extraLabourPerM2: 0.60, baseLabourHrs: 0.50, hasQuirk: false, shakerStileWidthMm: 0,   finishType: "lacquer" },
+    "SLAB_CUST_VEN": { name: "Slab – Custom Veneer",   baseCostPerM2: 20, finishCostPerM2: 55, extraLabourPerM2: 1.00, baseLabourHrs: 0.60, hasQuirk: false, shakerStileWidthMm: 0,   finishType: "lacquer" },
+    "SHAKER_PNT":    { name: "Shaker – Painted",       baseCostPerM2: 26, finishCostPerM2:  0, extraLabourPerM2: 0.50, baseLabourHrs: 0.50, hasQuirk: true,  shakerStileWidthMm: 70,  finishType: "paint"   },
+    "SHAKER_VEN":    { name: "Shaker – Veneered",      baseCostPerM2: 26, finishCostPerM2: 30, extraLabourPerM2: 0.70, baseLabourHrs: 0.60, hasQuirk: true,  shakerStileWidthMm: 70,  finishType: "lacquer" },
+    "J_GROOVE":      { name: "Slab – J-Groove Handle", baseCostPerM2: 22, finishCostPerM2:  0, extraLabourPerM2: 0.50, baseLabourHrs: 0.35, hasQuirk: false, shakerStileWidthMm: 0,   finishType: "paint"   },
+    "FRAMED_INSET":  { name: "Framed – Inset",         baseCostPerM2: 40, finishCostPerM2:  0, extraLabourPerM2: 1.00, baseLabourHrs: 1.00, hasQuirk: true,  shakerStileWidthMm: 80,  finishType: "paint"   },
   },
   solidTimber: {
     "TIM_OAK":   { name: "European Oak",        effectivePerM3: 3220 },
