@@ -20,52 +20,430 @@
     /* Mobile bottom tab bar */
     .sab-mobile-tabs { display:none; }
 
+    /* ── Prevent horizontal overflow globally ── */
+    html, body { overflow-x: hidden; max-width: 100%; }
+
+    /* ── iOS input zoom prevention (always active) ── */
+    input, select, textarea { font-size: 16px; }
+
     @media (max-width: 767px) {
-      /* Header */
+      /* ══════════════════════════════════════════════
+         GLOBAL TEXT & TOUCH TARGET OVERRIDES
+         Override inline React styles with !important
+         ══════════════════════════════════════════════ */
+
+      /* Base font sizing */
+      body { font-size: 16px !important; line-height: 1.6 !important; }
+
+      /* All buttons: minimum 44px touch targets */
+      button {
+        min-height: 44px !important;
+        font-size: 13px !important;
+        padding: 10px 14px !important;
+      }
+
+      /* All inputs, selects, textareas: comfortable size + prevent iOS zoom */
+      input, select, textarea {
+        min-height: 44px !important;
+        font-size: 16px !important;
+        padding: 10px 12px !important;
+        border-radius: 6px !important;
+      }
+
+      /* Labels: readable size */
+      label {
+        font-size: 12px !important;
+        margin-bottom: 6px !important;
+      }
+
+      /* Small divs used as section headers — React renders fontSize:9 as font-size: 9px */
+      div[style*="font-size: 8px"],
+      div[style*="font-size:8px"] {
+        font-size: 11px !important;
+      }
+      div[style*="font-size: 9px"],
+      div[style*="font-size:9px"] {
+        font-size: 12px !important;
+      }
+      div[style*="font-size: 10px"],
+      div[style*="font-size:10px"] {
+        font-size: 13px !important;
+      }
+      div[style*="font-size: 11px"],
+      div[style*="font-size:11px"] {
+        font-size: 13px !important;
+      }
+      div[style*="font-size: 12px"],
+      div[style*="font-size:12px"] {
+        font-size: 14px !important;
+      }
+
+      /* Table cells: readable */
+      td, th {
+        font-size: 13px !important;
+        padding: 10px 8px !important;
+      }
+
+      /* Spans used for small text */
+      span[style*="font-size: 8px"],
+      span[style*="font-size:8px"] {
+        font-size: 11px !important;
+      }
+      span[style*="font-size: 9px"],
+      span[style*="font-size:9px"] {
+        font-size: 12px !important;
+      }
+      span[style*="font-size: 10px"],
+      span[style*="font-size:10px"] {
+        font-size: 13px !important;
+      }
+      span[style*="font-size: 11px"],
+      span[style*="font-size:11px"] {
+        font-size: 13px !important;
+      }
+
+      /* ══════════════════════════════
+         HEADER
+         ══════════════════════════════ */
       .sab-header { height:56px !important; padding:0 12px !important; }
       .sab-header-brand { gap:10px !important; }
       .sab-header-brand .sab-brand-text { display:none !important; }
       .sab-header-brand .sab-brand-divider { display:none !important; }
       .sab-header-brand img { width:40px !important; height:40px !important; }
-      .sab-header-nav { gap:1px !important; overflow-x:auto; -webkit-overflow-scrolling:touch; flex-shrink:1; min-width:0; }
-      .sab-header-nav button { padding:5px 8px !important; font-size:9px !important; white-space:nowrap; }
+      .sab-header-nav { gap:2px !important; overflow-x:auto; -webkit-overflow-scrolling:touch; flex-shrink:1; min-width:0; }
+      .sab-header-nav button {
+        padding: 8px 10px !important;
+        font-size: 11px !important;
+        white-space: nowrap;
+        min-height: 40px !important;
+      }
 
-      /* Quotes list view */
-      .sab-quotes-list { padding:20px 16px !important; }
-      .sab-quotes-header { flex-direction:column !important; gap:12px !important; align-items:flex-start !important; }
-      .sab-quotes-actions { width:100%; }
-      .sab-quote-card { padding:14px !important; }
+      /* ══════════════════════════════
+         QUOTES LIST VIEW
+         ══════════════════════════════ */
+      .sab-quotes-list { padding:20px 16px !important; max-width: 100% !important; }
+      .sab-quotes-list > div:first-child {
+        flex-direction: column !important;
+        gap: 12px !important;
+        align-items: flex-start !important;
+      }
+      /* Quote cards */
+      .sab-quotes-list > div > div[style*="cursor"] {
+        padding: 16px !important;
+      }
+      .sab-quotes-list button {
+        min-height: 44px !important;
+        font-size: 13px !important;
+        padding: 12px 18px !important;
+      }
 
-      /* Build view - 3 panel to tabbed */
+      /* ══════════════════════════════
+         BUILD VIEW - 3 panel to tabbed
+         ══════════════════════════════ */
       .sab-build-layout { flex-direction:column !important; height:calc(100vh - 56px - 52px) !important; }
-      .sab-rooms-panel { display:none !important; width:100% !important; border-right:none !important; border-bottom:1px solid #d8d3cc; max-height:100%; overflow-y:auto; }
+      .sab-rooms-panel {
+        display:none !important;
+        width:100% !important;
+        border-right:none !important;
+        border-bottom:1px solid #d8d3cc;
+        max-height:100%;
+        overflow-y:auto;
+        padding: 14px 0 !important;
+      }
       .sab-rooms-panel.active { display:flex !important; }
-      .sab-items-panel { display:none !important; width:100% !important; }
+      .sab-rooms-panel input {
+        font-size: 14px !important;
+        min-height: 44px !important;
+      }
+      /* Room list items */
+      .sab-rooms-panel > div > div[style*="cursor"] {
+        min-height: 48px !important;
+        padding: 10px 14px !important;
+      }
+      .sab-rooms-panel button {
+        min-height: 40px !important;
+        min-width: 40px !important;
+        font-size: 13px !important;
+      }
+
+      .sab-items-panel {
+        display:none !important;
+        width:100% !important;
+        padding: 16px 14px !important;
+      }
       .sab-items-panel.active { display:block !important; }
-      .sab-chat-panel { display:none !important; width:100% !important; border-left:none !important; border-top:1px solid #d8d3cc; }
+
+      .sab-chat-panel {
+        display:none !important;
+        width:100% !important;
+        border-left:none !important;
+        border-top:1px solid #d8d3cc;
+      }
       .sab-chat-panel.active { display:flex !important; }
+      /* Chat messages: readable */
+      .sab-chat-panel div[style*="border-radius: 8px"] {
+        font-size: 14px !important;
+        padding: 12px 16px !important;
+      }
+      /* Chat input */
+      .sab-chat-panel input {
+        font-size: 16px !important;
+        min-height: 44px !important;
+        padding: 10px 14px !important;
+      }
+      .sab-chat-panel button {
+        min-height: 44px !important;
+        min-width: 44px !important;
+        font-size: 16px !important;
+      }
 
-      /* Bottom tab bar */
-      .sab-mobile-tabs { display:flex !important; position:fixed; bottom:0; left:0; right:0; height:52px; background:#1a1a1a; border-top:1px solid #c8a96e33; z-index:999; }
-      .sab-mobile-tabs button { flex:1; background:transparent; border:none; color:#777777; font-size:10px; font-family:inherit; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; }
+      /* ══════════════════════════════
+         BOTTOM TAB BAR
+         ══════════════════════════════ */
+      .sab-mobile-tabs {
+        display:flex !important;
+        position:fixed;
+        bottom:0; left:0; right:0;
+        height: 56px;
+        background:#1a1a1a;
+        border-top:1px solid #c8a96e33;
+        z-index:999;
+      }
+      .sab-mobile-tabs button {
+        flex:1;
+        background:transparent;
+        border:none;
+        color:#777777;
+        font-size: 11px !important;
+        font-family:inherit;
+        letter-spacing:0.08em;
+        text-transform:uppercase;
+        cursor:pointer;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        gap: 3px;
+        min-height: 56px !important;
+        padding: 6px 4px !important;
+      }
       .sab-mobile-tabs button.active { color:#c8a96e; }
-      .sab-mobile-tabs button .tab-icon { font-size:18px; }
+      .sab-mobile-tabs button .tab-icon { font-size: 20px !important; }
 
-      /* Add Item modal */
-      .sab-add-modal { width:calc(100vw - 24px) !important; padding:16px !important; max-height:85vh !important; }
-      .sab-add-modal .sab-type-tabs { flex-wrap:wrap !important; gap:3px !important; }
-      .sab-add-modal .sab-type-tabs button { padding:5px 10px !important; font-size:9px !important; }
-      .sab-add-grid { grid-template-columns:1fr !important; }
+      /* ══════════════════════════════
+         ADD ITEM MODAL
+         ══════════════════════════════ */
+      .sab-add-modal {
+        width: calc(100vw - 16px) !important;
+        max-width: 100% !important;
+        padding: 18px 14px !important;
+        max-height: 88vh !important;
+        border-radius: 8px !important;
+      }
+      .sab-add-modal .sab-type-tabs {
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+      }
+      .sab-add-modal .sab-type-tabs button {
+        padding: 10px 14px !important;
+        font-size: 12px !important;
+        min-height: 40px !important;
+      }
+      .sab-add-grid { grid-template-columns: 1fr !important; }
 
-      /* Room defaults grid */
-      .sab-room-defaults-grid { grid-template-columns:1fr 1fr !important; }
+      /* Modal 2-column grids → single column */
+      .sab-add-modal div[style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+      }
 
-      /* Items table */
+      /* Modal section headers */
+      .sab-add-modal div[style*="letter-spacing: 0.1em"] {
+        font-size: 12px !important;
+        margin-bottom: 8px !important;
+      }
+
+      /* Modal labels */
+      .sab-add-modal label {
+        font-size: 12px !important;
+      }
+
+      /* Modal inputs and selects */
+      .sab-add-modal input,
+      .sab-add-modal select {
+        font-size: 16px !important;
+        min-height: 44px !important;
+        padding: 10px 12px !important;
+      }
+
+      /* Modal action buttons */
+      .sab-add-modal > div:last-child button,
+      .sab-add-modal div[style*="gap: 10px"] > button {
+        min-height: 48px !important;
+        font-size: 14px !important;
+        padding: 14px 20px !important;
+        border-radius: 6px !important;
+      }
+
+      /* Price preview in modal */
+      .sab-add-modal div[style*="repeat(3"] {
+        grid-template-columns: 1fr 1fr 1fr !important;
+        gap: 8px !important;
+      }
+      .sab-add-modal div[style*="font-size: 15px"] {
+        font-size: 16px !important;
+      }
+
+      /* ══════════════════════════════
+         ROOM DEFAULTS GRID
+         ══════════════════════════════ */
+      .sab-room-defaults-grid {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 10px !important;
+      }
+      .sab-room-defaults-grid select,
+      .sab-room-defaults-grid input {
+        font-size: 14px !important;
+        min-height: 40px !important;
+        padding: 8px 10px !important;
+      }
+      .sab-room-defaults-grid label {
+        font-size: 11px !important;
+      }
+
+      /* ══════════════════════════════
+         ITEMS TABLE
+         ══════════════════════════════ */
       .sab-items-table .sab-col-whd,
       .sab-items-table .sab-col-cost { display:none !important; }
 
-      /* Project costs */
-      .sab-project-costs-row { flex-direction:column !important; gap:8px !important; }
+      /* Table action buttons (Edit, Dup, ×) */
+      .sab-items-panel table button {
+        min-height: 36px !important;
+        min-width: 36px !important;
+        font-size: 12px !important;
+        padding: 6px 10px !important;
+      }
+
+      /* Items panel + Add Item button */
+      .sab-items-panel > div:first-child button {
+        min-height: 44px !important;
+        font-size: 13px !important;
+      }
+
+      /* ══════════════════════════════
+         PROJECT COSTS
+         ══════════════════════════════ */
+      .sab-project-costs-row {
+        flex-direction: column !important;
+        gap: 10px !important;
+      }
+
+      /* ══════════════════════════════
+         MARGIN VIEW
+         ══════════════════════════════ */
+      div[style*="max-width: 920px"] {
+        padding: 24px 16px !important;
+        max-width: 100% !important;
+      }
+      /* Margin view: 4-col grids → 2-col */
+      div[style*="repeat(4, 1fr)"] {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 12px !important;
+      }
+      /* Margin view: 3-col grids */
+      div[style*="repeat(3, 1fr)"] {
+        grid-template-columns: 1fr 1fr 1fr !important;
+        gap: 10px !important;
+      }
+      /* Margin room header: stack on mobile */
+      div[style*="gap: 22px"] {
+        gap: 10px !important;
+        flex-wrap: wrap !important;
+      }
+      /* Margin item rows */
+      div[style*="gap: 18px"] {
+        gap: 8px !important;
+        flex-wrap: wrap !important;
+      }
+      div[style*="gap: 18px"] span[style*="width: 80px"] {
+        width: auto !important;
+      }
+      div[style*="gap: 18px"] span[style*="width: 40px"] {
+        width: auto !important;
+      }
+
+      /* ══════════════════════════════
+         CLIENT VIEW
+         ══════════════════════════════ */
+      div[style*="max-width: 740px"] {
+        padding: 24px 16px !important;
+        max-width: 100% !important;
+      }
+      /* Client view header: stack */
+      div[style*="max-width: 740px"] > div:first-child {
+        flex-direction: column !important;
+        gap: 16px !important;
+      }
+      div[style*="max-width: 740px"] > div:first-child > div:last-child {
+        text-align: left !important;
+      }
+      /* Client view filter buttons */
+      div[style*="max-width: 740px"] div[style*="flex-wrap"] button {
+        min-height: 40px !important;
+        font-size: 12px !important;
+        padding: 8px 14px !important;
+      }
+
+      /* ══════════════════════════════
+         SETTINGS VIEW
+         ══════════════════════════════ */
+      div[style*="max-width: 960px"] {
+        padding: 24px 16px !important;
+        max-width: 100% !important;
+        grid-template-columns: 1fr !important;
+        gap: 20px !important;
+      }
+
+      /* ══════════════════════════════
+         GENERAL MOBILE SPACING
+         ══════════════════════════════ */
+      /* Increase spacing between form field groups */
+      .sab-add-modal > div[style*="margin-bottom: 14px"] {
+        margin-bottom: 18px !important;
+      }
+
+      /* Ensure all containers with fixed widths become fluid */
+      div[style*="width: 220px"] { width: 100% !important; }
+      div[style*="width: 320px"] { width: 100% !important; }
+      div[style*="width: 720px"] { width: calc(100vw - 16px) !important; }
+
+      /* New quote form modal fields */
+      .sab-quotes-list input {
+        font-size: 16px !important;
+        min-height: 44px !important;
+        padding: 12px 14px !important;
+      }
+
+      /* Delete button in quote cards */
+      .sab-quotes-list button[style*="font-size: 9px"] {
+        font-size: 12px !important;
+        min-height: 36px !important;
+      }
+    }
+
+    /* ── Small phone adjustments ── */
+    @media (max-width: 380px) {
+      /* Margin/Client view grids: further collapse */
+      div[style*="repeat(3, 1fr)"] {
+        grid-template-columns: 1fr !important;
+      }
+      .sab-room-defaults-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .sab-header-nav button {
+        padding: 6px 8px !important;
+        font-size: 10px !important;
+      }
     }
   </style>
 </head>
