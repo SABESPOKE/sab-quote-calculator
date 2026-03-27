@@ -2363,22 +2363,26 @@ function SABQuoteTool() {
                       </div>
                       {specOpen && (
                         <div style={{ borderTop:"1px solid #d8d3cc", padding:"12px 14px" }}>
-                          <div style={{ fontSize:9, color:"#999999", marginBottom:10 }}>Override derived spec values for the quotation document. Leave blank to auto-derive from items.</div>
+                          <div style={{ fontSize:9, color:"#999999", marginBottom:10 }}>Edit spec values for the quotation document. Values are auto-derived from items unless overridden.</div>
                           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 16px" }}>
-                            {specFields.map(([key, label]) => (
+                            {specFields.map(([key, label]) => {
+                              const isOverridden = !!spec[key];
+                              const displayValue = spec[key] || derived[key];
+                              return (
                               <div key={key}>
                                 <div style={{ fontSize:9, color:"#777777", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:3, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                                   <span>{label}</span>
-                                  {spec[key] && <span onClick={() => { const updated = { ...quotes }; if (updated[activeQuoteId].spec) { delete updated[activeQuoteId].spec[key]; saveQuotes(updated); } }} style={{ color:"#c8a96e", cursor:"pointer", fontSize:8, fontWeight:400, letterSpacing:0 }}>↺ Reset</span>}
+                                  {isOverridden && <span onClick={() => { const updated = { ...quotes }; if (updated[activeQuoteId].spec) { delete updated[activeQuoteId].spec[key]; saveQuotes(updated); } }} style={{ color:"#c8a96e", cursor:"pointer", fontSize:8, fontWeight:400, letterSpacing:0, textTransform:"none" }}>↺ Reset</span>}
                                 </div>
-                                <input value={spec[key] || ""} placeholder={derived[key]} onChange={e => {
+                                <input value={displayValue} onChange={e => {
                                   const updated = { ...quotes };
                                   if (!updated[activeQuoteId].spec) updated[activeQuoteId].spec = {};
                                   updated[activeQuoteId].spec[key] = e.target.value;
                                   saveQuotes(updated);
-                                }} style={{ background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:3, padding:"5px 8px", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }} />
+                                }} style={{ background:"#ffffff", border: isOverridden ? "1px solid #c8a96e" : "1px solid #d8d3cc", borderRadius:3, padding:"5px 8px", color: isOverridden ? "#1a1a1a" : "#777777", fontSize:11, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }} />
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
