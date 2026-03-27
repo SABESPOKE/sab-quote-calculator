@@ -1457,11 +1457,10 @@ function printQuote(quote, viewMode) {
     const itemRows = items.map(i =>
       `<tr><td class="td-desc">${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.bakedSellExVAT)}</td>` : ""}</tr>`
     ).join("");
-    const roomVAT = roomTotal * (DB.settings.vat || 0.2);
-    const roomSubRows = mode === "itemised"
-      ? `<tfoot><tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomTotal)}</td></tr></tfoot>`
-      : `<tfoot><tr class="room-sub"><td colspan="1" style="text-align:right">${fmt(roomTotal)} ex VAT &nbsp;·&nbsp; ${fmt(roomTotal + roomVAT)} inc VAT</td></tr></tfoot>`;
-    return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}</tbody>${roomSubRows}</table></div>`;
+    const roomSubRow = mode === "itemised"
+      ? `<tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomTotal)}</td></tr>`
+      : `<tr class="room-sub"><td style="text-align:right">${fmt(roomTotal)} ex VAT</td></tr>`;
+    return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}${roomSubRow}</tbody></table></div>`;
   }).join("");
   // Cabinetry spec for PDF
   const derived = deriveSpec(quote);
