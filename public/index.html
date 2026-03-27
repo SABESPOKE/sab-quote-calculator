@@ -141,9 +141,11 @@
          BUILD VIEW - 3 panel to tabbed
          ══════════════════════════════ */
       .sab-build-layout { flex-direction:column !important; height:calc(100vh - 56px - 52px) !important; }
+      .sab-sidebar-toggle { display:block !important; }
       .sab-rooms-panel {
         display:none !important;
         width:100% !important;
+        min-width:100% !important;
         border-right:none !important;
         border-bottom:1px solid #d8d3cc;
         max-height:100%;
@@ -315,6 +317,7 @@
          ══════════════════════════════ */
       .sab-items-table .sab-col-whd,
       .sab-items-table .sab-col-cost { display:none !important; }
+      .sab-items-table .sab-col-depth { display:none !important; }
 
       /* Table action buttons (Edit, Dup, ×) */
       .sab-items-panel table button {
@@ -444,6 +447,15 @@
         padding: 6px 8px !important;
         font-size: 10px !important;
       }
+    }
+
+    /* ══════════════════════════════
+       PRINT STYLES
+       ══════════════════════════════ */
+    @media print {
+      body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .sab-header, .sab-mobile-tabs, .sab-sidebar-toggle { display: none !important; }
+      [data-view-mode="total-only"] .sab-item-price { display: none !important; }
     }
   </style>
 </head>
@@ -1400,17 +1412,58 @@ function distributeProjectCosts(quote) {
   return { rooms, services, totals: t };
 }
 
+// ─── DERIVE SPEC ─────────────────────────────────────────────────────────────
+function deriveSpec(quote) {
+  const counts = { carcassMaterialKey: {}, doorType: {}, doorFinish: {}, drawerType: {}, handleKey: {} };
+  Object.values(quote.rooms || {}).forEach(room => {
+    room.items.forEach(item => {
+      const p = item.params || {};
+      if (p.carcassMaterialKey) counts.carcassMaterialKey[p.carcassMaterialKey] = (counts.carcassMaterialKey[p.carcassMaterialKey] || 0) + (item.qty || 1);
+      if (p.doorType) counts.doorType[p.doorType] = (counts.doorType[p.doorType] || 0) + (item.qty || 1);
+      if (p.doorFinish) counts.doorFinish[p.doorFinish] = (counts.doorFinish[p.doorFinish] || 0) + (item.qty || 1);
+      else if (p.doorType) { const pf = TYPE_TO_PROFILE_FINISH[p.doorType]; if (pf) counts.doorFinish[pf.finish] = (counts.doorFinish[pf.finish] || 0) + (item.qty || 1); }
+      if (p.drawerType) counts.drawerType[p.drawerType] = (counts.drawerType[p.drawerType] || 0) + (item.qty || 1);
+      if (p.handleKey) counts.handleKey[p.handleKey] = (counts.handleKey[p.handleKey] || 0) + (item.qty || 1);
+    });
+  });
+  const top = obj => Object.entries(obj).sort((a,b) => b[1] - a[1])[0]?.[0] || null;
+  const matKey = top(counts.carcassMaterialKey);
+  const dtKey = top(counts.doorType);
+  const dfKey = top(counts.doorFinish);
+  const drKey = top(counts.drawerType);
+  const hdlKey = top(counts.handleKey);
+  return {
+    carcassMaterial: matKey ? (DB.materials[matKey]?.name || matKey) : "—",
+    doorStyle: dtKey ? (DB.doorTypes[dtKey]?.name || dtKey) : "—",
+    doorFinish: dfKey ? (DOOR_FINISHES[dfKey] || dfKey) : "—",
+    drawerSystem: drKey ? (DB.drawerTypes[drKey]?.name || drKey) : "—",
+    hardware: hdlKey ? (DB.hardware.handles[hdlKey]?.name || hdlKey) : "—",
+  };
+}
+
 // ─── PRINT / PDF ──────────────────────────────────────────────────────────────
-function printQuote(quote) {
+function printQuote(quote, viewMode) {
+  const mode = viewMode || "itemised";
   const totals = quoteTotals(quote);
   const dist = distributeProjectCosts(quote);
   const roomSections = dist.rooms.map(({ roomName, items }) => {
     const roomTotal = items.reduce((s, i) => s + (i.bakedSellExVAT || 0), 0);
     const itemRows = items.map(i =>
-      `<tr><td class="td-desc">${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td><td class="td-price">${fmt(i.bakedSellExVAT)}</td></tr>`
+      `<tr><td class="td-desc">${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.bakedSellExVAT)}</td>` : ""}</tr>`
     ).join("");
     return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}</tbody><tfoot><tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomTotal)}</td></tr></tfoot></table></div>`;
   }).join("");
+  // Cabinetry spec for PDF
+  const derived = deriveSpec(quote);
+  const spec = quote.spec || {};
+  const specRows = [
+    ["Cabinet Material", spec.carcassMaterial || derived.carcassMaterial],
+    ["Door Style", spec.doorStyle || derived.doorStyle],
+    ["Door Finish", spec.doorFinish || derived.doorFinish],
+    ["Drawer System", spec.drawerSystem || derived.drawerSystem],
+    ["Hardware", spec.hardware || derived.hardware],
+  ].map(([l,v]) => `<div style="display:flex;gap:16px;padding:3px 0"><span style="font-size:8pt;color:#c8a96e;letter-spacing:.1em;min-width:110px">${l}</span><span style="font-size:9.5pt;color:#1a1815">${v}</span></div>`).join("");
+  const specBlock = `<div style="margin-bottom:24px;padding:14px 18px;background:#f9f8f6;border:0.5pt solid #e0d8cc;border-radius:4px"><div style="font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:8px;padding-bottom:5px;border-bottom:0.5pt solid #e0d8cc">Cabinetry Specification</div>${specRows}</div>`;
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><link rel='preconnect' href='https://fonts.googleapis.com'><link rel='preconnect' href='https://fonts.gstatic.com' crossorigin><link href='https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600;700&display=swap' rel='stylesheet'><title> </title><style>
   @page{margin:0;size:A4}*{margin:0;padding:0;box-sizing:border-box}
@@ -1456,6 +1509,7 @@ function printQuote(quote) {
   </div>
   <div class="client-blk"><div><div class="client-name">${quote.client}</div><div class="client-proj">${quote.project}</div></div>
   <div class="contact-info">design@stevenandrewsbespoke.com<br>www.stevenandrewsbespoke.com</div></div>
+  ${specBlock}
   <div class="sec-label">Scope of Works</div>${roomSections}
   ${dist.services.length > 0 ? `<div style="margin-bottom:18px;padding:12px 16px;background:#f9f8f6;border:0.5pt solid #e0d8cc;border-radius:4px">
   <div style="font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:8px">What's Included</div>
@@ -1619,6 +1673,11 @@ function SABQuoteTool() {
   const [clientViewMode, setClientViewMode] = useState("itemised");
   const [clientViewRoomFilter, setClientViewRoomFilter] = useState(null); // null = all rooms, or room name string
   const [editingRoomName, setEditingRoomName] = useState(null); // { original, current } or null
+  const [chatCollapsed, setChatCollapsed] = useState(false);
+  const [quoteStatusTab, setQuoteStatusTab] = useState("active");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [statusMenuOpen, setStatusMenuOpen] = useState(null); // quote id or null
+  const [specOpen, setSpecOpen] = useState(false);
 
   // Deep link: navigate to a specific quote via URL hash (e.g. #/quote/Q123...)
   useEffect(() => {
@@ -1688,7 +1747,7 @@ function SABQuoteTool() {
   function createQuote() {
     if (!newQuoteForm.client) return;
     const id = `Q${Date.now()}`;
-    const q = { id, ...newQuoteForm, ref: newQuoteForm.ref || `SAB-${new Date().getFullYear()}-${String(Object.keys(quotes).length + 1).padStart(3,"0")}`, created: new Date().toLocaleDateString("en-GB"), rooms: {}, projectCosts: getDefaultProjectCosts() };
+    const q = { id, ...newQuoteForm, ref: newQuoteForm.ref || `SAB-${new Date().getFullYear()}-${String(Object.keys(quotes).length + 1).padStart(3,"0")}`, created: new Date().toLocaleDateString("en-GB"), rooms: {}, projectCosts: getDefaultProjectCosts(), status: "active" };
     saveQuotes({ ...quotes, [id]: q });
     setActiveQuoteId(id); setShowNewQuote(false);
     setNewQuoteForm({ client:"", project:"", ref:"" });
@@ -1769,6 +1828,14 @@ function SABQuoteTool() {
     if (activeQuoteId === id) { setActiveQuoteId(null); setView("quotes"); }
     // Also delete from server
     if (dbReady) fetch('/api/quotes/' + id, { method: 'DELETE' }).catch(() => {});
+  }
+
+  function updateQuoteStatus(id, newStatus) {
+    const updated = { ...quotes };
+    updated[id] = { ...updated[id], status: newStatus };
+    saveQuotes(updated);
+    setStatusMenuOpen(null);
+    if (dbReady) fetch('/api/quotes/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }) }).catch(() => {});
   }
 
   // Re-price every item in every quote after a DB setting change
@@ -2014,7 +2081,7 @@ function SABQuoteTool() {
             {[["build","Build"],["margin","Margin"],["client","Client View"]].map(([v,l]) => (
               <button key={v} onClick={() => setView(v)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", background:view===v?"#c8a96e":"transparent", color:view===v?"#1a1a1a":"#777777", border:"none", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
             ))}
-            <button onClick={() => printQuote(activeQuote)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>↓ PDF</button>
+            <button onClick={() => printQuote(activeQuote, clientViewMode)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>↓ PDF</button>
             <button onClick={() => { setView("quotes"); setActiveQuoteId(null); }} style={{ padding:"6px 14px", fontSize:11, background:"transparent", color:"#777777", border:"none", cursor:"pointer", fontFamily:"inherit" }}>← All</button>
             <div style={{ width:1, height:20, background:"#d8d3cc", margin:"0 4px" }} />
           </>)}
@@ -2025,10 +2092,9 @@ function SABQuoteTool() {
       {/* ── QUOTES LIST ── */}
       {view === "quotes" && (
         <div className="sab-quotes-list" style={{ maxWidth:820, margin:"0 auto", padding:"40px 24px" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:32 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
             <div>
               <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:5 }}>Quote Management</div>
-              <div style={{ fontSize:26, color:"#1a1a1a" }}>Active Quotes</div>
             </div>
             <div style={{ display:"flex", gap:8, alignItems:"center" }}>
               <button onClick={() => setShowNewQuote(true)} style={{ padding:"11px 22px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>+ New Quote</button>
@@ -2038,6 +2104,15 @@ function SABQuoteTool() {
                 <input type="file" accept=".json" onChange={importBackup} style={{ display:"none" }} />
               </label>
             </div>
+          </div>
+          {/* Status folder tabs */}
+          <div style={{ display:"flex", gap:2, marginBottom:24 }}>
+            {[["active","Active"],["sold","Sold"],["lost","Lost"],["archive","Archive"]].map(([k,l]) => {
+              const count = Object.values(quotes).filter(q => (q.status || "active") === k).length;
+              return (
+                <button key={k} onClick={() => setQuoteStatusTab(k)} style={{ padding:"7px 16px", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", background: quoteStatusTab===k ? "#c8a96e" : "transparent", color: quoteStatusTab===k ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{l} ({count})</button>
+              );
+            })}
           </div>
           {showNewQuote && (
             <div style={{ background:"#f0eeeb", border:"1px solid #c8c3bc", borderRadius:8, padding:26, marginBottom:22 }}>
@@ -2060,7 +2135,7 @@ function SABQuoteTool() {
               <div style={{ fontSize:13, letterSpacing:"0.05em" }}>No quotes yet — create your first one</div>
             </div>
           )}
-          {Object.values(quotes).map(q => {
+          {Object.values(quotes).filter(q => (q.status || "active") === quoteStatusTab).map(q => {
             const t = quoteTotals(q);
             const rc = Object.keys(q.rooms||{}).length;
             const ic = Object.values(q.rooms||{}).reduce((s,r) => s+r.items.length, 0);
@@ -2074,10 +2149,23 @@ function SABQuoteTool() {
                   <div style={{ fontSize:11, color:"#777777" }}>{q.project} · {q.ref} · {q.created}</div>
                   <div style={{ fontSize:10, color:"#999999", marginTop:3 }}>{rc} room{rc!==1?"s":""} · {ic} item{ic!==1?"s":""}</div>
                 </div>
-                <div style={{ textAlign:"right" }}>
-                  <div style={{ fontSize:19, color:"#c8a96e" }}>{fmt(t.totalExVAT)}</div>
-                  <div style={{ fontSize:9, color:"#999999", letterSpacing:"0.08em" }}>EX VAT</div>
-                  <button onClick={e => { e.stopPropagation(); deleteQuote(q.id); }} style={{ marginTop:6, background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>Delete</button>
+                <div style={{ textAlign:"right", display:"flex", alignItems:"flex-start", gap:8 }}>
+                  <div>
+                    <div style={{ fontSize:19, color:"#c8a96e" }}>{fmt(t.totalExVAT)}</div>
+                    <div style={{ fontSize:9, color:"#999999", letterSpacing:"0.08em" }}>EX VAT</div>
+                    <button onClick={e => { e.stopPropagation(); deleteQuote(q.id); }} style={{ marginTop:6, background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>Delete</button>
+                  </div>
+                  <div style={{ position:"relative" }}>
+                    <button onClick={e => { e.stopPropagation(); setStatusMenuOpen(statusMenuOpen === q.id ? null : q.id); }} style={{ background:"transparent", border:"1px solid #d8d3cc", borderRadius:3, color:"#777777", cursor:"pointer", fontSize:16, padding:"2px 6px", fontFamily:"inherit", lineHeight:1 }}>⋮</button>
+                    {statusMenuOpen === q.id && (
+                      <div style={{ position:"absolute", right:0, top:"100%", marginTop:4, background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:6, boxShadow:"0 4px 12px rgba(0,0,0,0.1)", zIndex:100, minWidth:130, overflow:"hidden" }}>
+                        <div style={{ padding:"8px 12px", fontSize:9, color:"#999999", letterSpacing:"0.1em", textTransform:"uppercase", borderBottom:"1px solid #f0eeeb" }}>Move to</div>
+                        {[["active","Active"],["sold","Sold"],["lost","Lost"],["archive","Archive"]].filter(([k]) => k !== (q.status || "active")).map(([k,l]) => (
+                          <div key={k} onClick={e => { e.stopPropagation(); updateQuoteStatus(q.id, k); }} style={{ padding:"8px 14px", fontSize:11, color:"#555555", cursor:"pointer", borderBottom:"1px solid #f0eeeb" }} onMouseEnter={e => e.currentTarget.style.background="#f9f8f6"} onMouseLeave={e => e.currentTarget.style.background="transparent"}>{l}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -2089,8 +2177,10 @@ function SABQuoteTool() {
       {view === "build" && activeQuote && (
         <div className="sab-build-layout" style={{ display:"flex", height:"calc(100vh - 56px)" }}>
 
+          {/* Sidebar toggle button (visible on mobile) */}
+          <button className="sab-sidebar-toggle" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} style={{ display:"none", position:"fixed", top:64, left:8, zIndex:50, background:"#f0eeeb", border:"1px solid #d8d3cc", borderRadius:4, color:"#777777", cursor:"pointer", fontSize:16, padding:"4px 8px", fontFamily:"monospace" }}>{sidebarCollapsed ? "☰" : "✕"}</button>
           {/* Left sidebar — rooms */}
-          <div className={"sab-rooms-panel" + (mobilePanel === "rooms" ? " active" : "")} style={{ width:220, background:"#f5f5f5", borderRight:"1px solid #d8d3cc", display:"flex", flexDirection:"column", padding:"18px 0" }}>
+          <div className={"sab-rooms-panel" + (mobilePanel === "rooms" ? " active" : "")} style={{ width: sidebarCollapsed ? 0 : 220, minWidth: sidebarCollapsed ? 0 : 220, background:"#f5f5f5", borderRight: sidebarCollapsed ? "none" : "1px solid #d8d3cc", display: sidebarCollapsed ? "none" : "flex", flexDirection:"column", padding: sidebarCollapsed ? 0 : "18px 0", overflow:"hidden", transition:"width 0.2s" }}>
             <div style={{ padding:"0 15px 14px", borderBottom:"1px solid #d8d3cc" }}>
               <input value={activeQuote.ref} onChange={e => { const u = { ...quotes }; u[activeQuoteId].ref = e.target.value; saveQuotes(u); }} style={{ fontSize:9, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:3, background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
               <input value={activeQuote.client} onChange={e => { const u = { ...quotes }; u[activeQuoteId].client = e.target.value; saveQuotes(u); }} style={{ fontSize:12, color:"#1a1a1a", background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
@@ -2240,15 +2330,60 @@ function SABQuoteTool() {
 
                 <div style={{ fontSize:10, color:"#999999", marginBottom:20, letterSpacing:"0.04em" }}>Use the form or describe items in the chat →</div>
 
+                {/* Specification overrides (collapsible) */}
+                {(() => {
+                  const spec = activeQuote.spec || {};
+                  const derived = deriveSpec(activeQuote);
+                  const specFields = [
+                    ["carcassMaterial", "Cabinet Material"],
+                    ["doorStyle", "Door Style"],
+                    ["doorFinish", "Door Finish"],
+                    ["drawerSystem", "Drawer System"],
+                    ["hardware", "Hardware"],
+                  ];
+                  return (
+                    <div style={{ marginBottom:16, border:"1px solid #d8d3cc", borderRadius:6, background:"#f5f5f5", overflow:"hidden" }}>
+                      <div onClick={() => setSpecOpen(!specOpen)} style={{ padding:"10px 14px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                        <div style={{ fontSize:10, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase" }}>Specification</div>
+                        <span style={{ color:"#777777", fontSize:11 }}>{specOpen ? "▲" : "▼"}</span>
+                      </div>
+                      {specOpen && (
+                        <div style={{ borderTop:"1px solid #d8d3cc", padding:"12px 14px" }}>
+                          <div style={{ fontSize:9, color:"#999999", marginBottom:10 }}>Override derived spec values for the quotation document. Leave blank to auto-derive from items.</div>
+                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 16px" }}>
+                            {specFields.map(([key, label]) => (
+                              <div key={key}>
+                                <div style={{ fontSize:9, color:"#777777", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:3 }}>{label}</div>
+                                <input value={spec[key] || ""} placeholder={derived[key]} onChange={e => {
+                                  const updated = { ...quotes };
+                                  if (!updated[activeQuoteId].spec) updated[activeQuoteId].spec = {};
+                                  updated[activeQuoteId].spec[key] = e.target.value;
+                                  saveQuotes(updated);
+                                }} style={{ background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:3, padding:"5px 8px", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {(activeQuote.rooms[activeRoom]?.items || []).length === 0 ? (
                   <div style={{ padding:"40px 0", color:"#d8d3cc", fontSize:12, textAlign:"center" }}>No items yet</div>
                 ) : (
-                  <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
+                  <table className="sab-items-table" style={{ width:"100%", borderCollapse:"collapse" }}>
                     <thead>
                       <tr style={{ borderBottom:"1px solid #d8d3cc" }}>
-                        {["Item","Qty","W","H","D","Cost","Sell ex VAT",""].map(h => (
-                          <th key={h} style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400 }}>{h}</th>
-                        ))}
+                        <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, width:"100%" }}>Item</th>
+                        <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, whiteSpace:"nowrap" }}>Qty</th>
+                        <th className="sab-col-whd" style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, whiteSpace:"nowrap" }}>W</th>
+                        <th className="sab-col-whd" style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, whiteSpace:"nowrap" }}>H</th>
+                        <th className="sab-col-depth" style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, whiteSpace:"nowrap" }}>D</th>
+                        <th className="sab-col-cost" style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, whiteSpace:"nowrap" }}>Cost</th>
+                        <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, whiteSpace:"nowrap" }}>Sell ex VAT</th>
+                        <th style={{ padding:"7px 10px" }}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2264,9 +2399,9 @@ function SABQuoteTool() {
                             </td>
                             <td style={{ padding:"10px" }}><input type="number" value={item.qty || ""} onClick={e => e.stopPropagation()} onChange={e => { const v = e.target.value === "" ? 1 : Math.max(1, +e.target.value); const updated = { ...quotes }; const it = updated[activeQuoteId].rooms[activeRoom].items[idx]; it.qty = v; it.pricing = priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid transparent", color:"#777777", fontSize:11, fontFamily:"inherit", width:36, padding:0, outline:"none", textAlign:"center" }} onFocus={e=>e.target.style.borderBottomColor="#c8a96e"} onBlur={e=>e.target.style.borderBottomColor="transparent"} min={1} /></td>
                             {["widthMm","heightMm","depthMm"].map(dim => (
-                            <td key={dim} style={{ padding:"10px" }}>{item.params?.[dim] ? <input type="number" value={item.params[dim] || ""} onClick={e => e.stopPropagation()} onChange={e => { const v = e.target.value === "" ? 0 : +e.target.value; const updated = { ...quotes }; const it = updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params[dim] = v; it.pricing = priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid transparent", color:"#777777", fontSize:10, fontFamily:"inherit", width:42, padding:0, outline:"none", textAlign:"center" }} onFocus={e=>e.target.style.borderBottomColor="#c8a96e"} onBlur={e=>e.target.style.borderBottomColor="transparent"} /> : <span style={{ fontSize:10, color:"#777777" }}>—</span>}</td>
+                            <td key={dim} className={dim === "depthMm" ? "sab-col-depth" : "sab-col-whd"} style={{ padding:"10px" }}>{item.params?.[dim] ? <input type="number" value={item.params[dim] || ""} onClick={e => e.stopPropagation()} onChange={e => { const v = e.target.value === "" ? 0 : +e.target.value; const updated = { ...quotes }; const it = updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params[dim] = v; it.pricing = priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid transparent", color:"#777777", fontSize:10, fontFamily:"inherit", width:42, padding:0, outline:"none", textAlign:"center" }} onFocus={e=>e.target.style.borderBottomColor="#c8a96e"} onBlur={e=>e.target.style.borderBottomColor="transparent"} /> : <span style={{ fontSize:10, color:"#777777" }}>—</span>}</td>
                             ))}
-                            <td style={{ padding:"10px", fontSize:11, color:"#999999" }}>{fmt(item.pricing?.totalCost)}</td>
+                            <td className="sab-col-cost" style={{ padding:"10px", fontSize:11, color:"#999999" }}>{fmt(item.pricing?.totalCost)}</td>
                             <td style={{ padding:"10px", fontSize:13, color:"#c8a96e", fontWeight:500 }}>{fmt(item.pricing?.totalSellExVAT)}</td>
                             <td style={{ padding:"10px", whiteSpace:"nowrap" }}>
                               <button onClick={e => { e.stopPropagation(); editItem(activeRoom, idx); }} style={{ background:"transparent", border:"1px solid #d8d3cc", borderRadius:3, color:"#777777", cursor:"pointer", fontSize:9, padding:"3px 7px", fontFamily:"inherit", letterSpacing:"0.06em", marginRight:5 }}>Edit</button>
@@ -2305,6 +2440,7 @@ function SABQuoteTool() {
                       </tr>
                     </tfoot>
                   </table>
+                </div>
                 )}
 
                 {/* Design time row */}
@@ -2409,9 +2545,12 @@ function SABQuoteTool() {
           </div>
 
           {/* Right sidebar — chat */}
-          <div className={"sab-chat-panel" + (mobilePanel === "chat" ? " active" : "")} style={{ width:320, background:"#f5f5f5", borderLeft:"1px solid #d8d3cc", display:"flex", flexDirection:"column" }}>
-            <div style={{ padding:"14px 18px", borderBottom:"1px solid #d8d3cc", fontSize:10, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase" }}>AI Pricing Chat</div>
-            <div style={{ flex:1, overflowY:"auto", padding:"14px 18px", display:"flex", flexDirection:"column", gap:10 }}>
+          <div className={"sab-chat-panel" + (mobilePanel === "chat" ? " active" : "")} style={{ width: chatCollapsed ? "auto" : 320, background:"#f5f5f5", borderLeft:"1px solid #d8d3cc", display:"flex", flexDirection:"column" }}>
+            <div style={{ padding:"14px 18px", borderBottom:"1px solid #d8d3cc", fontSize:10, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span>AI Pricing Chat</span>
+              <button onClick={() => setChatCollapsed(!chatCollapsed)} style={{ background:"transparent", border:"1px solid #d8d3cc", borderRadius:3, color:"#999999", cursor:"pointer", fontSize:14, padding:"0 6px", lineHeight:"20px", fontFamily:"monospace" }}>{chatCollapsed ? "+" : "−"}</button>
+            </div>
+            {!chatCollapsed && <><div style={{ flex:1, overflowY:"auto", padding:"14px 18px", display:"flex", flexDirection:"column", gap:10 }}>
               {chatHistory.map((m,i) => (
                 <div key={i} style={{ display:"flex", justifyContent:m.role==="user"?"flex-end":"flex-start" }}>
                   <div style={{ maxWidth:"88%", padding:"9px 13px", borderRadius:8, background:m.role==="user"?"#c8a96e":"#f0eeeb", color:m.role==="user"?"#ffffff":"#777777", fontSize:11, lineHeight:1.6, whiteSpace:"pre-wrap" }}>
@@ -2434,6 +2573,7 @@ function SABQuoteTool() {
                 <button onClick={sendMessage} disabled={!activeRoom||isThinking} style={{ padding:"8px 13px", background:activeRoom?"#c8a96e":"#d8d3cc", color:activeRoom?"#ffffff":"#999999", border:"none", borderRadius:4, cursor:activeRoom?"pointer":"default", fontSize:11, fontFamily:"inherit", fontWeight:600 }}>→</button>
               </div>
             </div>
+            </>}
           </div>
         </div>
       )}
@@ -3134,7 +3274,7 @@ function SABQuoteTool() {
         const filteredVAT = filteredSubtotal * (DB.settings.vat || 0.2);
         const filteredTotal = filteredSubtotal + filteredVAT;
         return (
-          <div style={{ maxWidth:740, margin:"0 auto", padding:"46px 30px" }}>
+          <div data-view-mode={clientViewMode === "itemised" ? "itemised" : "total-only"} style={{ maxWidth:740, margin:"0 auto", padding:"46px 30px" }}>
             {/* Header */}
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:44, paddingBottom:28, borderBottom:"1px solid #d8d3cc" }}>
               <div>
@@ -3150,6 +3290,32 @@ function SABQuoteTool() {
                 <div>{activeQuote.project}</div>
               </div>
             </div>
+
+            {/* Cabinetry Specification */}
+            {(() => {
+              const derived = deriveSpec(activeQuote);
+              const spec = activeQuote.spec || {};
+              const rows = [
+                ["Cabinet Material", spec.carcassMaterial || derived.carcassMaterial],
+                ["Door Style", spec.doorStyle || derived.doorStyle],
+                ["Door Finish", spec.doorFinish || derived.doorFinish],
+                ["Drawer System", spec.drawerSystem || derived.drawerSystem],
+                ["Hardware", spec.hardware || derived.hardware],
+              ];
+              return (
+                <div className="sab-spec-block" style={{ marginBottom:28, padding:"18px 22px", background:"#f9f8f6", borderRadius:6, border:"1px solid #d8d3cc" }}>
+                  <div style={{ fontSize:9, letterSpacing:"0.2em", color:"#c8a96e", textTransform:"uppercase", marginBottom:12, paddingBottom:6, borderBottom:"1px solid #e0d8cc" }}>Cabinetry Specification</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"140px 1fr", gap:"6px 16px" }}>
+                    {rows.map(([label, value]) => (
+                      <React.Fragment key={label}>
+                        <div style={{ fontSize:10, color:"#c8a96e", letterSpacing:"0.06em" }}>{label}</div>
+                        <div style={{ fontSize:11, color:"#1a1a1a" }}>{value}</div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Room filter + View toggle */}
             {dist.rooms.length > 1 && (
@@ -3179,7 +3345,7 @@ function SABQuoteTool() {
                       <span style={{ color:"#333333" }}>{item.qty > 1 ? item.qty + "× " : ""}{item.description}</span>
                       {item.params?.widthMm && <span style={{ fontSize:10, color:"#999999", marginLeft:10 }}>{item.params.widthMm}×{item.params.heightMm}{item.params.depthMm ? "×" + item.params.depthMm : ""} mm</span>}
                     </div>
-                    {clientViewMode === "itemised" && <span style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.bakedSellExVAT)}</span>}
+                    {clientViewMode === "itemised" && <span className="sab-item-price" style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.bakedSellExVAT)}</span>}
                   </div>
                 ))}
                 <div style={{ marginTop:8, paddingTop:8 }}>

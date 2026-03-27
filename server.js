@@ -52,6 +52,27 @@ app.put('/api/quotes/:id', async (req, res) => {
   }
 });
 
+// Patch a quote (e.g. update status)
+app.patch('/api/quotes/:id', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'No database' });
+  const { id } = req.params;
+  const patch = req.body;
+  try {
+    // Read current data, merge patch fields into it, write back
+    const { rows } = await pool.query('SELECT data FROM quotes WHERE id = $1', [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const updated = { ...rows[0].data, ...patch };
+    await pool.query(
+      'UPDATE quotes SET data = $1, updated_at = NOW() WHERE id = $2',
+      [JSON.stringify(updated), id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PATCH /api/quotes error:', err.message);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
 // Delete a quote
 app.delete('/api/quotes/:id', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });
