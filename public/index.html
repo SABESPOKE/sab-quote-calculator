@@ -1414,7 +1414,7 @@ function distributeProjectCosts(quote) {
 
 // ─── DERIVE SPEC ─────────────────────────────────────────────────────────────
 function deriveSpec(quote) {
-  const counts = { carcassMaterialKey: {}, doorType: {}, doorFinish: {}, drawerType: {}, handleKey: {} };
+  const counts = { carcassMaterialKey: {}, doorType: {}, doorFinish: {}, drawerType: {}, handleKey: {}, frameKey: {}, hingeKey: {} };
   Object.values(quote.rooms || {}).forEach(room => {
     room.items.forEach(item => {
       const p = item.params || {};
@@ -1424,6 +1424,8 @@ function deriveSpec(quote) {
       else if (p.doorType) { const pf = TYPE_TO_PROFILE_FINISH[p.doorType]; if (pf) counts.doorFinish[pf.finish] = (counts.doorFinish[pf.finish] || 0) + (item.qty || 1); }
       if (p.drawerType) counts.drawerType[p.drawerType] = (counts.drawerType[p.drawerType] || 0) + (item.qty || 1);
       if (p.handleKey) counts.handleKey[p.handleKey] = (counts.handleKey[p.handleKey] || 0) + (item.qty || 1);
+      if (p.frameKey) counts.frameKey[p.frameKey] = (counts.frameKey[p.frameKey] || 0) + (item.qty || 1);
+      if (p.hingeKey) counts.hingeKey[p.hingeKey] = (counts.hingeKey[p.hingeKey] || 0) + (item.qty || 1);
     });
   });
   const top = obj => Object.entries(obj).sort((a,b) => b[1] - a[1])[0]?.[0] || null;
@@ -1432,11 +1434,15 @@ function deriveSpec(quote) {
   const dfKey = top(counts.doorFinish);
   const drKey = top(counts.drawerType);
   const hdlKey = top(counts.handleKey);
+  const frmKey = top(counts.frameKey);
+  const hngKey = top(counts.hingeKey);
   return {
     carcassMaterial: matKey ? (DB.materials[matKey]?.name || matKey) : "—",
+    frame: frmKey ? (frmKey === "FRAME_NONE" ? "Frameless" : (FRAME_MATERIALS[frmKey]?.name || frmKey)) : "Frameless",
     doorStyle: dtKey ? (DB.doorTypes[dtKey]?.name || dtKey) : "—",
     doorFinish: dfKey ? (DOOR_FINISHES[dfKey] || dfKey) : "—",
     drawerSystem: drKey ? (DB.drawerTypes[drKey]?.name || drKey) : "—",
+    hinge: hngKey ? (DB.hardware.hinges[hngKey]?.name || hngKey) : "—",
     hardware: hdlKey ? (DB.hardware.handles[hdlKey]?.name || hdlKey) : "—",
   };
 }
@@ -1451,16 +1457,22 @@ function printQuote(quote, viewMode) {
     const itemRows = items.map(i =>
       `<tr><td class="td-desc">${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.bakedSellExVAT)}</td>` : ""}</tr>`
     ).join("");
-    return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}</tbody><tfoot><tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomTotal)}</td></tr></tfoot></table></div>`;
+    const roomVAT = roomTotal * (DB.settings.vat || 0.2);
+    const roomSubRows = mode === "itemised"
+      ? `<tfoot><tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomTotal)}</td></tr></tfoot>`
+      : `<tfoot><tr class="room-sub"><td colspan="1" style="text-align:right">${fmt(roomTotal)} ex VAT &nbsp;·&nbsp; ${fmt(roomTotal + roomVAT)} inc VAT</td></tr></tfoot>`;
+    return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}</tbody>${roomSubRows}</table></div>`;
   }).join("");
   // Cabinetry spec for PDF
   const derived = deriveSpec(quote);
   const spec = quote.spec || {};
   const specRows = [
     ["Cabinet Material", spec.carcassMaterial || derived.carcassMaterial],
+    ["Frame", spec.frame || derived.frame],
     ["Door Style", spec.doorStyle || derived.doorStyle],
     ["Door Finish", spec.doorFinish || derived.doorFinish],
     ["Drawer System", spec.drawerSystem || derived.drawerSystem],
+    ["Hinge", spec.hinge || derived.hinge],
     ["Hardware", spec.hardware || derived.hardware],
   ].map(([l,v]) => `<div style="display:flex;gap:16px;padding:3px 0"><span style="font-size:8pt;color:#c8a96e;letter-spacing:.1em;min-width:110px">${l}</span><span style="font-size:9.5pt;color:#1a1815">${v}</span></div>`).join("");
   const specBlock = `<div style="margin-bottom:24px;padding:14px 18px;background:#f9f8f6;border:0.5pt solid #e0d8cc;border-radius:4px"><div style="font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:8px;padding-bottom:5px;border-bottom:0.5pt solid #e0d8cc">Cabinetry Specification</div>${specRows}</div>`;
@@ -1483,7 +1495,7 @@ function printQuote(quote, viewMode) {
   .client-name{font-size:12pt;color:#1a1815;font-weight:500;margin-bottom:3px}.client-proj{font-size:9pt;color:#5a5045;font-weight:300}
   .contact-info{text-align:right;font-size:8.5pt;color:#888888;line-height:1.8}
   .sec-label{font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:10px;padding-bottom:5px;border-bottom:0.5pt solid #e0d8cc}
-  .room-block{margin-bottom:24px;page-break-inside:avoid}
+  .room-block{margin-bottom:24px}
   .room-title{font-size:8pt;letter-spacing:.22em;text-transform:uppercase;color:#c8a96e;font-weight:700;margin-bottom:8px;padding-bottom:4px;border-bottom:0.5pt solid #ede8e0}
   .item-tbl{width:100%;border-collapse:collapse}
   .item-tbl td{padding:5.5px 0;border-bottom:0.5pt solid #f2ede6;font-size:9.5pt;vertical-align:top;font-weight:400}
@@ -2336,9 +2348,11 @@ function SABQuoteTool() {
                   const derived = deriveSpec(activeQuote);
                   const specFields = [
                     ["carcassMaterial", "Cabinet Material"],
+                    ["frame", "Frame"],
                     ["doorStyle", "Door Style"],
                     ["doorFinish", "Door Finish"],
                     ["drawerSystem", "Drawer System"],
+                    ["hinge", "Hinge"],
                     ["hardware", "Hardware"],
                   ];
                   return (
@@ -2353,7 +2367,10 @@ function SABQuoteTool() {
                           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 16px" }}>
                             {specFields.map(([key, label]) => (
                               <div key={key}>
-                                <div style={{ fontSize:9, color:"#777777", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:3 }}>{label}</div>
+                                <div style={{ fontSize:9, color:"#777777", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:3, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                                  <span>{label}</span>
+                                  {spec[key] && <span onClick={() => { const updated = { ...quotes }; if (updated[activeQuoteId].spec) { delete updated[activeQuoteId].spec[key]; saveQuotes(updated); } }} style={{ color:"#c8a96e", cursor:"pointer", fontSize:8, fontWeight:400, letterSpacing:0 }}>↺ Reset</span>}
+                                </div>
                                 <input value={spec[key] || ""} placeholder={derived[key]} onChange={e => {
                                   const updated = { ...quotes };
                                   if (!updated[activeQuoteId].spec) updated[activeQuoteId].spec = {};
@@ -3297,9 +3314,11 @@ function SABQuoteTool() {
               const spec = activeQuote.spec || {};
               const rows = [
                 ["Cabinet Material", spec.carcassMaterial || derived.carcassMaterial],
+                ["Frame", spec.frame || derived.frame],
                 ["Door Style", spec.doorStyle || derived.doorStyle],
                 ["Door Finish", spec.doorFinish || derived.doorFinish],
                 ["Drawer System", spec.drawerSystem || derived.drawerSystem],
+                ["Hinge", spec.hinge || derived.hinge],
                 ["Hardware", spec.hardware || derived.hardware],
               ];
               return (
