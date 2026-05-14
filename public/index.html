@@ -310,6 +310,16 @@ const DB = {
     "I_ISLAND":     { name:"Island Base Cabinet",         w:1200, h:900,  d:700, doors:4, drawers:2, shelves:1, group:"Island" },
     "I_PENINSULA":  { name:"Peninsula Cabinet",           w:1200, h:900,  d:600, doors:4, drawers:2, shelves:1, group:"Island" },
     "I_PLATE_RACK": { name:"Plate Rack Unit",             w:800,  h:1500, d:300, doors:2, drawers:0, shelves:2, group:"Island" },
+    // ── WARDROBES (carcass H=2200, D=580 unless noted) ────────────────────────
+    "WRDB_SINGLE":    { name:"Single Wardrobe – 1 Door, Hanging",   w:500,  h:2200, d:580, doors:1, drawers:0, shelves:1, group:"Wardrobe" },
+    "WRDB_DOUBLE":    { name:"Double Wardrobe – 2 Door, Hanging",   w:1000, h:2200, d:580, doors:2, drawers:0, shelves:1, group:"Wardrobe" },
+    "WRDB_DBL_SHELF": { name:"Double – Half Hang / Half Shelf",     w:1000, h:2200, d:580, doors:2, drawers:0, shelves:4, group:"Wardrobe" },
+    "WRDB_DBL_DRW":   { name:"Double – Hanging + Drawers",          w:1000, h:2200, d:580, doors:2, drawers:3, shelves:1, group:"Wardrobe" },
+    "WRDB_TRIPLE":    { name:"Triple Wardrobe – 3 Door",            w:1500, h:2200, d:580, doors:3, drawers:0, shelves:2, group:"Wardrobe" },
+    "WRDB_QUAD":      { name:"Quad Wardrobe – 4 Door",              w:2000, h:2200, d:580, doors:4, drawers:0, shelves:2, group:"Wardrobe" },
+    "WRDB_CORNER":    { name:"Corner Wardrobe – L-shape",           w:1200, h:2200, d:580, doors:2, drawers:0, shelves:2, group:"Wardrobe" },
+    "WRDB_DRW_STACK": { name:"Wardrobe Drawer Stack (internal)",    w:500,  h:800,  d:550, doors:0, drawers:4, shelves:0, group:"Wardrobe" },
+    "WRDB_LINEN":     { name:"Linen / Airing Cupboard",             w:600,  h:2200, d:450, doors:2, drawers:0, shelves:6, group:"Wardrobe" },
   },
 };
 
@@ -869,6 +879,26 @@ ISLAND & FURNITURE:
   "island" / "kitchen island" / "island base" → doors:4, drawers:2, shelves:1, w:1200, h:900, d:700
   "peninsula" → doors:4, drawers:2, shelves:1, w:1200, h:900, d:600
   "plate rack" → doors:2, shelves:2, w:800, h:1500, d:300
+
+WARDROBES (h=2200, d=580 unless noted):
+  "single wardrobe" / "1 door robe" / "narrow wardrobe" → doors:1, w:500
+  "double wardrobe" / "2 door wardrobe" / "fitted double" → doors:2, w:1000
+  "half hang half shelf" / "wardrobe with shelves" / "shelved robe" → doors:2, shelves:4, w:1000
+  "wardrobe with drawers" / "hanging plus drawers" / "robe and drawers" → doors:2, drawers:3, w:1000
+  "triple wardrobe" / "3 door wardrobe" → doors:3, shelves:2, w:1500
+  "quad wardrobe" / "4 door wardrobe" / "wall of wardrobes" → doors:4, shelves:2, w:2000
+  "corner wardrobe" / "L-shape wardrobe" / "corner robe" → doors:2, shelves:2, w:1200
+  "wardrobe drawer stack" / "internal drawers" / "wardrobe drawers" → doors:0, drawers:4, h:800, d:550, w:500
+  "linen cupboard" / "airing cupboard" / "tall storage robe" → doors:2, shelves:6, d:450, w:600
+
+FUZZY MATCHING RULE — When a described item does not match any named cabinet type exactly:
+1. Select the closest named cabinet type by function and size (e.g. a "shoe cupboard 400×1800×500" → WRDB_SINGLE or T_BROOM, whichever is closer in depth and door count)
+2. Use that type's cabinetTypeKey in the params so the pricing formula is correct
+3. Set the description field to the client's actual name (e.g. "Shoe Cupboard")
+4. Add a note field explaining the match, e.g. "note": "Priced as WRDB_SINGLE — closest match by size and configuration"
+
+Priority for matching: (1) function/use, (2) height group (base/wall/tall/wardrobe), (3) door count, (4) nearest width.
+Never invent a new cabinet type — always resolve to an existing key.
 
 TYPE: "door" — standalone door panel
   params: doorType, widthMm, heightMm, hingeCost (optional, total hinge cost), handleCost (optional)
