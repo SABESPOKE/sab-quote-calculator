@@ -1596,6 +1596,12 @@ function SABQuoteTool() {
         ? { type:"frame", qty: addItemForm.qty, params: { species: addItemForm.species, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, labourHrs: addItemForm.labourHrs } }
         : addItemForm.type === "drawer"
         ? { type:"drawer", qty: addItemForm.qty, params: { drawerType: addItemForm.drawerType, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, depthMm: addItemForm.depthMm, runnerCostOverride: DB.hardware.runners[addItemForm.runnerKey]?.costPair, carcassMaterialKey: addItemForm.carcassMaterialKey } }
+        : addItemForm.type === "endpanel"
+        ? { type:"endpanel", qty: addItemForm.qty, params: { materialKey: addItemForm.materialKey || "MAT_BIRCH_UNF_18", widthMm: +addItemForm.widthMm, heightMm: +addItemForm.heightMm, thicknessMm: +addItemForm.thicknessMm || 18, faces: +addItemForm.faces || 1, exposedEdgeCount: +addItemForm.exposedEdgeCount || 2, finishType: addItemForm.finishType || "paint", hasStain: !!addItemForm.hasStain } }
+        : addItemForm.type === "shelf"
+        ? { type:"shelf", qty: addItemForm.qty, params: { materialKey: addItemForm.materialKey || "MAT_BIRCH_PREF_18", lengthMm: +addItemForm.lengthMm || 600, depthMm: +addItemForm.depthMm || 300, thicknessMm: +addItemForm.thicknessMm || 18, visibleThicknessMm: +addItemForm.visibleThicknessMm || 18, faces: +addItemForm.faces || 1, finishType: addItemForm.finishType || "lacquer", hasStain: !!addItemForm.hasStain } }
+        : addItemForm.type === "moulding"
+        ? { type:"moulding", qty: addItemForm.qty, params: { mouldingKey: addItemForm.mouldingKey || "MLD_SKR_MDF_95", metres: +addItemForm.metres || 3 } }
         : { type:"custom", qty: addItemForm.qty, params: { unitCostExVAT: addItemForm.unitCostExVAT, notes: addItemForm.notes } };
       return priceItem(item);
     } catch { return null; }
