@@ -306,10 +306,6 @@ const DB = {
     "W_MW":         { name:"Microwave Housing",           w:600,  h:500,  d:350, doors:0, drawers:0, shelves:0, group:"Wall" },
     "W_ABOVE_FF":   { name:"Above-Fridge Wall Unit",      w:600,  h:400,  d:300, doors:1, drawers:0, shelves:0, group:"Wall" },
     "W_XTALL":      { name:"Wall – Extra Tall (1060h)",   w:600,  h:1060, d:300, doors:2, drawers:0, shelves:3, group:"Wall" },
-    // ── ISLAND & FURNITURE ────────────────────────────────────────────────────
-    "I_ISLAND":     { name:"Island Base Cabinet",         w:1200, h:900,  d:700, doors:4, drawers:2, shelves:1, group:"Island" },
-    "I_PENINSULA":  { name:"Peninsula Cabinet",           w:1200, h:900,  d:600, doors:4, drawers:2, shelves:1, group:"Island" },
-    "I_PLATE_RACK": { name:"Plate Rack Unit",             w:800,  h:1500, d:300, doors:2, drawers:0, shelves:2, group:"Island" },
     // ── WARDROBES (carcass H=2200, D=580 unless noted) ────────────────────────
     "WRDB_SINGLE":    { name:"Single Wardrobe – 1 Door, Hanging",   w:500,  h:2200, d:580, doors:1, drawers:0, shelves:1, group:"Wardrobe" },
     "WRDB_DOUBLE":    { name:"Double Wardrobe – 2 Door, Hanging",   w:1000, h:2200, d:580, doors:2, drawers:0, shelves:1, group:"Wardrobe" },
@@ -874,11 +870,6 @@ WALL CABINETS (h=720, d=300 unless noted):
   "microwave housing" / "microwave unit" → doors:0, h:500, d:350, w:600
   "above-fridge unit" / "above fridge" → doors:1, h:400, w:600
   "extra tall wall" / "tall wall 1060" → doors:2, h:1060, w:600
-
-ISLAND & FURNITURE:
-  "island" / "kitchen island" / "island base" → doors:4, drawers:2, shelves:1, w:1200, h:900, d:700
-  "peninsula" → doors:4, drawers:2, shelves:1, w:1200, h:900, d:600
-  "plate rack" → doors:2, shelves:2, w:800, h:1500, d:300
 
 WARDROBES (h=2200, d=580 unless noted):
   "single wardrobe" / "1 door robe" / "narrow wardrobe" → doors:1, w:500
@@ -2131,7 +2122,7 @@ function SABQuoteTool() {
                   <div style={{ marginBottom:14 }}>
                     <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Cabinet Type</div>
                     <select value={addItemForm.cabinetTypeKey || "B_STD_2D"} onChange={e => updateForm("cabinetTypeKey", e.target.value)} style={{ ...sel, width:"100%" }}>
-                      {["Base","Tall","Wall","Island"].map(group => (
+                      {["Base","Tall","Wall","Wardrobe"].map(group => (
                         <optgroup key={group} label={`── ${group} ──`}>
                           {Object.entries(DB.cabinetTypes).filter(([,v]) => v.group === group).map(([k,v]) => (
                             <option key={k} value={k}>{v.name}</option>
