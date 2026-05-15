@@ -87,9 +87,23 @@ app.delete('/api/quotes/:id', async (req, res) => {
 
 // Bulk sync — client sends all its quotes, server merges and returns result
 app.post('/api/quotes/sync', async (req, res) => {
-  if (!pool) return res.json({ quotes: req.body.quotes || {} });
+  if (!pool) return res.json({ quotes: req.body.quotes || {}, deleted: [] });
   const clientQuotes = req.body.quotes || {};
+  const clientDeleted = Array.isArray(req.body.deleted) ? req.body.deleted : [];
   try {
+    // Honour client-side tombstones first — remove these from the server so
+    // the merge below can't re-introduce them.
+    const confirmedDeleted = [];
+    for (const id of clientDeleted) {
+      try {
+        await pool.query('DELETE FROM quotes WHERE id = $1', [id]);
+        confirmedDeleted.push(id);
+      } catch (e) {
+        console.error('sync delete failed for', id, e.message);
+      }
+    }
+    const deletedSet = new Set(clientDeleted);
+
     // Get all server quotes
     const { rows } = await pool.query('SELECT id, data, updated_at FROM quotes');
     const serverMap = {};
@@ -101,6 +115,7 @@ app.post('/api/quotes/sync', async (req, res) => {
 
     // Process client quotes — upsert if newer or missing on server
     for (const [id, quote] of Object.entries(clientQuotes)) {
+      if (deletedSet.has(id)) continue;
       const clientTime = quote.updated_at ? new Date(quote.updated_at) : new Date(0);
       const serverEntry = serverMap[id];
 
@@ -120,12 +135,13 @@ app.post('/api/quotes/sync', async (req, res) => {
       delete serverMap[id];
     }
 
-    // Add quotes that only exist on server
+    // Add quotes that only exist on server (skip anything the client tombstoned)
     for (const [id, entry] of Object.entries(serverMap)) {
+      if (deletedSet.has(id)) continue;
       merged[id] = entry.data;
     }
 
-    res.json({ quotes: merged });
+    res.json({ quotes: merged, deleted: confirmedDeleted });
   } catch (err) {
     console.error('POST /api/quotes/sync error:', err.message);
     res.status(500).json({ error: 'Database error' });

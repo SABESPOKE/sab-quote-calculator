@@ -1624,15 +1624,43 @@ function SABQuoteTool() {
   const [dbReady, setDbReady] = useState(false);
   const syncTimerRef = React.useRef(null);
 
+  // Tombstones — IDs the user has deleted, kept in localStorage until the
+  // server confirms the deletion. Without these, a failed DELETE (offline,
+  // slow, or a race with a sync round-trip) lets GET /api/quotes or the bulk
+  // sync resurrect the quote on next page load.
+  const deletedIdsRef = React.useRef((() => {
+    try {
+      const saved = localStorage.getItem('sab_deleted_ids');
+      return new Set(saved ? JSON.parse(saved) : []);
+    } catch { return new Set(); }
+  })());
+  const persistDeletedIds = () => {
+    try { localStorage.setItem('sab_deleted_ids', JSON.stringify([...deletedIdsRef.current])); } catch {}
+  };
+
   // Initial sync with server database
   useEffect(() => {
     fetch('/api/health').then(r => r.json()).then(h => {
       if (!h.db) return;
       setDbReady(true);
       return fetch('/api/quotes').then(r => r.json()).then(serverQuotes => {
+        // Replay any pending deletions — server may still have these
+        const pending = [...deletedIdsRef.current];
+        if (pending.length) {
+          Promise.all(pending.map(id =>
+            fetch('/api/quotes/' + id, { method: 'DELETE' })
+              .then(r => { if (r.ok) deletedIdsRef.current.delete(id); })
+              .catch(() => {})
+          )).then(persistDeletedIds);
+        }
+
         setQuotes(prev => {
-          const merged = { ...serverQuotes };
+          const merged = {};
+          for (const [id, q] of Object.entries(serverQuotes)) {
+            if (!deletedIdsRef.current.has(id)) merged[id] = q;
+          }
           for (const [id, q] of Object.entries(prev)) {
+            if (deletedIdsRef.current.has(id)) continue;
             const local = q.updated_at ? new Date(q.updated_at) : new Date(0);
             const server = merged[id] && merged[id].updated_at ? new Date(merged[id].updated_at) : new Date(0);
             if (!merged[id] || local > server) merged[id] = q;
@@ -1647,12 +1675,23 @@ function SABQuoteTool() {
   useEffect(() => {
     const doSync = () => {
       if (!dbReady) return;
+      const deleted = [...deletedIdsRef.current];
       fetch('/api/quotes/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quotes })
+        body: JSON.stringify({ quotes, deleted })
       }).then(r => r.json()).then(res => {
-        if (res.quotes) setQuotes(ensurePricing(res.quotes));
+        if (Array.isArray(res.deleted)) {
+          for (const id of res.deleted) deletedIdsRef.current.delete(id);
+          persistDeletedIds();
+        }
+        if (res.quotes) {
+          const safe = {};
+          for (const [id, q] of Object.entries(res.quotes)) {
+            if (!deletedIdsRef.current.has(id)) safe[id] = q;
+          }
+          setQuotes(ensurePricing(safe));
+        }
       }).catch(() => {});
     };
     const onVisible = () => { if (document.visibilityState === 'visible') doSync(); };
@@ -1837,8 +1876,20 @@ function SABQuoteTool() {
   function deleteQuote(id) {
     const updated = { ...quotes }; delete updated[id]; saveQuotes(updated);
     if (activeQuoteId === id) { setActiveQuoteId(null); setView("quotes"); }
-    // Also delete from server
-    if (dbReady) fetch('/api/quotes/' + id, { method: 'DELETE' }).catch(() => {});
+    // Tombstone the ID so a failed/raced DELETE can't be resurrected by a later
+    // GET /api/quotes or bulk sync. Cleared once the server confirms removal.
+    deletedIdsRef.current.add(id);
+    persistDeletedIds();
+    if (dbReady) {
+      fetch('/api/quotes/' + id, { method: 'DELETE' })
+        .then(r => {
+          if (r.ok) {
+            deletedIdsRef.current.delete(id);
+            persistDeletedIds();
+          }
+        })
+        .catch(() => {});
+    }
   }
 
   function updateQuoteStatus(id, newStatus) {
