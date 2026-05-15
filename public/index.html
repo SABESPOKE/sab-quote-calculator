@@ -12,6 +12,7 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="/fitting-estimate.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #f5f5f5; }
@@ -504,7 +505,8 @@ const DB = {
     carcassDrawerPrepHrs: 0.5,  // additional hrs when any drawers are present
     // ── Project-level cost defaults (all adjustable) ──────────────────────────
     surveyFee: 250,             // £ flat — site survey visit (per project)
-    installDayRate: 350,        // £/day — installation & fitting labour
+    installDayRate: 350,        // £/day — billed PER FITTER per day on site
+    fittingHoursPerPersonPerDay: 7.5,  // effective fitting hours per fitter per day (8h - 0.5h clean-down)
     deliveryFee: 200,           // £ flat — delivery & transport (per project)
     pmPercent: 6,               // % of mfg sell ex VAT — project management
     consumablesPerItem: 60,     // £ per line item — fixings, glue, edge tape, abrasives
@@ -521,14 +523,20 @@ const DB = {
       doorThicknessMm:  19,   // thickness used to calculate edge area (standard MDF door)
 
       // Prep — sanding between coats (applied between every coat except the final)
-      sandFaceHrsPerM2:  0.08,  // hrs per m² — random orbital on flat faces
+      sandFaceHrsPerM2:  0.05,  // hrs per m² — random orbital on flat faces (primer-grade prep)
       sandEdgeHrsPerM:   0.05,  // hrs per linear metre — careful sanding of 4 edges
       sandQuirkHrsPerM:  0.08,  // hrs per linear metre — into shaker groove (hardest access)
 
+      // Edge polish (no spray) — hand-sanded + hand-applied wax/oil on visible edges only
+      // Used by finishType "edge_polish" — bypasses booth entirely, just bench labour + tiny material
+      edgePolish: {
+        applyHrsPerM: 0.04,    // hrs per linear metre — wipe/buff wax or oil
+        materialCostPerM: 0.20,// £ per linear metre — wax/oil consumable
+      },
+
       // Prep — caulking (shaker & framed-inset only, applied ONCE before priming)
       // Fills the quirk groove for a gap-free surface. Includes: apply, dry, sand flat.
-      // Validated: 0.25 hrs/m × 2.06m quirk on std base door ≈ 31 mins ✓
-      caulkHrsPerM:    0.25,   // hrs per linear metre of quirk groove
+      caulkHrsPerM:    0.13,   // hrs per linear metre of quirk groove (~8 min/m, production rate)
       caulkCostPerM:   0.50,   // £ per linear metre — flexible sealant material
 
       // Paint finish — opaque (primer seals + colour topcoats)
@@ -541,11 +549,13 @@ const DB = {
         primerCoverageM2PerL:   12,
 
         topCoats:               2,     // reduce to 1 for budget option
-        topCoatSprayHrsPerM2:   0.12,
-        topCoatEdgeHrsPerM:     0.04,
-        topCoatQuirkHrsPerM:    0.03,
+        topCoatSprayHrsPerM2:   0.21,  // ~75% slower than primer — careful application
+        topCoatEdgeHrsPerM:     0.07,
+        topCoatQuirkHrsPerM:    0.053,
         topCoatCostPerLitre:    14,    // £/litre — e.g. Teknos, Tikkurila water-based
         topCoatCoverageM2PerL:  10,
+        topCoatReworkFactor:    1.33,  // 1.33× buffer on topcoat labour + material (rework allowance)
+        topCoatSandFaceHrsPerM2: 0.08, // finer-grit sand between topcoats (vs lighter primer-prep above)
       },
 
       // Lacquer finish — clear (2 coats, no primer, sanding between)
@@ -569,21 +579,25 @@ const DB = {
     },
   },
   materials: {
-    "MAT_DF_PLY_18":        { name: "Douglas Fir Plywood 18mm",            costPerM2: 62.15, thicknessMm: 18, wasteFactor: 1.15 },
-    "MAT_BIRCH_UNF_18":     { name: "Birch Plywood Unfinished 18mm",       costPerM2: 33.59, thicknessMm: 18, wasteFactor: 1.15 },
-    "MAT_BIRCH_PREF_18":    { name: "Birch Plywood Prefinished 18mm",      costPerM2: 40.31, thicknessMm: 18, wasteFactor: 1.15 },
-    "MAT_OAK_MDF_UNF_19":   { name: "Oak Veneered MDF Unfinished 19mm",   costPerM2: 26.87, thicknessMm: 19, wasteFactor: 1.12 },
-    "MAT_OAK_MDF_PREF_19":  { name: "Oak Veneered MDF Prefinished 19mm",  costPerM2: 33.59, thicknessMm: 19, wasteFactor: 1.12 },
-    "MAT_WAL_MDF_UNF_19":   { name: "Walnut Veneered MDF Unfinished 19mm",costPerM2: 40.31, thicknessMm: 19, wasteFactor: 1.12 },
-    "MAT_WAL_MDF_PREF_19":  { name: "Walnut Veneered MDF Prefinished 19mm",costPerM2: 47.03, thicknessMm: 19, wasteFactor: 1.12 },
-    "MAT_MAPLE_MDF_UNF_19": { name: "Maple Veneered MDF Unfinished 19mm", costPerM2: 30.23, thicknessMm: 19, wasteFactor: 1.12 },
-    "MAT_MDF_FH_18":        { name: "Finsa Hydrofuga MDF 18mm",            costPerM2: 16.80, thicknessMm: 18, wasteFactor: 1.12 },
-    "MAT_MDF_FH_22":        { name: "Finsa Hydrofuga MDF 22mm",            costPerM2: 20.16, thicknessMm: 22, wasteFactor: 1.12 },
-    "MAT_BACK_HDF_6":       { name: "HDF Back Panel 6mm",                  costPerM2:  8.50, thicknessMm:  6, wasteFactor: 1.10 },
-    "MAT_MEL_EGGER_18":     { name: "Melamine - Egger 18mm",               costPerM2: 22.00, thicknessMm: 18, wasteFactor: 1.12 },
-    "MAT_MEL_EGGER_25":     { name: "Melamine - Egger 25mm",               costPerM2: 28.00, thicknessMm: 25, wasteFactor: 1.12 },
-    "MAT_SHINNOKI_19":      { name: "Shinnoki Board 19mm",                 costPerM2: 55.00, thicknessMm: 19, wasteFactor: 1.12 },
-    "MAT_BACK_PLY_9":       { name: "Back Panel Ply 9mm",                  costPerM2: 12.00, thicknessMm:  9, wasteFactor: 1.10 },
+    // naturalFinish drives the default carcass spray treatment when the material is picked.
+    //   'none'    — prefinished, melamine, or face-finished boards: no spray needed
+    //   'lacquer' — raw veneers (oak/walnut/maple/birch ply UNF, Douglas Fir): seal with clear lacquer
+    //   'paint'   — paint-grade MDF: prime + topcoat
+    "MAT_DF_PLY_18":        { name: "Douglas Fir Plywood 18mm",            costPerM2: 62.15, thicknessMm: 18, wasteFactor: 1.15, naturalFinish: "lacquer" },
+    "MAT_BIRCH_UNF_18":     { name: "Birch Plywood Unfinished 18mm",       costPerM2: 33.59, thicknessMm: 18, wasteFactor: 1.15, naturalFinish: "lacquer" },
+    "MAT_BIRCH_PREF_18":    { name: "Birch Plywood Prefinished 18mm",      costPerM2: 40.31, thicknessMm: 18, wasteFactor: 1.15, naturalFinish: "none" },
+    "MAT_OAK_MDF_UNF_19":   { name: "Oak Veneered MDF Unfinished 19mm",   costPerM2: 26.87, thicknessMm: 19, wasteFactor: 1.12, naturalFinish: "lacquer" },
+    "MAT_OAK_MDF_PREF_19":  { name: "Oak Veneered MDF Prefinished 19mm",  costPerM2: 33.59, thicknessMm: 19, wasteFactor: 1.12, naturalFinish: "none" },
+    "MAT_WAL_MDF_UNF_19":   { name: "Walnut Veneered MDF Unfinished 19mm",costPerM2: 40.31, thicknessMm: 19, wasteFactor: 1.12, naturalFinish: "lacquer" },
+    "MAT_WAL_MDF_PREF_19":  { name: "Walnut Veneered MDF Prefinished 19mm",costPerM2: 47.03, thicknessMm: 19, wasteFactor: 1.12, naturalFinish: "none" },
+    "MAT_MAPLE_MDF_UNF_19": { name: "Maple Veneered MDF Unfinished 19mm", costPerM2: 30.23, thicknessMm: 19, wasteFactor: 1.12, naturalFinish: "lacquer" },
+    "MAT_MDF_FH_18":        { name: "Finsa Hydrofuga MDF 18mm",            costPerM2: 16.80, thicknessMm: 18, wasteFactor: 1.12, naturalFinish: "paint" },
+    "MAT_MDF_FH_22":        { name: "Finsa Hydrofuga MDF 22mm",            costPerM2: 20.16, thicknessMm: 22, wasteFactor: 1.12, naturalFinish: "paint" },
+    "MAT_BACK_HDF_6":       { name: "HDF Back Panel 6mm",                  costPerM2:  8.50, thicknessMm:  6, wasteFactor: 1.10, naturalFinish: "none" },
+    "MAT_MEL_EGGER_18":     { name: "Melamine - Egger 18mm",               costPerM2: 22.00, thicknessMm: 18, wasteFactor: 1.12, naturalFinish: "none" },
+    "MAT_MEL_EGGER_25":     { name: "Melamine - Egger 25mm",               costPerM2: 28.00, thicknessMm: 25, wasteFactor: 1.12, naturalFinish: "none" },
+    "MAT_SHINNOKI_19":      { name: "Shinnoki Board 19mm",                 costPerM2: 55.00, thicknessMm: 19, wasteFactor: 1.12, naturalFinish: "none" },
+    "MAT_BACK_PLY_9":       { name: "Back Panel Ply 9mm",                  costPerM2: 12.00, thicknessMm:  9, wasteFactor: 1.10, naturalFinish: "lacquer" },
   },
   // Door types: substrate + applied-material costs per m². Spray finishing calculated separately by area.
   // finishCostPerM2 = veneer / specialist material only; painted types = 0 (spray function handles paint materials)
@@ -773,17 +787,43 @@ function calcDesignTimePerRoom(roomData) {
 // ─── PRICING ENGINE ───────────────────────────────────────────────────────────
 
 // Spray finishing — full prep model: caulking + sanding between coats + spray per coat
-// finishType: "paint" | "lacquer" | "stain_lacquer"
+// finishType: "none" | "edge_polish" | "primed" | "paint" | "lacquer" | "stain_lacquer"
 // surfaceType: "door" (2 faces + 4 edges) | "panel" (1 face)
-function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType = "paint", hasStain = false, surfaceType = "door" }) {
+//
+// Optional overrides for richer surface models (e.g. open carcass interiors):
+//   sprayAreaM2Override — replaces the computed face×faces area entirely
+//   perimMOverride      — replaces the computed 2(W+H) perimeter
+function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType = "paint", hasStain = false, surfaceType = "door", sprayAreaM2Override, perimMOverride }) {
   const sf = DB.settings.sprayFinish;
   const dt = DB.doorTypes[doorType] || {};
 
-  // Geometry
+  // ── Short-circuits for non-spray finish types ────────────────────────────
+  if (finishType === "none") {
+    return { costPerDoor: 0, total: 0, breakdown: { totalHrs: 0, labourCost: 0, boothCost: 0, matCost: 0, note: "no finish required" } };
+  }
+  if (finishType === "edge_polish") {
+    // Edges only — sanded and waxed by hand, no booth time
+    const ep = sf.edgePolish || { applyHrsPerM: 0.04, materialCostPerM: 0.20 };
+    const perimM = perimMOverride != null ? perimMOverride : (2 * (widthMm + heightMm) / 1000);
+    const sandHrs = perimM * sf.sandEdgeHrsPerM;
+    const applyHrs = perimM * ep.applyHrsPerM;
+    const totalHrs = sandHrs + applyHrs;
+    const labourCost = totalHrs * sf.techLabourRate;
+    const matCost = perimM * ep.materialCostPerM;
+    const costPerDoor = labourCost + matCost;
+    return {
+      costPerDoor,
+      total: costPerDoor * qty,
+      breakdown: { totalHrs: +totalHrs.toFixed(3), labourCost: +labourCost.toFixed(2), boothCost: 0, matCost: +matCost.toFixed(2), perimM: +perimM.toFixed(3), note: "edge polish only" },
+    };
+  }
+
+  // Geometry — overrides let advanced callers (e.g. open-carcass interiors) specify the
+  // total spray area + perimeter directly, bypassing the W×H×faces calculation.
   const faceAreaM2  = (widthMm / 1000) * (heightMm / 1000);
   const faces       = surfaceType === "panel" ? 1 : 2;  // doors: front+back; panels: 1 face
-  const sprayAreaM2 = faceAreaM2 * faces;
-  const perimM      = 2 * (widthMm + heightMm) / 1000;  // 4-edge perimeter in metres
+  const sprayAreaM2 = sprayAreaM2Override != null ? sprayAreaM2Override : (faceAreaM2 * faces);
+  const perimM      = perimMOverride != null ? perimMOverride : (2 * (widthMm + heightMm) / 1000);
 
   // Shaker/framed quirk perimeter — inner frame groove
   const stileW      = dt.shakerStileWidthMm || 70;
@@ -799,9 +839,16 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
   const sprayCoatHrs = (fhrs, ehrs, qhrs) =>
     sprayAreaM2 * fhrs + perimM * ehrs + quirkM * qhrs;
 
-  // Helper: hours to sand between coats
+  // Helper: hours to sand between coats (primer/stain/lacquer-prep — lighter)
   const sandHrs = () =>
     sprayAreaM2 * sf.sandFaceHrsPerM2 + perimM * sf.sandEdgeHrsPerM + quirkM * sf.sandQuirkHrsPerM;
+
+  // Helper: hours to sand between TOPCOATS (finer grit, more careful — show-grade prep).
+  // Falls back to the base face rate if not configured.
+  const topcoatSandHrs = () => {
+    const faceRate = (sf.paint && sf.paint.topCoatSandFaceHrsPerM2) ?? sf.sandFaceHrsPerM2;
+    return sprayAreaM2 * faceRate + perimM * sf.sandEdgeHrsPerM + quirkM * sf.sandQuirkHrsPerM;
+  };
 
   // ── CAULKING (shaker/framed only — once before priming) ──────────────────
   if (quirkM > 0) {
@@ -827,6 +874,21 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
     bd.stainMat = +sm.toFixed(2);
   }
 
+  // ── PRIMED ONLY (primer coats — site painter applies topcoats later) ─────
+  if (finishType === "primed") {
+    const p = sf.paint;
+    const pHrsPerCoat  = sprayCoatHrs(p.primerSprayHrsPerM2, p.primerEdgeHrsPerM, p.primerQuirkHrsPerM);
+    const pMatPerCoat  = (sprayAreaM2 / p.primerCoverageM2PerL) * p.primerCostPerLitre;
+    // Primer coats: spray each coat, sand between each coat (same prep as full paint)
+    const primerHrs = pHrsPerCoat * p.primerCoats + sandHrs() * p.primerCoats;
+    const primerMat = pMatPerCoat * p.primerCoats;
+    totalHrs += primerHrs;
+    matCost  += primerMat;
+    bd.primerHrs = +primerHrs.toFixed(3);
+    bd.primerMat = +primerMat.toFixed(2);
+    bd.note = "primed only — site painter applies topcoats";
+  }
+
   // ── PAINT (opaque — primer + topcoats) ───────────────────────────────────
   if (finishType === "paint") {
     const p = sf.paint;
@@ -838,9 +900,12 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
 
     const tHrsPerCoat  = sprayCoatHrs(p.topCoatSprayHrsPerM2, p.topCoatEdgeHrsPerM, p.topCoatQuirkHrsPerM);
     const tMatPerCoat  = (sprayAreaM2 / p.topCoatCoverageM2PerL) * p.topCoatCostPerLitre;
-    // Top coats: spray all, sand between all except after the final coat
-    const topHrs = tHrsPerCoat * p.topCoats + sandHrs() * (p.topCoats - 1);
-    const topMat = tMatPerCoat * p.topCoats;
+    // Top coats: spray all, sand between all except after the final coat.
+    // Uses the finer-grit topcoat-specific sand rate. Rework factor scales topcoat
+    // labour + material to cover re-spray risk on tricky finishes.
+    const reworkFactor = p.topCoatReworkFactor || 1;
+    const topHrs = (tHrsPerCoat * p.topCoats + topcoatSandHrs() * (p.topCoats - 1)) * reworkFactor;
+    const topMat = (tMatPerCoat * p.topCoats) * reworkFactor;
 
     totalHrs += primerHrs + topHrs;
     matCost  += primerMat + topMat;
@@ -848,6 +913,7 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
     bd.topCoatHrs = +topHrs.toFixed(3);
     bd.primerMat = +primerMat.toFixed(2);
     bd.topCoatMat = +topMat.toFixed(2);
+    if (reworkFactor !== 1) bd.reworkFactor = reworkFactor;
   }
 
   // ── LACQUER (clear — 2 coats, no primer) ─────────────────────────────────
@@ -875,15 +941,22 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
   };
 }
 
-function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, handleCost = 0, sprayFinish = true, hasStain = false }) {
+function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, handleCost = 0, sprayFinish = true, hasStain = false, sprayFinishOverride = "" }) {
   const dt = DB.doorTypes[doorType];
   if (!dt) return null;
   const area = (widthMm / 1000) * (heightMm / 1000);
-  const materialCost = area * (dt.baseCostPerM2 + dt.finishCostPerM2);
+  // For "no finish" / "edge polish" we still pay for the door material but skip the
+  // expensive spray-grade finish cost on the material itself (finishCostPerM2 = veneer
+  // overlay or paint-grade prep). Drop it when the spray application is suppressed.
+  const skipMaterialFinish = sprayFinishOverride === "none" || sprayFinishOverride === "edge_polish";
+  const materialFinishPerM2 = skipMaterialFinish ? 0 : dt.finishCostPerM2;
+  const materialCost = area * (dt.baseCostPerM2 + materialFinishPerM2);
   const labourHours = (area * dt.extraLabourPerM2) + (dt.baseLabourHrs || 0.75);
   const labourCost = labourHours * er();
   // Area-based spray finish: faces + edges + quirks (shaker profile), primer + topcoats separately
-  const finishType       = DB.doorTypes[doorType]?.finishType || "paint";
+  // sprayFinishOverride lets the caller force "none" or "edge_polish" regardless of doorType default.
+  const baseFinishType   = DB.doorTypes[doorType]?.finishType || "paint";
+  const finishType       = sprayFinishOverride || baseFinishType;
   const sprayResult      = sprayFinish ? calcSprayFinishCost({ doorType, widthMm, heightMm, qty: 1, finishType, hasStain }) : null;
   const sprayFinishCost  = sprayResult ? sprayResult.costPerDoor : 0;
   const totalCostPerDoor = materialCost + labourCost + hingeCost + handleCost + sprayFinishCost;
@@ -954,7 +1027,9 @@ function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 5
 function calcCabinetCost({
   widthMm, heightMm, depthMm,
   carcassMaterialKey = "MAT_BIRCH_UNF_18",
-  backMaterialKey = "MAT_BACK_HDF_6",
+  carcassFinish = "none",
+  backMaterialKey,  // defaults to carcassMaterialKey below — backs match the carcass material
+
   doorCount = 2, doorType = "SLAB_PNT",
   drawerCount = 0, drawerType = "DRW_BIRCH_PLY",
   runnerKey = "HW_RUN_BLUM_SM",
@@ -964,10 +1039,14 @@ function calcCabinetCost({
   frameKey = "FRAME_NONE",
   edgebandKey = "EDGE_OAK_05",
   hasStain = false,
+  fillerCount = 0,
+  sprayFinishOverride = "",
   qty = 1,
 }) {
   const mat = DB.materials[carcassMaterialKey];
-  const backMat = DB.materials[backMaterialKey] || { costPerM2: 8.50, wasteFactor: 1.10 };
+  // Back panels match the carcass material by default. Caller can still pass an
+  // explicit backMaterialKey to override (legacy quotes that set HDF still work).
+  const backMat = DB.materials[backMaterialKey || carcassMaterialKey] || mat || { costPerM2: 8.50, wasteFactor: 1.10 };
   if (!mat) return null;
   const t = mat.thicknessMm || 18;
 
@@ -995,7 +1074,7 @@ function calcCabinetCost({
     const hinge = DB.hardware.hinges[hingeKey] || DB.hardware.hinges["HW_HINGE_SM"];
     const handle = DB.hardware.handles[handleKey] || DB.hardware.handles["HW_HDL_BAR128"];
     const hingeCostPerDoor = hingeCount(doorH) * hinge.costEach;
-    const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: doorCount, hingeCost: hingeCostPerDoor, handleCost: handle.costEach, hasStain });
+    const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: doorCount, hingeCost: hingeCostPerDoor, handleCost: handle.costEach, hasStain, sprayFinishOverride });
     doorsCost = dp ? dp.totalCost : 0;
   }
 
@@ -1020,7 +1099,7 @@ function calcCabinetCost({
     for (let i = 0; i < drawerCount; i++) drawerFrontHeights.push(defaultFrontH);
     const frontW = widthMm - 4; // drawer fronts span full cabinet width
     for (const fh of drawerFrontHeights) {
-      const dfp = calcDoorCost({ doorType, widthMm: frontW > 0 ? frontW : widthMm - 4, heightMm: fh, qty: 1, hingeCost: 0, handleCost: 0, sprayFinish: true, hasStain });
+      const dfp = calcDoorCost({ doorType, widthMm: frontW > 0 ? frontW : widthMm - 4, heightMm: fh, qty: 1, hingeCost: 0, handleCost: 0, sprayFinish: true, hasStain, sprayFinishOverride });
       if (dfp) drawerFrontsCost += dfp.totalCost;
     }
   }
@@ -1046,7 +1125,62 @@ function calcCabinetCost({
     qty: 1
   }) : { costPerUnit: 0, total: 0, totalM: 0 };
 
-  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total;
+  // ── Carcass finish ──
+  // edge_polish → hand-sanded + wax on visible front-edge perimeter (incl. shelf edges
+  //   if cabinet is open). No interior face spraying.
+  // primed / paint / lacquer → interior shell spray: 2 sides + top + bottom + back +
+  //   each shelf (both faces). Same surface for OPEN and CLOSED cabinets — closed
+  //   cabinets with raw-veneer interiors still need lacquering at build time.
+  //   Difference: open cabinets include shelf-front edges in the perimeter (visible);
+  //   closed cabinets don't (hidden by doors).
+  let carcassFinishCost = 0;
+  if (carcassFinish && carcassFinish !== "none") {
+    const W = widthMm / 1000;
+    const H = heightMm / 1000;
+    const D = depthMm / 1000;
+    const innerW = Math.max(0, (widthMm - 2 * t) / 1000);
+    const shelfD = Math.max(0, (depthMm - 50) / 1000);
+    let sprayAreaM2Override, perimMOverride;
+
+    if (carcassFinish === "edge_polish") {
+      // Edge polish: perimeter only (+ shelf front edges if open)
+      let perim = 2 * (W + H);
+      if (doorCount === 0) perim += (shelfCount || 0) * innerW;
+      perimMOverride = perim;
+    } else {
+      // primed / paint / lacquer: full interior shell
+      const sidesArea  = 2 * (D * H);
+      const topBotArea = 2 * (W * D);
+      const backArea   = W * H;
+      const shelfArea2 = (shelfCount || 0) * 2 * (innerW * shelfD);
+      sprayAreaM2Override = sidesArea + topBotArea + backArea + shelfArea2;
+      let perim = 2 * (W + H);
+      if (doorCount === 0) perim += (shelfCount || 0) * innerW;
+      perimMOverride = perim;
+    }
+
+    const cf = calcSprayFinishCost({
+      doorType: "SLAB_PNT",
+      widthMm, heightMm, qty: 1,
+      finishType: carcassFinish,
+      surfaceType: "panel",
+      sprayAreaM2Override,
+      perimMOverride,
+    });
+    carcassFinishCost = cf ? cf.costPerDoor : 0;
+  }
+
+  // ── Fillers — scribed strips in matching door material, ~50mm wide × cabinet height ──
+  // Each filler = a narrow door-finished strip; bench cost includes material + finish.
+  // On-site scribing time (1h per filler) is added in the Fitting Estimate panel separately.
+  let fillersCost = 0;
+  const FILLER_WIDTH_MM = 50;
+  if (fillerCount > 0 && doorType && DB.doorTypes[doorType]) {
+    const fp = calcDoorCost({ doorType, widthMm: FILLER_WIDTH_MM, heightMm, qty: fillerCount, hingeCost: 0, handleCost: 0, sprayFinish: true, hasStain, sprayFinishOverride });
+    fillersCost = fp ? fp.totalCost : 0;
+  }
+
+  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + fillersCost;
   const totalCost = totalCostPerUnit * qty;
   const sellExVAT = totalCost * DB.settings.margin;
 
@@ -1576,8 +1710,8 @@ function printQuote(quote, viewMode) {
 
 // ─── ADD ITEM FORM DEFAULTS ───────────────────────────────────────────────────
 const ITEM_DEFAULTS = {
-  cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:720, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", hasStain:false, drawerCount:0, drawerType:"DRW_SHEET", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", edgebandKey:"EDGE_OAK_05", qty:1, description:"" },
-  door:    { type:"door", widthMm:726, heightMm:2040, doorType:"SLAB_PNT", doorProfile:"slab", doorFinish:"painted", hasStain:false, hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", qty:1, description:"" },
+  cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:720, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", carcassFinish:"none", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, drawerCount:0, drawerType:"DRW_SHEET", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", edgebandKey:"EDGE_OAK_05", fillerCount:0, qty:1, description:"" },
+  door:    { type:"door", widthMm:726, heightMm:2040, doorType:"SLAB_PNT", doorProfile:"slab", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", qty:1, description:"" },
   frame:    { type:"frame", species:"TIM_OAK", widthMm:826, heightMm:2040, labourHrs:3, qty:1, description:"" },
   drawer:  { type:"drawer", drawerType:"DRW_SHEET", carcassMaterialKey:"MAT_BIRCH_UNF_18", widthMm:500, heightMm:200, depthMm:500, runnerKey:"HW_RUN_BLUM_SM", qty:1, description:"" },
   endpanel: { type:"endpanel", materialKey:"MAT_BIRCH_UNF_18", widthMm:560, heightMm:720, thicknessMm:18, faces:1, exposedEdgeCount:2, finishType:"paint", hasStain:false, qty:1, description:"" },
@@ -1586,19 +1720,25 @@ const ITEM_DEFAULTS = {
   custom:  { type:"custom", unitCostExVAT:0, notes:"", qty:1, description:"" },
 };
 
-// Door profile × finish → doorType key
+// Door profile × finish → doorType key (single source of truth for door finishing).
+// "lacquer"   reuses the existing veneered doorTypes (which already use lacquer finishType).
+// "primed"    reuses the painted doorTypes — the form auto-sets sprayFinishOverride="primed".
+// "edge_polish" / "none" — reuse the painted doorTypes; form auto-sets matching override.
 const DOOR_PROFILES = {
-  slab:     { label: "Slab",            finishes: ["painted","veneered","custom_ven"] },
-  shaker:   { label: "Shaker",          finishes: ["painted","veneered"] },
-  j_groove: { label: "Slab – J-Groove", finishes: ["painted"] },
-  framed:   { label: "Framed Inset",    finishes: ["painted"] },
+  slab:     { label: "Slab",            finishes: ["painted","lacquer","primed","custom_ven","edge_polish","none"] },
+  shaker:   { label: "Shaker",          finishes: ["painted","lacquer","primed","edge_polish","none"] },
+  j_groove: { label: "Slab – J-Groove", finishes: ["painted","primed","edge_polish","none"] },
+  framed:   { label: "Framed Inset",    finishes: ["painted","primed","edge_polish","none"] },
 };
-const DOOR_FINISHES = { painted: "Painted", veneered: "Veneered", custom_ven: "Custom Veneer" };
+const DOOR_FINISHES = { painted: "Painted", lacquer: "Lacquer", primed: "Primed only", custom_ven: "Custom Veneer", edge_polish: "Edge polish only", none: "No finish required", veneered: "Veneered (legacy)" };
 const PROFILE_FINISH_TO_TYPE = {
-  "slab+painted": "SLAB_PNT", "slab+veneered": "SLAB_VEN", "slab+custom_ven": "SLAB_CUST_VEN",
-  "shaker+painted": "SHAKER_PNT", "shaker+veneered": "SHAKER_VEN",
-  "j_groove+painted": "J_GROOVE", "framed+painted": "FRAMED_INSET",
+  "slab+painted": "SLAB_PNT", "slab+lacquer": "SLAB_VEN", "slab+primed": "SLAB_PNT", "slab+edge_polish": "SLAB_PNT", "slab+none": "SLAB_PNT", "slab+veneered": "SLAB_VEN", "slab+custom_ven": "SLAB_CUST_VEN",
+  "shaker+painted": "SHAKER_PNT", "shaker+lacquer": "SHAKER_VEN", "shaker+primed": "SHAKER_PNT", "shaker+edge_polish": "SHAKER_PNT", "shaker+none": "SHAKER_PNT", "shaker+veneered": "SHAKER_VEN",
+  "j_groove+painted": "J_GROOVE", "j_groove+primed": "J_GROOVE", "j_groove+edge_polish": "J_GROOVE", "j_groove+none": "J_GROOVE",
+  "framed+painted": "FRAMED_INSET", "framed+primed": "FRAMED_INSET", "framed+edge_polish": "FRAMED_INSET", "framed+none": "FRAMED_INSET",
 };
+// Map doorFinish → sprayFinishOverride. Keys not listed → "" (use the doorType default).
+const FINISH_TO_SPRAY_OVERRIDE = { primed: "primed", edge_polish: "edge_polish", none: "none" };
 // Reverse map: doorType key → {profile, finish}
 const TYPE_TO_PROFILE_FINISH = Object.fromEntries(
   Object.entries(PROFILE_FINISH_TO_TYPE).map(([pf, type]) => {
@@ -1609,8 +1749,10 @@ const TYPE_TO_PROFILE_FINISH = Object.fromEntries(
 
 const DEFAULT_ROOM_SETTINGS = {
   carcassMaterialKey: "MAT_BIRCH_UNF_18",
+  carcassFinish: "none",      // none | edge_polish — applied to cabinet carcass exposed front edges
   doorProfile: "shaker",
   doorFinish: "painted",
+  sprayFinishOverride: "",    // "" (use doorType default) | "none" | "edge_polish"
   hasStain: false,
   hingeKey: "HW_HINGE_SM",
   handleKey: "HW_HDL_BAR128",
@@ -1698,6 +1840,7 @@ function SABQuoteTool() {
   const [addItemForm, setAddItemForm] = useState({ ...ITEM_DEFAULTS.cabinet });
   const [expandedItem, setExpandedItem] = useState(null);
   const [showProjectCosts, setShowProjectCosts] = useState(false);
+  const [showFittingEst, setShowFittingEst] = useState(false);
   const [editingItem, setEditingItem] = useState(null); // { room, idx }
   const [settingsVer, setSettingsVer] = useState(0);   // bumped to force re-render after DB mutation
   const [showRoomSetup, setShowRoomSetup] = useState(null); // room name being configured
@@ -1890,6 +2033,11 @@ function SABQuoteTool() {
       const rooms = { ...q.rooms };
       const room = { ...rooms[roomName] };
       room.defaults = { ...(room.defaults || DEFAULT_ROOM_SETTINGS), [field]: val };
+      // Snap carcass finish to the material's natural finish when material changes.
+      if (field === "carcassMaterialKey") {
+        const m = DB.materials[val];
+        if (m && m.naturalFinish) room.defaults.carcassFinish = m.naturalFinish;
+      }
       // Propagate room default changes to existing items and reprice
       const propagateToItems = (paramKey, newVal) => {
         room.items = room.items.map(item => {
@@ -2020,6 +2168,13 @@ function SABQuoteTool() {
           updated.widthMm = 0; updated.heightMm = 0; updated.depthMm = 0;
         }
       }
+      // When the carcass material changes, snap carcassFinish to the material's natural
+      // finish (prefinished → none, raw veneers → lacquer, paint-grade MDF → paint).
+      // Steve can still override the dropdown after.
+      if (field === "carcassMaterialKey") {
+        const m = DB.materials[val];
+        if (m && m.naturalFinish) updated.carcassFinish = m.naturalFinish;
+      }
       // When door profile or finish changes, derive the doorType key
       if (field === "doorProfile" || field === "doorFinish") {
         const profile = field === "doorProfile" ? val : updated.doorProfile;
@@ -2029,6 +2184,10 @@ function SABQuoteTool() {
         const safeFinish = validFinishes.includes(finish) ? finish : "painted";
         updated.doorFinish = safeFinish;
         updated.doorType   = PROFILE_FINISH_TO_TYPE[`${profile}+${safeFinish}`] || "SLAB_PNT";
+        // Door finish is the single source of truth — derive the spray override from it.
+        // primed / edge_polish / none → matching override. Anything else → no override
+        // (use the doorType's natural finishType).
+        updated.sprayFinishOverride = FINISH_TO_SPRAY_OVERRIDE[safeFinish] || "";
       }
       // Auto-generate description for cabinets
       if (updated.type === "cabinet") {
@@ -2047,7 +2206,7 @@ function SABQuoteTool() {
       const item = addItemForm.type === "cabinet"
         ? { type:"cabinet", qty: addItemForm.qty, params: addItemForm }
         : addItemForm.type === "door"
-        ? { type:"door", qty: addItemForm.qty, params: { doorType: addItemForm.doorType, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, hingeCost: addItemForm.hingeCost, handleCost: addItemForm.handleCost } }
+        ? { type:"door", qty: addItemForm.qty, params: { doorType: addItemForm.doorType, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, hingeCost: addItemForm.hingeCost, handleCost: addItemForm.handleCost, hasStain: !!addItemForm.hasStain, sprayFinishOverride: addItemForm.sprayFinishOverride || "" } }
         : addItemForm.type === "frame"
         ? { type:"frame", qty: addItemForm.qty, params: { species: addItemForm.species, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, labourHrs: addItemForm.labourHrs } }
         : addItemForm.type === "drawer"
@@ -2068,7 +2227,7 @@ function SABQuoteTool() {
     const item = addItemForm.type === "cabinet"
       ? { type:"cabinet", description: addItemForm.description || `${addItemForm.widthMm}×${addItemForm.heightMm}×${addItemForm.depthMm} — ${DB.doorTypes[addItemForm.doorType]?.name || ""}${addItemForm.hasStain?" + Stain":""}`, qty: Number(addItemForm.qty), params: addItemForm }
       : addItemForm.type === "door"
-      ? { type:"door", description: addItemForm.description || `${DB.doorTypes[addItemForm.doorType]?.name} ${addItemForm.widthMm}×${addItemForm.heightMm}${addItemForm.hasStain?" + Stain":""}`, qty: Number(addItemForm.qty), params: { doorType:addItemForm.doorType, widthMm:+addItemForm.widthMm, heightMm:+addItemForm.heightMm, hasStain:!!addItemForm.hasStain, hingeCost: DB.hardware.hinges[addItemForm.hingeKey]?.costEach * hingeCount(+addItemForm.heightMm) || 0, handleCost: DB.hardware.handles[addItemForm.handleKey]?.costEach || 0 } }
+      ? { type:"door", description: addItemForm.description || `${DB.doorTypes[addItemForm.doorType]?.name} ${addItemForm.widthMm}×${addItemForm.heightMm}${addItemForm.hasStain?" + Stain":""}${addItemForm.sprayFinishOverride==="none"?" (no spray)":addItemForm.sprayFinishOverride==="edge_polish"?" (edge polish)":addItemForm.sprayFinishOverride==="primed"?" (primed only)":""}`, qty: Number(addItemForm.qty), params: { doorType:addItemForm.doorType, widthMm:+addItemForm.widthMm, heightMm:+addItemForm.heightMm, hasStain:!!addItemForm.hasStain, sprayFinishOverride: addItemForm.sprayFinishOverride || "", hingeCost: DB.hardware.hinges[addItemForm.hingeKey]?.costEach * hingeCount(+addItemForm.heightMm) || 0, handleCost: DB.hardware.handles[addItemForm.handleKey]?.costEach || 0 } }
       : addItemForm.type === "frame"
       ? { type:"frame", description: addItemForm.description || `${DB.solidTimber[addItemForm.species]?.name} Frame ${addItemForm.widthMm}w`, qty: Number(addItemForm.qty), params: { species:addItemForm.species, widthMm:+addItemForm.widthMm, heightMm:+addItemForm.heightMm, labourHrs:+addItemForm.labourHrs } }
       : addItemForm.type === "drawer"
@@ -2271,6 +2430,10 @@ function SABQuoteTool() {
     handleKey:   roomDefs.handleKey   || ITEM_DEFAULTS.cabinet.handleKey,
     drawerType:  roomDefs.useSolidDrawers ? (roomDefs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET",
     runnerKey:   roomDefs.runnerKey   || ITEM_DEFAULTS.cabinet.runnerKey,
+    carcassFinish: roomDefs.carcassFinish || "none",
+    // Derive sprayFinishOverride from the room-level doorFinish so consolidated finish
+    // picks (edge_polish / primed / none) propagate to new cabinets.
+    sprayFinishOverride: FINISH_TO_SPRAY_OVERRIDE[roomDefs.doorFinish] || "",
     doorType: PROFILE_FINISH_TO_TYPE[`${roomDefs.doorProfile||"shaker"}+${roomDefs.doorFinish||"painted"}`] || "SHAKER_PNT",
   });
   setShowAddItem(true);
@@ -2296,6 +2459,27 @@ function SABQuoteTool() {
                           <select value={rd.carcassMaterialKey} onChange={e => upd("carcassMaterialKey", e.target.value)} style={miniSel}>
                             {Object.entries(DB.materials).filter(([k])=>!k.startsWith("MAT_BACK")).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
                           </select>
+                        </div>
+                        <div style={{ gridColumn:"3/5" }}>
+                          <label style={miniLbl}>Carcass Finish</label>
+                          <select value={rd.carcassFinish || "none"} onChange={e => upd("carcassFinish", e.target.value)} style={miniSel}>
+                            <option value="none">No finish required</option>
+                            <option value="edge_polish">Edge polish only (sand + wax)</option>
+                            <option value="primed">Primed only (no topcoats)</option>
+                            <option value="paint">Paint (primer + topcoats)</option>
+                            <option value="lacquer">Lacquer (clear, 2 coats)</option>
+                          </select>
+                          {(() => {
+                            const nat = DB.materials[rd.carcassMaterialKey]?.naturalFinish;
+                            if (!nat) return null;
+                            const labels = { none: "no spray needed", lacquer: "lacquer (raw veneer)", paint: "paint (MDF substrate)", edge_polish: "edge polish" };
+                            const matches = nat === (rd.carcassFinish || "none");
+                            return (
+                              <div style={{ fontSize:8, color: matches ? "#777" : "#b86a3e", marginTop:2 }}>
+                                Material natural finish: {labels[nat] || nat}{matches ? " ✓" : " — override active"}
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div>
                           <label style={miniLbl}>Door Profile</label>
@@ -2533,6 +2717,98 @@ function SABQuoteTool() {
               </>
             )}
 
+            {/* ── Fitting Estimate Panel (quote-level, read-only suggestion) ── */}
+            {(() => {
+              if (!window.SAB_FITTING) return null;
+              const hrsPerPersonDay = DB.settings.fittingHoursPerPersonPerDay || 7.5;
+              let est;
+              try { est = window.SAB_FITTING.calculateFittingEstimate(activeQuote); }
+              catch (e) { return null; }
+              const pc = activeQuote.projectCosts || getDefaultProjectCosts();
+              const manualDays = pc.installDays;
+              const delta = manualDays != null ? (manualDays - est.estimatedDays) : null;
+              const deltaColor = delta == null ? "#999" : (Math.abs(delta) < 0.51 ? "#6a8a4a" : (delta > 0 ? "#999" : "#b86a3e"));
+              const accent = "#c8a96e";
+              const dayRate = pc.installDayRate ?? DB.settings.installDayRate;
+              const labourCost = est.estimatedDays * dayRate;
+              return (
+                <div style={{ marginTop:10, border:"1px solid #d8d3cc", borderRadius:6, background:"#fbfaf8", overflow:"hidden" }}>
+                  <div onClick={() => setShowFittingEst(p => !p)} style={{ padding:"12px 14px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <div>
+                      <div style={{ fontSize:11, color:accent }}>Fitting Estimate</div>
+                      <div style={{ fontSize:10, color:"#999999", marginTop:2 }}>
+                        {est.totalPersonHours}h of labour ÷ {hrsPerPersonDay}h/day — guide only, override below
+                      </div>
+                    </div>
+                    <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+                      <div style={{ fontSize:14, color:accent }}>{est.estimatedDays} labour day{est.estimatedDays !== 1 ? "s" : ""}</div>
+                      <span style={{ color:"#777777", fontSize:11 }}>{showFittingEst ? "▲" : "▼"}</span>
+                    </div>
+                  </div>
+                  {showFittingEst && (
+                    <div style={{ borderTop:"1px solid #d8d3cc", padding:"10px 14px" }}>
+                      <div style={{ display:"flex", gap:14, flexWrap:"wrap", marginBottom:10 }}>
+                        <div style={{ flex:"1 1 130px" }}>
+                          <div style={{ fontSize:9, letterSpacing:"0.1em", color:"#999", textTransform:"uppercase" }}>Estimated</div>
+                          <div style={{ fontSize:18, color:accent, marginTop:2 }}>{est.estimatedDays}d</div>
+                          <div style={{ fontSize:9, color:"#999" }}>raw {est.rawDays}d · {est.totalPersonHours}h ÷ {hrsPerPersonDay}h/day · {fmt(labourCost)} @ £{dayRate}/day</div>
+                        </div>
+                        <div style={{ flex:"1 1 130px" }}>
+                          <div style={{ fontSize:9, letterSpacing:"0.1em", color:"#999", textTransform:"uppercase" }}>Manual</div>
+                          <div style={{ fontSize:18, color:"#777", marginTop:2 }}>{manualDays != null ? manualDays + "d" : "—"}</div>
+                          <div style={{ fontSize:9, color: deltaColor }}>
+                            {delta == null ? "not set" : (delta === 0 ? "matches estimate" : (delta > 0 ? `+${delta}d over` : `${delta}d under`))}
+                          </div>
+                        </div>
+                        <div style={{ flex:"0 0 auto", alignSelf:"center" }}>
+                          <button
+                            onClick={() => updateProjectCost("installDays", est.estimatedDays)}
+                            disabled={manualDays === est.estimatedDays}
+                            style={{ padding:"7px 12px", background: manualDays === est.estimatedDays ? "#e8e3dc" : accent, color: manualDays === est.estimatedDays ? "#999" : "#fff", border:"none", borderRadius:4, cursor: manualDays === est.estimatedDays ? "default" : "pointer", fontSize:10, fontFamily:"inherit", letterSpacing:"0.08em" }}>
+                            {manualDays === est.estimatedDays ? "IN SYNC" : `USE ${est.estimatedDays}d`}
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ fontSize:10, color:"#777", marginBottom:8 }}>
+                        cabinet <strong>{est.breakdown.cabinetHours}h</strong> · scribing <strong>{est.breakdown.scribingHours}h</strong> · hardware <strong>{est.breakdown.hardwareHours}h</strong> · setup <strong>{est.breakdown.roomSetupHours}h</strong>
+                      </div>
+                      {Object.entries(est.byRoom).map(([roomName, room]) => (
+                        <div key={roomName} style={{ marginTop:8, borderTop:"1px dashed #e8e3dc", paddingTop:6 }}>
+                          <div style={{ fontSize:10, color:"#777", marginBottom:3 }}>
+                            <strong>{roomName}</strong> — cabinet {room.cabinetHours}h · scribing {room.scribingHours}h · hardware {room.hardwareHours}h · setup {room.setupHours}h
+                          </div>
+                          {room.items.map((it, i) => (
+                            <div key={i} style={{ fontSize:9, color:"#999", display:"flex", gap:8 }}>
+                              <span style={{ width:30, textAlign:"right" }}>×{it.qty}</span>
+                              <span style={{ width:50, textAlign:"right" }}>{it.totalHours}h</span>
+                              <span style={{ width:120, color:"#bbb" }}>[{it.matchedAs}]</span>
+                              <span style={{ flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{it.description || "(no description)"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                      {est.unresolved.length > 0 && (
+                        <div style={{ marginTop:8, padding:"6px 8px", background:"#fdf6e8", borderRadius:3, fontSize:9, color:"#a8761a" }}>
+                          <div style={{ fontWeight:600, marginBottom:3 }}>Unresolved ({est.unresolved.length}) — matched but hours TBC:</div>
+                          {est.unresolved.map((u, i) => (
+                            <div key={i}>×{u.qty} {u.description} — {u.reason}</div>
+                          ))}
+                        </div>
+                      )}
+                      {est.unmatched.length > 0 && (
+                        <div style={{ marginTop:8, padding:"6px 8px", background:"#fbeee8", borderRadius:3, fontSize:9, color:"#a8451a" }}>
+                          <div style={{ fontWeight:600, marginBottom:3 }}>Unmatched ({est.unmatched.length}) — not counted in estimate:</div>
+                          {est.unmatched.map((u, i) => (
+                            <div key={i}>×{u.qty} ({u.room}) {u.description}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ── Project Costs Panel (quote-level, always shown) ── */}
             {(() => {
               const pc = activeQuote.projectCosts || getDefaultProjectCosts();
@@ -2730,11 +3006,16 @@ function SABQuoteTool() {
                   {/* Counts */}
                   <div style={{ marginBottom:14 }}>
                     <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Counts</div>
-                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8 }}>
-                      {[["Doors","doorCount",0,6],["Drawers","drawerCount",0,8],["Shelves","shelfCount",0,8],["Qty","qty",1,99]].map(([label,field,min,max]) => (
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8 }}>
+                      {[["Doors","doorCount",0,6],["Drawers","drawerCount",0,8],["Shelves","shelfCount",0,8],["Fillers","fillerCount",0,2],["Qty","qty",1,99]].map(([label,field,min,max]) => (
                         <div key={field}><label style={lbl}>{label}</label><input type="number" min={min} max={max} value={addItemForm[field] || ""} onChange={e => updateForm(field, e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                       ))}
                     </div>
+                    {addItemForm.fillerCount > 0 && (
+                      <div style={{ fontSize:9, color:"#c8a96e", marginTop:4 }}>
+                        → {addItemForm.fillerCount} × scribed filler ({50}mm wide, door-finish material) — adds {addItemForm.fillerCount}h on-site scribing to fitting estimate
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2891,7 +3172,7 @@ function SABQuoteTool() {
                       </label>
                     )}
                     <div style={{ fontSize:9, color:"#999999", marginTop:4 }}>
-                      {DB.doorTypes[addItemForm.doorType] ? `→ ${DB.doorTypes[addItemForm.doorType].name}${addItemForm.hasStain?" + Stain":""}` : ""}
+                      {DB.doorTypes[addItemForm.doorType] ? `→ ${DB.doorTypes[addItemForm.doorType].name}${addItemForm.hasStain?" + Stain":""}${addItemForm.sprayFinishOverride==="none"?" · NO spray":addItemForm.sprayFinishOverride==="edge_polish"?" · Edge polish only":addItemForm.sprayFinishOverride==="primed"?" · Primed only":""}` : ""}
                     </div>
                   </div>
                 </div>
@@ -3042,6 +3323,8 @@ function SABQuoteTool() {
                     <div style={{ marginBottom:8 }}>
                       <label style={lbl}>Finish type</label>
                       <select value={addItemForm.finishType||"paint"} onChange={e=>updateForm("finishType",e.target.value)} style={{ ...sel, width:"100%" }}>
+                        <option value="none">No finish required</option>
+                        <option value="edge_polish">Edge polish only (sand + wax)</option>
                         <option value="paint">Paint (primer + topcoats)</option>
                         <option value="lacquer">Lacquer (clear, 2 coats)</option>
                         <option value="stain_lacquer">Stain + Lacquer</option>
@@ -3107,6 +3390,8 @@ function SABQuoteTool() {
                     <div style={{ marginBottom:8 }}>
                       <label style={lbl}>Finish type</label>
                       <select value={addItemForm.finishType||"lacquer"} onChange={e=>updateForm("finishType",e.target.value)} style={{ ...sel, width:"100%" }}>
+                        <option value="none">No finish required</option>
+                        <option value="edge_polish">Edge polish only (sand + wax)</option>
                         <option value="paint">Paint (primer + topcoats)</option>
                         <option value="lacquer">Lacquer (clear, 2 coats)</option>
                         <option value="stain_lacquer">Stain + Lacquer</option>
@@ -3547,6 +3832,8 @@ function SABQuoteTool() {
                     <Field label="Spray — quirk"      path={["settings","sprayFinish","paint","topCoatQuirkHrsPerM"]}   unit="hrs/m"   step={0.01} min={0} />
                     <Field label="Cost"               path={["settings","sprayFinish","paint","topCoatCostPerLitre"]}   unit="£/litre" step={0.5} />
                     <Field label="Coverage"           path={["settings","sprayFinish","paint","topCoatCoverageM2PerL"]} unit="m²/L"    step={0.5} min={1} />
+                    <Field label="Rework factor"      path={["settings","sprayFinish","paint","topCoatReworkFactor"]}   unit="×"       hint="Multiplier on topcoat labour + material — buffer for re-spray/repair risk (1.0 = no buffer, 1.33 = +33%)" step={0.05} min={1} />
+                    <Field label="Sand between topcoats" path={["settings","sprayFinish","paint","topCoatSandFaceHrsPerM2"]} unit="hrs/m²" hint="Finer-grit prep between topcoats — separate from the lighter primer-prep sand above" step={0.01} min={0} />
                   </div>
                 </div>
 
@@ -3616,7 +3903,8 @@ function SABQuoteTool() {
               <div style={{ background:"#f0eeeb", borderRadius:8, padding:"20px 22px", border:"1px solid #d8d3cc" }}>
                 <SectionHead title="Project Cost Defaults" sub="Used as starting values for each new quote — override per quote in Build view" />
                 <Field label="Site survey fee" path={["settings","surveyFee"]} unit="£ flat" hint="One-off fee for site visit and measure-up" step={25} />
-                <Field label="Installation day rate" path={["settings","installDayRate"]} unit="£/day" hint="Fitting and installation labour on site" step={25} />
+                <Field label="Installation day rate" path={["settings","installDayRate"]} unit="£/day" hint="Billed PER FITTER per day on site" step={25} />
+                <Field label="Fitting hrs / fitter / day" path={["settings","fittingHoursPerPersonPerDay"]} unit="hrs" hint="Effective fitting hours per fitter per day (8h working - 0.5h clean-down). Drives the labour-days estimate." step={0.5} />
                 <Field label="Delivery fee" path={["settings","deliveryFee"]} unit="£ flat" hint="Van hire / courier to deliver to site" step={25} />
                 <Field label="Project management" path={["settings","pmPercent"]} unit="% of mfg sell" hint="Client liaison, ordering, supplier management" step={0.5} />
                 <Field label="Consumables per item" path={["settings","consumablesPerItem"]} unit="£/item" hint="Screws, glue, edge tape, abrasives — per cabinet line" step={5} />
