@@ -1,11 +1,21 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const { pool, initDB } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '10mb' }));
+
+// ─── WRP CATALOGUE ──────────────────────────────────────────────────────────
+const WRP_CATALOGUE_PATH = path.join(__dirname, 'data', 'wrp_catalogue.json');
+let wrpCatalogue = null;
+try {
+  wrpCatalogue = JSON.parse(fs.readFileSync(WRP_CATALOGUE_PATH, 'utf8'));
+} catch (err) {
+  console.warn('WRP catalogue not found at', WRP_CATALOGUE_PATH);
+}
 
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));
@@ -130,6 +140,50 @@ app.post('/api/quotes/sync', async (req, res) => {
     console.error('POST /api/quotes/sync error:', err.message);
     res.status(500).json({ error: 'Database error' });
   }
+});
+
+// ─── WRP CATALOGUE ROUTES ───────────────────────────────────────────────────
+
+// Get full WRP catalogue
+app.get('/api/wrp-catalogue', (req, res) => {
+  if (!wrpCatalogue) return res.status(404).json({ error: 'WRP catalogue not loaded' });
+  res.json(wrpCatalogue);
+});
+
+// Update a single profile's price (learn-as-you-go)
+app.put('/api/wrp-catalogue/price/:id', (req, res) => {
+  if (!wrpCatalogue) return res.status(404).json({ error: 'WRP catalogue not loaded' });
+  const profileId = parseInt(req.params.id, 10);
+  const { price_per_metre_gbp } = req.body;
+
+  const profile = wrpCatalogue.profiles.find(p => p.id === profileId);
+  if (!profile) return res.status(404).json({ error: 'Profile not found' });
+
+  profile.price_per_metre_gbp = typeof price_per_metre_gbp === 'number' ? price_per_metre_gbp : null;
+  profile.price_last_updated = new Date().toISOString().split('T')[0];
+
+  // Persist to disk
+  try {
+    fs.writeFileSync(WRP_CATALOGUE_PATH, JSON.stringify(wrpCatalogue, null, 2), 'utf8');
+    res.json({ ok: true, profile });
+  } catch (err) {
+    console.error('Failed to save WRP catalogue:', err.message);
+    res.status(500).json({ error: 'Failed to save catalogue' });
+  }
+});
+
+// Proxy WRP images to avoid browser referrer/CORS issues
+app.get('/api/wrp-image/:hash', async (req, res) => {
+  const url = `https://www.wrp-timber-mouldings.co.uk/uploads/${req.params.hash}`;
+  try {
+    const https = require('https');
+    https.get(url, upstream => {
+      if (upstream.statusCode !== 200) return res.status(upstream.statusCode).end();
+      res.set('Content-Type', upstream.headers['content-type'] || 'image/jpeg');
+      res.set('Cache-Control', 'public, max-age=604800');
+      upstream.pipe(res);
+    }).on('error', () => res.status(502).end());
+  } catch { res.status(500).end(); }
 });
 
 // ─── CATCH-ALL ───────────────────────────────────────────────────────────────

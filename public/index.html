@@ -510,6 +510,10 @@ const DB = {
     consumablesPerItem: 60,     // £ per line item — fixings, glue, edge tape, abrasives
     contingencyPercent: 7.5,    // % uplift on project subtotal (optional)
     warrantyPercent: 1.5,       // % of total ex VAT — warranty & aftercare allowance (optional)
+    // ── WRP Mouldings ─────────────────────────────────────────────────────────
+    wrpMouldingMarkupPct: 35,        // default markup % for WRP mouldings (editable per-line)
+    wrpMouldingGirthMultiplier: 1.2, // (w+h) × this = estimated painted girth per metre
+    wrpMouldingDefaultFinish: "paint", // default finish for new WRP items: paint|lacquer|stain_lacquer|none
     // ── Spray finishing — in-house booth, area-based ──────────────────────────
     // PAINT = opaque (primer + topcoats). LACQUER = clear (2 coats, no primer).
     // STAIN = pre-treatment before lacquer. Sanding between every coat except final.
@@ -1128,6 +1132,68 @@ function calcMouldingCost({ mouldingKey, metres, qty = 1 }) {
   };
 }
 
+// ─── WRP MOULDING COST ────────────────────────────────────────────────────────
+// Parse "55mm x 52mm" → { w: 55, h: 52 }. Returns null if unparseable.
+function parseWRPDimensions(dimStr) {
+  if (!dimStr) return null;
+  const m = dimStr.match(/(\d+(?:\.\d+)?)\s*mm\s*x\s*(\d+(?:\.\d+)?)\s*mm/i);
+  return m ? { w: +m[1], h: +m[2] } : null;
+}
+
+// Estimate paint cost per linear metre for a WRP moulding.
+// Returns { paintCostPerM, breakdown } or { paintCostPerM: 0, breakdown: null } if finishType is "none".
+function calcWRPFinishCostPerM({ dimensions, girth_mm_override, finishType, hasStain }) {
+  if (!finishType || finishType === "none") return { paintCostPerM: 0, breakdown: null };
+  let girth_mm = girth_mm_override;
+  if (!girth_mm) {
+    const parsed = parseWRPDimensions(dimensions);
+    if (!parsed) return { paintCostPerM: 0, breakdown: null };
+    girth_mm = (parsed.w + parsed.h) * (DB.settings.wrpMouldingGirthMultiplier || 1.2);
+  }
+  // Treat one metre of moulding as a "panel" of girth_mm × 1000mm, one face.
+  const spray = calcSprayFinishCost({
+    doorType: null, widthMm: girth_mm, heightMm: 1000, qty: 1,
+    finishType, hasStain, surfaceType: "panel",
+  });
+  return { paintCostPerM: spray.costPerDoor, breakdown: spray.breakdown };
+}
+
+// Supply + finishing pricing: (WRP cost + paint cost) × metres × (1 + markup/100)
+function calcWRPMouldingCost({
+  wrp_price_per_metre, linear_metres, markup_pct, qty = 1,
+  finishType, hasStain, dimensions, girth_mm_override, paint_rate_per_m_override,
+}) {
+  const price = wrp_price_per_metre || 0;
+  const metres = linear_metres || 0;
+  const markup = markup_pct ?? DB.settings.wrpMouldingMarkupPct;
+  const materialCost = price * metres;
+  // Finishing: manual override OR area-based auto via spray booth rates
+  let paintRatePerM = 0, paintBreakdown = null;
+  if (paint_rate_per_m_override != null && paint_rate_per_m_override !== "") {
+    paintRatePerM = +paint_rate_per_m_override || 0;
+  } else if (finishType && finishType !== "none") {
+    const res = calcWRPFinishCostPerM({ dimensions, girth_mm_override, finishType, hasStain });
+    paintRatePerM = res.paintCostPerM;
+    paintBreakdown = res.breakdown;
+  }
+  const finishCost = paintRatePerM * metres;
+  const totalCost = materialCost + finishCost;
+  const sellExVAT = totalCost * (1 + markup / 100);
+  return {
+    costPerUnit: totalCost, sellPerUnit: sellExVAT,
+    totalCost: totalCost * qty, totalSellExVAT: sellExVAT * qty,
+    totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
+    breakdown: {
+      material: materialCost * qty,
+      finishing: finishCost * qty,
+      paint_rate_per_m: +paintRatePerM.toFixed(2),
+      finish_type: finishType || "none",
+      markup_pct: markup,
+      ...(paintBreakdown ? { spray: paintBreakdown } : {}),
+    },
+  };
+}
+
 // ─── FACE FRAME COST (CABINET) ─────────────────────────────────────────────────
 // Frame runs around the cabinet opening perimeter (2×W + 2×H), 30mm wide.
 // Corner joints (pocket screw): add 0.1 hrs per corner (4 corners).
@@ -1170,6 +1236,7 @@ function priceItem(item) {
   if (item.type === "endpanel") return calcEndPanelCost({ ...item.params, qty: item.qty });
   if (item.type === "shelf")    return calcFloatingShelfCost({ ...item.params, qty: item.qty });
   if (item.type === "moulding") return calcMouldingCost({ ...item.params, qty: item.qty });
+  if (item.type === "wrp_moulding") return calcWRPMouldingCost({ ...item.params, qty: item.qty });
   if (item.type === "custom") {
     const cost = (item.params.unitCostExVAT || 0) * item.qty;
     const sell = cost * DB.settings.margin;
@@ -1469,15 +1536,26 @@ function deriveSpec(quote) {
 }
 
 // ─── PRINT / PDF ──────────────────────────────────────────────────────────────
-function printQuote(quote, viewMode) {
+function printQuote(quote, viewMode, roomFilter) {
   const mode = viewMode || "itemised";
-  const totals = quoteTotals(quote);
   const dist = distributeProjectCosts(quote);
-  const roomSections = dist.rooms.map(({ roomName, items }) => {
+  const filteredRooms = dist.rooms.filter(({ roomName }) => roomFilter == null || roomFilter === roomName);
+  const filteredSubtotal = filteredRooms.reduce((s, r) => s + r.items.reduce((rs, i) => rs + (i.bakedSellExVAT || 0), 0), 0);
+  const vatRate = DB.settings.vat || 0.2;
+  const filteredVAT = filteredSubtotal * vatRate;
+  const totals = roomFilter == null
+    ? quoteTotals(quote)
+    : { totalExVAT: filteredSubtotal, vat: filteredVAT, totalIncVAT: filteredSubtotal + filteredVAT };
+  const roomSections = filteredRooms.map(({ roomName, items }) => {
     const roomTotal = items.reduce((s, i) => s + (i.bakedSellExVAT || 0), 0);
-    const itemRows = items.map(i =>
-      `<tr><td class="td-desc">${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.bakedSellExVAT)}</td>` : ""}</tr>`
-    ).join("");
+    const itemRows = items.map(i => {
+      const isWRP = i.type === "wrp_moulding" && i.params;
+      const wrpThumbSrc = isWRP && i.params.image_url ? (i.params.image_url.match(/\/uploads\/(.+)$/) ? `/api/wrp-image/${i.params.image_url.match(/\/uploads\/(.+)$/)[1]}` : i.params.image_url) : "";
+      const wrpThumb = isWRP && i.params.image_url ? `<img src="${wrpThumbSrc}" referrerpolicy="no-referrer" style="width:32px;height:32px;object-fit:contain;vertical-align:middle;margin-right:8px;border-radius:2px;" />` : "";
+      const wrpFinishLabel = isWRP && i.params.finishType && i.params.finishType !== "none" ? `${({paint:"painted",lacquer:"lacquered",stain_lacquer:"stained & lacquered"})[i.params.finishType] || i.params.finishType} · ` : "";
+      const wrpMeta = isWRP ? `<div style="font-size:8pt;color:#888;margin-top:2px">${i.params.material||"Tulip"} · ${wrpFinishLabel}${i.params.linear_metres||0}m · £${(i.bakedSellExVAT/(i.params.linear_metres||1)).toFixed(2)}/m</div>` : "";
+      return `<tr><td class="td-desc">${wrpThumb}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}${wrpMeta}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.bakedSellExVAT)}</td>` : ""}</tr>`;
+    }).join("");
     const roomSubRow = mode === "itemised"
       ? `<tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomTotal)}</td></tr>`
       : `<tr class="room-sub"><td style="text-align:right">${fmt(roomTotal)} ex VAT</td></tr>`;
@@ -1583,6 +1661,7 @@ const ITEM_DEFAULTS = {
   endpanel: { type:"endpanel", materialKey:"MAT_BIRCH_UNF_18", widthMm:560, heightMm:720, thicknessMm:18, faces:1, exposedEdgeCount:2, finishType:"paint", hasStain:false, qty:1, description:"" },
   shelf:    { type:"shelf", materialKey:"MAT_BIRCH_PREF_18", lengthMm:600, depthMm:300, thicknessMm:18, visibleThicknessMm:18, faces:1, finishType:"lacquer", hasStain:false, qty:1, description:"" },
   moulding: { type:"moulding", mouldingKey:"MLD_SKR_MDF_95", metres:3, qty:1, description:"" },
+  wrp_moulding: { type:"wrp_moulding", profile_sku:"", profile_id:null, wrp_category:"", wrp_description:"", material:"Tulip Wood For Interior", linear_metres:3, wrp_price_per_metre:0, markup_pct:35, image_url:null, product_url:"", notes:"", qty:1, description:"", dimensions:"", finishType:"paint", hasStain:false, girth_mm_override:null, paint_rate_per_m_override:"" },
   custom:  { type:"custom", unitCostExVAT:0, notes:"", qty:1, description:"" },
 };
 
@@ -1710,6 +1789,104 @@ function SABQuoteTool() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(null); // quote id or null
   const [specOpen, setSpecOpen] = useState(false);
+
+  // Proxy WRP images through our server to avoid referrer/CORS issues
+  const wrpImg = (url) => {
+    if (!url) return null;
+    const match = url.match(/\/uploads\/(.+)$/);
+    return match ? `/api/wrp-image/${match[1]}` : url;
+  };
+
+  // ── WRP Mouldings state ──
+  const [wrpCatalogue, setWrpCatalogue] = useState(null); // { metadata, profiles[] }
+  const [showWRPPicker, setShowWRPPicker] = useState(false);
+  const [wrpPickerCategory, setWrpPickerCategory] = useState("all");
+  const [wrpPickerSearch, setWrpPickerSearch] = useState("");
+  const [wrpPricePrompt, setWrpPricePrompt] = useState(null); // profile needing price entry
+
+  // Load WRP catalogue from server
+  useEffect(() => {
+    fetch('/api/wrp-catalogue').then(r => r.ok ? r.json() : null).then(data => {
+      if (data) setWrpCatalogue(data);
+    }).catch(() => {});
+  }, []);
+
+  // WRP picker helpers
+  const wrpProfiles = wrpCatalogue?.profiles || [];
+  const wrpCategories = ["all","cornices","skirtings","architraves","dado_rails","picture_rails","beads","window_boards","skirting_tops","compound_mouldings"];
+  const wrpCategoryLabels = { all:"All", cornices:"Cornices", skirtings:"Skirtings", architraves:"Architraves", dado_rails:"Dado Rails", picture_rails:"Picture Rails", beads:"Beads", window_boards:"Window Boards", skirting_tops:"Skirting Tops", compound_mouldings:"Compound" };
+
+  const wrpFilteredProfiles = useMemo(() => {
+    let list = wrpProfiles;
+    if (wrpPickerCategory !== "all") list = list.filter(p => p.category === wrpPickerCategory);
+    if (wrpPickerSearch.trim()) {
+      const q = wrpPickerSearch.toLowerCase().trim();
+      list = list.filter(p =>
+        (p.sku && p.sku.toLowerCase().includes(q)) ||
+        (p.description && p.description.toLowerCase().includes(q)) ||
+        (p.dimensions && p.dimensions.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [wrpProfiles, wrpPickerCategory, wrpPickerSearch]);
+
+  function selectWRPProfile(profile) {
+    const price = profile.price_per_metre_gbp;
+    const markup = DB.settings.wrpMouldingMarkupPct || 35;
+    if (price === null || price === undefined) {
+      // Show price entry prompt
+      setWrpPricePrompt(profile);
+      return;
+    }
+    applyWRPProfile(profile, price, markup);
+  }
+
+  function applyWRPProfile(profile, price, markup) {
+    const desc = `WRP ${profile.sku} ${(profile.dimensions||"")}`.trim();
+    setAddItemForm(f => ({
+      ...ITEM_DEFAULTS.wrp_moulding,
+      type: "wrp_moulding",
+      profile_sku: profile.sku,
+      profile_id: profile.id,
+      wrp_category: profile.category,
+      wrp_description: profile.description || "",
+      dimensions: profile.dimensions || "",
+      material: "Tulip Wood For Interior",
+      linear_metres: f.linear_metres || 3,
+      wrp_price_per_metre: price,
+      markup_pct: markup,
+      image_url: profile.image_url,
+      product_url: profile.product_url,
+      qty: f.qty || 1,
+      description: desc,
+      finishType: f.finishType || DB.settings.wrpMouldingDefaultFinish || "paint",
+      hasStain: f.hasStain || false,
+      girth_mm_override: f.girth_mm_override || null,
+      paint_rate_per_m_override: f.paint_rate_per_m_override || "",
+    }));
+    setShowWRPPicker(false);
+    setWrpPricePrompt(null);
+  }
+
+  async function saveWRPPrice(profileId, price) {
+    try {
+      const res = await fetch(`/api/wrp-catalogue/price/${profileId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price_per_metre_gbp: price }),
+      });
+      if (res.ok) {
+        // Update local catalogue
+        setWrpCatalogue(prev => {
+          if (!prev) return prev;
+          const profiles = prev.profiles.map(p =>
+            p.id === profileId ? { ...p, price_per_metre_gbp: price, price_last_updated: new Date().toISOString().split('T')[0] } : p
+          );
+          return { ...prev, profiles };
+        });
+      }
+    } catch (err) { console.error('Failed to save WRP price:', err); }
+  }
 
   // Deep link: navigate to a specific quote via URL hash (e.g. #/quote/Q123...)
   useEffect(() => {
@@ -1970,7 +2147,8 @@ function SABQuoteTool() {
     const base = { type: item.type, qty: item.qty, description: item.description };
     const params = item.params || {};
     const pf = params.doorType ? (TYPE_TO_PROFILE_FINISH[params.doorType] || { profile:"slab", finish:"painted" }) : {};
-    setAddItemForm({ ...ITEM_DEFAULTS[item.type] || ITEM_DEFAULTS.cabinet, ...base, ...params, doorProfile: pf.profile || "slab", doorFinish: pf.finish || "painted" });
+    const restored = { ...ITEM_DEFAULTS[item.type] || ITEM_DEFAULTS.cabinet, ...base, ...params, doorProfile: pf.profile || "slab", doorFinish: pf.finish || "painted" };
+    setAddItemForm(restored);
     setEditingItem({ room, idx });
     setShowAddItem(true);
   }
@@ -2058,6 +2236,8 @@ function SABQuoteTool() {
         ? { type:"shelf", qty: addItemForm.qty, params: { materialKey: addItemForm.materialKey || "MAT_BIRCH_PREF_18", lengthMm: +addItemForm.lengthMm || 600, depthMm: +addItemForm.depthMm || 300, thicknessMm: +addItemForm.thicknessMm || 18, visibleThicknessMm: +addItemForm.visibleThicknessMm || 18, faces: +addItemForm.faces || 1, finishType: addItemForm.finishType || "lacquer", hasStain: !!addItemForm.hasStain } }
         : addItemForm.type === "moulding"
         ? { type:"moulding", qty: addItemForm.qty, params: { mouldingKey: addItemForm.mouldingKey || "MLD_SKR_MDF_95", metres: +addItemForm.metres || 3 } }
+        : addItemForm.type === "wrp_moulding"
+        ? { type:"wrp_moulding", qty: addItemForm.qty, params: { wrp_price_per_metre: addItemForm.wrp_price_per_metre, linear_metres: addItemForm.linear_metres, markup_pct: addItemForm.markup_pct, dimensions: addItemForm.dimensions, finishType: addItemForm.finishType, hasStain: addItemForm.hasStain, girth_mm_override: addItemForm.girth_mm_override, paint_rate_per_m_override: addItemForm.paint_rate_per_m_override } }
         : { type:"custom", qty: addItemForm.qty, params: { unitCostExVAT: addItemForm.unitCostExVAT, notes: addItemForm.notes } };
       return priceItem(item);
     } catch { return null; }
@@ -2079,6 +2259,8 @@ function SABQuoteTool() {
       ? { type:"shelf", description: addItemForm.description || `Floating Shelf ${addItemForm.lengthMm}×${addItemForm.depthMm}${(addItemForm.visibleThicknessMm||18)>(addItemForm.thicknessMm||18)+4?" Box":""}mm`, qty: Number(addItemForm.qty), params: { materialKey:addItemForm.materialKey||"MAT_BIRCH_PREF_18", lengthMm:+addItemForm.lengthMm||600, depthMm:+addItemForm.depthMm||300, thicknessMm:+addItemForm.thicknessMm||18, visibleThicknessMm:+addItemForm.visibleThicknessMm||18, faces:+addItemForm.faces||1, finishType:addItemForm.finishType||"lacquer", hasStain:!!addItemForm.hasStain } }
       : addItemForm.type === "moulding"
       ? { type:"moulding", description: addItemForm.description || `${DB.mouldings[addItemForm.mouldingKey]?.name||"Moulding"} — ${addItemForm.metres}m`, qty: Number(addItemForm.qty), params: { mouldingKey:addItemForm.mouldingKey||"MLD_SKR_MDF_95", metres:+addItemForm.metres||3 } }
+      : addItemForm.type === "wrp_moulding"
+      ? { type:"wrp_moulding", description: addItemForm.description || `WRP ${addItemForm.profile_sku} ${addItemForm.wrp_category} — ${addItemForm.linear_metres}m`, qty: Number(addItemForm.qty), params: { profile_sku:addItemForm.profile_sku, profile_id:addItemForm.profile_id, wrp_category:addItemForm.wrp_category, material:addItemForm.material, linear_metres:+addItemForm.linear_metres||0, wrp_price_per_metre:+addItemForm.wrp_price_per_metre||0, markup_pct:+addItemForm.markup_pct, image_url:addItemForm.image_url, product_url:addItemForm.product_url, notes:addItemForm.notes||"", dimensions:addItemForm.dimensions||"", finishType:addItemForm.finishType||"paint", hasStain:!!addItemForm.hasStain, girth_mm_override:addItemForm.girth_mm_override||null, paint_rate_per_m_override:addItemForm.paint_rate_per_m_override||"" } }
       : { type:"custom", description: addItemForm.description, qty: Number(addItemForm.qty), params: { unitCostExVAT:+addItemForm.unitCostExVAT, notes:addItemForm.notes } };
     item.pricing = priceItem(item);
     const updated = { ...quotes };
@@ -2119,7 +2301,7 @@ function SABQuoteTool() {
             {[["build","Build"],["margin","Margin"],["client","Client View"]].map(([v,l]) => (
               <button key={v} onClick={() => setView(v)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", background:view===v?"#c8a96e":"transparent", color:view===v?"#1a1a1a":"#777777", border:"none", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
             ))}
-            <button onClick={() => printQuote(activeQuote, clientViewMode)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>↓ PDF</button>
+            <button onClick={() => printQuote(activeQuote, clientViewMode, clientViewRoomFilter)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>↓ PDF {clientViewRoomFilter ? `(${clientViewRoomFilter})` : ""}</button>
             <button onClick={() => { setView("quotes"); setActiveQuoteId(null); }} style={{ padding:"6px 14px", fontSize:11, background:"transparent", color:"#777777", border:"none", cursor:"pointer", fontFamily:"inherit" }}>← All</button>
             <div style={{ width:1, height:20, background:"#d8d3cc", margin:"0 4px" }} />
           </>)}
@@ -2456,12 +2638,75 @@ function SABQuoteTool() {
                               <button onClick={e => { e.stopPropagation(); removeItem(activeRoom, idx); }} style={{ background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:15 }}>×</button>
                             </td>
                           </tr>
-                          {expandedItem === idx && item.pricing?.breakdown && (
+                          {expandedItem === idx && item.type === "wrp_moulding" && (
+                            <tr key={`${idx}-wrp-detail`}>
+                              <td colSpan={8} style={{ padding:"12px 14px 14px", background:"#f0eeeb" }}>
+                                <div style={{ display:"flex", gap:14, alignItems:"flex-start" }}>
+                                  {item.params?.image_url && (
+                                    <a href={item.params.product_url} target="_blank" rel="noopener noreferrer" style={{ flexShrink:0 }}>
+                                      <img src={wrpImg(item.params.image_url)} alt={item.params.profile_sku} style={{ width:60, height:60, objectFit:"contain", borderRadius:4, border:"1px solid #e0d8cc" }} />
+                                    </a>
+                                  )}
+                                  <div style={{ flex:1 }}>
+                                    <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:8 }}>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Linear metres</div>
+                                        <input type="number" step="0.25" min="0.25" value={item.params?.linear_metres||""} onClick={e=>e.stopPropagation()} onChange={e => { const v = e.target.value===""?0:+e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.linear_metres=v; it.pricing=priceItem(it); it.description=`WRP ${it.params.profile_sku} ${it.params.wrp_category||""} — ${v}m`.trim(); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:60, padding:"2px 0", outline:"none", textAlign:"center" }} />
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Markup %</div>
+                                        <input type="number" step="1" min="0" value={item.params?.markup_pct||""} onClick={e=>e.stopPropagation()} onChange={e => { const v = e.target.value===""?0:+e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.markup_pct=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:50, padding:"2px 0", outline:"none", textAlign:"center" }} />
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>WRP £/m</div>
+                                        <div style={{ fontSize:12, color:"#777777" }}>£{(item.params?.wrp_price_per_metre||0).toFixed(2)}</div>
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Material</div>
+                                        <div style={{ fontSize:11, color:"#777777" }}>{item.params?.material||"Tulip"}</div>
+                                      </div>
+                                    </div>
+                                    {/* Finishing controls — second row */}
+                                    <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:8, paddingTop:8, borderTop:"1px solid #d8d3cc" }}>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Finish</div>
+                                        <select value={item.params?.finishType||"paint"} onClick={e=>e.stopPropagation()} onChange={e => { const v=e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.finishType=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", padding:"2px 0", outline:"none" }}>
+                                          <option value="none">None</option>
+                                          <option value="paint">Paint</option>
+                                          <option value="lacquer">Lacquer</option>
+                                          <option value="stain_lacquer">Stain+Lacq</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Paint £/m (override)</div>
+                                        <input type="number" step="0.01" min="0" placeholder="auto" value={item.params?.paint_rate_per_m_override||""} onClick={e=>e.stopPropagation()} onChange={e => { const v=e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.paint_rate_per_m_override=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:70, padding:"2px 0", outline:"none", textAlign:"center" }} />
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Girth mm (override)</div>
+                                        <input type="number" step="1" min="0" placeholder="auto" value={item.params?.girth_mm_override||""} onClick={e=>e.stopPropagation()} onChange={e => { const v = e.target.value===""?null:+e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.girth_mm_override=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:70, padding:"2px 0", outline:"none", textAlign:"center" }} />
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Effective paint £/m</div>
+                                        <div style={{ fontSize:11, color:"#777777" }}>£{(item.pricing?.breakdown?.paint_rate_per_m||0).toFixed(2)}</div>
+                                      </div>
+                                    </div>
+                                    <div style={{ display:"flex", gap:16 }}>
+                                      <div><span style={{ fontSize:9, color:"#999999" }}>Material: </span><span style={{ fontSize:11, color:"#999999" }}>{fmt(item.pricing?.breakdown?.material)}</span></div>
+                                      <div><span style={{ fontSize:9, color:"#999999" }}>Finishing: </span><span style={{ fontSize:11, color:"#999999" }}>{fmt(item.pricing?.breakdown?.finishing||0)}</span></div>
+                                      <div><span style={{ fontSize:9, color:"#999999" }}>Markup ({item.params?.markup_pct||0}%): </span><span style={{ fontSize:11, color:"#c8a96e" }}>+{fmt((item.pricing?.totalSellExVAT||0)-(item.pricing?.totalCost||0))}</span></div>
+                                      <div><span style={{ fontSize:9, color:"#999999" }}>Sell: </span><span style={{ fontSize:11, color:"#c8a96e", fontWeight:600 }}>{fmt(item.pricing?.totalSellExVAT)}</span></div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          {expandedItem === idx && item.type !== "wrp_moulding" && item.pricing?.breakdown && (
                             <tr key={`${idx}-detail`}>
                               <td colSpan={8} style={{ padding:"10px 14px 14px", background:"#f0eeeb" }}>
                                 <div style={{ fontSize:9, letterSpacing:"0.12em", color:"#c8a96e", textTransform:"uppercase", marginBottom:8 }}>Cost Breakdown</div>
                                 <div style={{ display:"flex", gap:24, flexWrap:"wrap" }}>
-                                  {Object.entries(item.pricing.breakdown).filter(([,v]) => v > 0).map(([k,v]) => (
+                                  {Object.entries(item.pricing.breakdown).filter(([k,v]) => typeof v === 'number' && v > 0).map(([k,v]) => (
                                     <div key={k}>
                                       <div style={{ fontSize:9, color:"#999999", textTransform:"capitalize" }}>{k.replace(/([A-Z])/g," $1").toLowerCase()}</div>
                                       <div style={{ fontSize:11, color:"#999999" }}>{fmt(v)}</div>
@@ -2651,9 +2896,10 @@ function SABQuoteTool() {
 
             {/* Type tabs */}
             <div className="sab-type-tabs" style={{ display:"flex", gap:4, marginBottom:20 }}>
-              {["cabinet","door","frame","drawer","endpanel","shelf","moulding","custom"].map(t => (
-                <button key={t} onClick={() => { setAddItemForm({ ...ITEM_DEFAULTS[t] }); }} style={{ padding:"6px 14px", background:addItemForm.type===t?"#c8a96e":"#f5f5f5", color:addItemForm.type===t?"#ffffff":"#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontSize:10, letterSpacing:"0.08em", textTransform:"capitalize", fontFamily:"inherit" }}>{t}</button>
-              ))}
+              {["cabinet","door","frame","drawer","endpanel","shelf","moulding","wrp_moulding","custom"].map(t => {
+                const typeLabels = { wrp_moulding: "WRP Moulding", endpanel: "End Panel" };
+                return <button key={t} onClick={() => { setAddItemForm({ ...ITEM_DEFAULTS[t] }); }} style={{ padding:"6px 14px", background:addItemForm.type===t?"#c8a96e":"#f5f5f5", color:addItemForm.type===t?"#ffffff":"#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontSize:10, letterSpacing:"0.08em", textTransform:"capitalize", fontFamily:"inherit" }}>{typeLabels[t] || t}</button>;
+              })}
             </div>
 
             {/* ── CABINET FORM ── */}
@@ -3180,6 +3426,196 @@ function SABQuoteTool() {
               </>
             )}
 
+            {/* ── WRP MOULDING FORM ── */}
+            {addItemForm.type === "wrp_moulding" && (
+              <>
+                {/* Selected profile display or picker trigger */}
+                {addItemForm.profile_sku ? (
+                  <div style={{ display:"flex", gap:14, alignItems:"flex-start", marginBottom:14, padding:12, background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:6 }}>
+                    {addItemForm.image_url && (
+                      <a href={addItemForm.product_url} target="_blank" rel="noopener noreferrer" style={{ flexShrink:0 }}>
+                        <img src={wrpImg(addItemForm.image_url)} alt={addItemForm.profile_sku} style={{ width:70, height:70, objectFit:"contain", borderRadius:4, border:"1px solid #e0d8cc" }} />
+                      </a>
+                    )}
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, fontWeight:600, color:"#1a1a1a" }}>{addItemForm.profile_sku}</div>
+                      <div style={{ fontSize:10, color:"#777777" }}>{addItemForm.wrp_description?.slice(0,80)}</div>
+                      {addItemForm.wrp_price_per_metre > 0 && <div style={{ fontSize:11, color:"#c8a96e", marginTop:2 }}>£{addItemForm.wrp_price_per_metre.toFixed(2)}/m (ex VAT)</div>}
+                    </div>
+                    <button onClick={() => { setWrpPickerCategory(addItemForm.wrp_category || "all"); setShowWRPPicker(true); }} style={{ padding:"6px 12px", background:"transparent", color:"#c8a96e", border:"1px solid #c8a96e", borderRadius:3, cursor:"pointer", fontSize:10, fontFamily:"inherit", whiteSpace:"nowrap" }}>Change</button>
+                  </div>
+                ) : (
+                  <div style={{ textAlign:"center", padding:"28px 20px", background:"#f9f8f6", border:"2px dashed #d8d3cc", borderRadius:8, marginBottom:14, cursor:"pointer" }} onClick={() => setShowWRPPicker(true)}>
+                    <div style={{ fontSize:22, marginBottom:8 }}>🪵</div>
+                    <div style={{ fontSize:12, color:"#c8a96e", fontWeight:500, marginBottom:4 }}>Select WRP Profile</div>
+                    <div style={{ fontSize:10, color:"#999999" }}>Browse the WRP catalogue to choose a moulding profile</div>
+                  </div>
+                )}
+
+                {/* Quantity, material, markup fields */}
+                {addItemForm.profile_sku && (
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, marginBottom:14 }}>
+                    <div><label style={lbl}>Linear metres</label><input type="number" step="0.25" min="0.25" value={addItemForm.linear_metres||""} onChange={e => updateForm("linear_metres", e.target.value===""?0:+e.target.value)} style={inp} /></div>
+                    <div><label style={lbl}>Qty (runs)</label><input type="number" min="1" value={addItemForm.qty||""} onChange={e => updateForm("qty", e.target.value===""?0:+e.target.value)} style={inp} /></div>
+                    <div><label style={lbl}>Markup %</label><input type="number" step="1" min="0" value={addItemForm.markup_pct||""} onChange={e => updateForm("markup_pct", e.target.value===""?0:+e.target.value)} style={inp} /></div>
+                  </div>
+                )}
+                {addItemForm.profile_sku && (
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14 }}>
+                    <div>
+                      <label style={lbl}>Material</label>
+                      <select value={addItemForm.material||"Tulip Wood For Interior"} onChange={e => {
+                        updateForm("material", e.target.value);
+                      }} style={{ ...sel, width:"100%" }}>
+                        {(wrpProfiles.find(p=>p.id===addItemForm.profile_id)?.materials || ["Tulip Wood For Interior"]).map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      {addItemForm.material && addItemForm.material !== "Tulip Wood For Interior" && (
+                        <div style={{ fontSize:9, color:"#c88a3e", marginTop:4 }}>⚠ {addItemForm.material} pricing: check WRP site — typically 20–40% uplift. Enter adjusted price manually.</div>
+                      )}
+                    </div>
+                    <div>
+                      <label style={lbl}>WRP Price per metre (£, ex VAT)</label>
+                      <input type="number" step="0.01" min="0" value={addItemForm.wrp_price_per_metre||""} onChange={e => updateForm("wrp_price_per_metre", e.target.value===""?0:+e.target.value)} style={inp} />
+                    </div>
+                  </div>
+                )}
+                {/* Finishing controls — Finish dropdown + paint rate override + girth override */}
+                {addItemForm.profile_sku && (
+                  <div style={{ display:"grid", gridTemplateColumns:"1.4fr 1fr 1fr", gap:12, marginBottom:14 }}>
+                    <div>
+                      <label style={lbl}>Finish</label>
+                      <select value={addItemForm.finishType || "paint"} onChange={e => updateForm("finishType", e.target.value)} style={{ ...sel, width:"100%" }}>
+                        <option value="none">No finishing (supply only)</option>
+                        <option value="paint">Paint — primer + 2 topcoats</option>
+                        <option value="lacquer">Lacquer — clear, 2 coats</option>
+                        <option value="stain_lacquer">Stain + Lacquer</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={lbl}>Paint £/m (override)</label>
+                      <input type="number" step="0.01" min="0" placeholder="auto" value={addItemForm.paint_rate_per_m_override||""} onChange={e => updateForm("paint_rate_per_m_override", e.target.value)} style={inp} />
+                    </div>
+                    <div>
+                      <label style={lbl}>Girth mm (override)</label>
+                      <input type="number" step="1" min="0" placeholder="auto" value={addItemForm.girth_mm_override||""} onChange={e => updateForm("girth_mm_override", e.target.value===""?null:+e.target.value)} style={inp} />
+                    </div>
+                  </div>
+                )}
+                {addItemForm.profile_sku && (
+                  <>
+                    <div style={{ marginBottom:14 }}><label style={lbl}>Description</label><input value={addItemForm.description} onChange={e=>updateForm("description",e.target.value)} style={{ ...inp, width:"100%" }} /></div>
+                    {formPreview && (<div style={{ background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:6, padding:"12px 16px", marginBottom:16, display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12 }}>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Material</div><div style={{ fontSize:14, color:"#777777" }}>{fmt(formPreview.breakdown?.material)}</div></div>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Finishing</div><div style={{ fontSize:14, color:"#777777" }}>{fmt(formPreview.breakdown?.finishing||0)}</div></div>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Sell ex VAT</div><div style={{ fontSize:14, color:"#c8a96e" }}>{fmt(formPreview.totalSellExVAT)}</div></div>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Sell inc VAT</div><div style={{ fontSize:14, color:"#1a1a1a" }}>{fmt(formPreview.totalSellIncVAT)}</div></div>
+                    </div>)}
+                    <div style={{ display:"flex", gap:10 }}>
+                      <button onClick={submitAddItem} style={{ padding:"10px 28px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>{editingItem?"Save Changes":`Add to ${activeRoom}`}</button>
+                      <button onClick={()=>{setShowAddItem(false);setEditingItem(null);}} style={{ padding:"10px 18px", background:"transparent", color:"#777777", border:"1px solid #d8d3cc", borderRadius:4, cursor:"pointer", fontSize:11, fontFamily:"inherit" }}>Cancel</button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ── WRP PICKER MODAL ── */}
+            {showWRPPicker && (
+              <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.6)", zIndex:2000, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={() => setShowWRPPicker(false)}>
+                <div style={{ background:"#f5f5f5", borderRadius:10, width:"90vw", maxWidth:1000, maxHeight:"88vh", display:"flex", flexDirection:"column", overflow:"hidden" }} onClick={e => e.stopPropagation()}>
+                  {/* Picker header */}
+                  <div style={{ padding:"16px 20px", background:"#1a1a1a", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <div>
+                      <div style={{ fontSize:14, color:"#ffffff", letterSpacing:"0.08em" }}>WRP Moulding Profiles</div>
+                      <div style={{ fontSize:10, color:"#c8a96e", marginTop:2 }}>{wrpFilteredProfiles.length} of {wrpProfiles.length} profiles</div>
+                    </div>
+                    <button onClick={() => setShowWRPPicker(false)} style={{ background:"transparent", border:"none", color:"#777777", fontSize:20, cursor:"pointer", padding:4 }}>✕</button>
+                  </div>
+
+                  {/* Search */}
+                  <div style={{ padding:"12px 20px", borderBottom:"1px solid #d8d3cc", background:"#ffffff" }}>
+                    <input value={wrpPickerSearch} onChange={e => setWrpPickerSearch(e.target.value)} placeholder="Search by SKU, description, or dimensions..." style={{ width:"100%", padding:"10px 14px", border:"1px solid #d8d3cc", borderRadius:4, fontSize:13, fontFamily:"inherit", boxSizing:"border-box" }} />
+                  </div>
+
+                  {/* Category tabs */}
+                  <div style={{ padding:"10px 20px", borderBottom:"1px solid #d8d3cc", display:"flex", gap:4, flexWrap:"wrap", background:"#fafafa" }}>
+                    {wrpCategories.map(cat => (
+                      <button key={cat} onClick={() => setWrpPickerCategory(cat)} style={{ padding:"5px 12px", fontSize:10, letterSpacing:"0.06em", background:wrpPickerCategory===cat?"#c8a96e":"transparent", color:wrpPickerCategory===cat?"#ffffff":"#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit", textTransform:"capitalize" }}>
+                        {wrpCategoryLabels[cat] || cat}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Profile card grid */}
+                  <div style={{ flex:1, overflowY:"auto", padding:20 }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(210px, 1fr))", gap:14 }}>
+                      {wrpFilteredProfiles.map(profile => (
+                        <div key={profile.id} style={{ background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:6, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+                          {/* Image */}
+                          <div style={{ height:140, background:"#f9f8f6", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", borderBottom:"1px solid #e0d8cc" }}
+                            onClick={() => profile.product_url && window.open(profile.product_url, '_blank')}>
+                            {profile.image_url ? (
+                              <img src={wrpImg(profile.image_url)} alt={profile.sku} style={{ maxWidth:"100%", maxHeight:"100%", objectFit:"contain" }} />
+                            ) : (
+                              <div style={{ textAlign:"center", color:"#c8a96e" }}>
+                                <div style={{ fontSize:28, marginBottom:4 }}>⌓</div>
+                                <div style={{ fontSize:11, fontWeight:600 }}>{profile.sku}</div>
+                              </div>
+                            )}
+                          </div>
+                          {/* Info */}
+                          <div style={{ padding:"10px 12px", flex:1, display:"flex", flexDirection:"column" }}>
+                            <div style={{ fontSize:12, fontWeight:700, color:"#1a1a1a", marginBottom:2 }}>{profile.sku}</div>
+                            {profile.dimensions && <div style={{ fontSize:10, color:"#777777", marginBottom:2 }}>{profile.dimensions}</div>}
+                            <div style={{ fontSize:10, color:"#999999", marginBottom:8, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{profile.description?.split('.')[0] || ""}</div>
+                            <div style={{ marginTop:"auto", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                              {profile.price_per_metre_gbp !== null ? (
+                                <span style={{ fontSize:12, fontWeight:600, color:"#c8a96e" }}>£{profile.price_per_metre_gbp.toFixed(2)}/m</span>
+                              ) : (
+                                <a href={profile.product_url} target="_blank" rel="noopener noreferrer" style={{ fontSize:10, color:"#c88a3e", textDecoration:"none" }}>Check WRP ↗</a>
+                              )}
+                              <button onClick={() => selectWRPProfile(profile)} style={{ padding:"6px 14px", background:"#c8a96e", color:"#ffffff", border:"none", borderRadius:3, cursor:"pointer", fontSize:10, fontFamily:"inherit", fontWeight:600 }}>Select</button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {wrpFilteredProfiles.length === 0 && (
+                      <div style={{ textAlign:"center", padding:40, color:"#999999" }}>
+                        <div style={{ fontSize:16, marginBottom:8 }}>No profiles found</div>
+                        <div style={{ fontSize:11 }}>Try a different category or search term</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── WRP PRICE PROMPT ── */}
+            {wrpPricePrompt && (
+              <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.6)", zIndex:2100, display:"flex", alignItems:"center", justifyContent:"center" }} onClick={() => setWrpPricePrompt(null)}>
+                <div style={{ background:"#ffffff", borderRadius:8, padding:28, width:400, maxWidth:"90vw" }} onClick={e => e.stopPropagation()}>
+                  <div style={{ fontSize:14, color:"#1a1a1a", fontWeight:600, marginBottom:12 }}>Enter WRP Price for {wrpPricePrompt.sku}</div>
+                  <div style={{ fontSize:11, color:"#777777", marginBottom:16, lineHeight:1.6 }}>
+                    This profile doesn't have a price yet. Check the WRP product page and enter the per-metre price (ex VAT):
+                    <br/><a href={wrpPricePrompt.product_url} target="_blank" rel="noopener noreferrer" style={{ color:"#c8a96e" }}>Open WRP product page ↗</a>
+                  </div>
+                  <input id="wrp-price-input" type="number" step="0.01" min="0" placeholder="e.g. 4.03" style={{ width:"100%", padding:"10px 14px", border:"1px solid #d8d3cc", borderRadius:4, fontSize:14, fontFamily:"inherit", boxSizing:"border-box", marginBottom:16 }} />
+                  <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+                    <button onClick={() => setWrpPricePrompt(null)} style={{ padding:"8px 16px", background:"transparent", color:"#777777", border:"1px solid #d8d3cc", borderRadius:4, cursor:"pointer", fontSize:11, fontFamily:"inherit" }}>Cancel</button>
+                    <button onClick={() => {
+                      const el = document.getElementById('wrp-price-input');
+                      const price = parseFloat(el?.value);
+                      if (!isNaN(price) && price > 0) {
+                        saveWRPPrice(wrpPricePrompt.id, price);
+                        applyWRPProfile(wrpPricePrompt, price, DB.settings.wrpMouldingMarkupPct || 35);
+                      }
+                    }} style={{ padding:"8px 20px", background:"#c8a96e", color:"#ffffff", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, fontFamily:"inherit", fontWeight:600 }}>Save & Select</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ── CUSTOM FORM ── */}
             {addItemForm.type === "custom" && (
               <>
@@ -3703,6 +4139,22 @@ function SABQuoteTool() {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* WRP Mouldings Settings */}
+              <div style={{ background:"#f0eeeb", borderRadius:8, padding:"20px 22px", marginBottom:24, border:"1px solid #d8d3cc" }}>
+                <SectionHead title="WRP Mouldings" sub="WRP Timber Mouldings — supply-and-markup pricing for moulding profiles" />
+                <Field label="Default markup %" path={["settings","wrpMouldingMarkupPct"]} unit="%" hint="Applied to WRP cost price. 35% is typical for supply items." step={1} min={0} />
+                <Field label="Girth multiplier" path={["settings","wrpMouldingGirthMultiplier"]} hint="Applied to (w+h) from profile dimensions to estimate painted surface per metre. 1.2 ≈ flat-ish profile; 1.5+ for compound/profiled." step={0.1} min={0.5} />
+                <Field label="Default finish" path={["settings","wrpMouldingDefaultFinish"]} hint="Default for new WRP items. Valid values: paint, lacquer, stain_lacquer, none." />
+                <Field label="Prices last scraped" path={[]} readOnly calcVal={wrpCatalogue?.metadata?.prices_last_scraped || "—"} hint="When the WRP catalogue was last updated" />
+                <Field label="Profiles in catalogue" path={[]} readOnly calcVal={`${wrpCatalogue?.profiles?.length || 0} profiles`} hint="Total WRP profiles available" />
+                <div style={{ display:"flex", gap:10, marginTop:14 }}>
+                  <button onClick={() => window.open("https://www.wrp-timber-mouldings.co.uk/moulding-profiles", "_blank")} style={{ padding:"8px 16px", background:"transparent", color:"#c8a96e", border:"1px solid #c8a96e", borderRadius:4, cursor:"pointer", fontSize:10, fontFamily:"inherit", letterSpacing:"0.06em" }}>View WRP Catalogue ↗</button>
+                </div>
+                <div style={{ marginTop:14, fontSize:10, color:"#888888", lineHeight:1.6 }}>
+                  <strong style={{ color:"#777777" }}>Refresh prices:</strong> Run <code style={{ background:"#fff", padding:"1px 4px", borderRadius:2, fontSize:9 }}>node data/scrape_wrp_prices.js --missing-only</code> locally, then redeploy. Prices are also populated automatically when you enter them during quoting.
+                </div>
               </div>
 
             </div>
