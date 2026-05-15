@@ -510,8 +510,10 @@ const DB = {
     consumablesPerItem: 60,     // £ per line item — fixings, glue, edge tape, abrasives
     contingencyPercent: 7.5,    // % uplift on project subtotal (optional)
     warrantyPercent: 1.5,       // % of total ex VAT — warranty & aftercare allowance (optional)
-    // ── WRP Mouldings default markup ──────────────────────────────────────────
-    wrpMouldingMarkupPct: 35,   // default markup % for WRP mouldings (editable per-line)
+    // ── WRP Mouldings ─────────────────────────────────────────────────────────
+    wrpMouldingMarkupPct: 35,        // default markup % for WRP mouldings (editable per-line)
+    wrpMouldingGirthMultiplier: 1.2, // (w+h) × this = estimated painted girth per metre
+    wrpMouldingDefaultFinish: "paint", // default finish for new WRP items: paint|lacquer|stain_lacquer|none
     // ── Spray finishing — in-house booth, area-based ──────────────────────────
     // PAINT = opaque (primer + topcoats). LACQUER = clear (2 coats, no primer).
     // STAIN = pre-treatment before lacquer. Sanding between every coat except final.
@@ -1125,18 +1127,64 @@ function calcMouldingCost({ mouldingKey, metres, qty = 1 }) {
 }
 
 // ─── WRP MOULDING COST ────────────────────────────────────────────────────────
-// Supply-and-markup pricing: WRP cost × metres × (1 + markup/100)
-function calcWRPMouldingCost({ wrp_price_per_metre, linear_metres, markup_pct, qty = 1 }) {
+// Parse "55mm x 52mm" → { w: 55, h: 52 }. Returns null if unparseable.
+function parseWRPDimensions(dimStr) {
+  if (!dimStr) return null;
+  const m = dimStr.match(/(\d+(?:\.\d+)?)\s*mm\s*x\s*(\d+(?:\.\d+)?)\s*mm/i);
+  return m ? { w: +m[1], h: +m[2] } : null;
+}
+
+// Estimate paint cost per linear metre for a WRP moulding.
+// Returns { paintCostPerM, breakdown } or { paintCostPerM: 0, breakdown: null } if finishType is "none".
+function calcWRPFinishCostPerM({ dimensions, girth_mm_override, finishType, hasStain }) {
+  if (!finishType || finishType === "none") return { paintCostPerM: 0, breakdown: null };
+  let girth_mm = girth_mm_override;
+  if (!girth_mm) {
+    const parsed = parseWRPDimensions(dimensions);
+    if (!parsed) return { paintCostPerM: 0, breakdown: null };
+    girth_mm = (parsed.w + parsed.h) * (DB.settings.wrpMouldingGirthMultiplier || 1.2);
+  }
+  // Treat one metre of moulding as a "panel" of girth_mm × 1000mm, one face.
+  const spray = calcSprayFinishCost({
+    doorType: null, widthMm: girth_mm, heightMm: 1000, qty: 1,
+    finishType, hasStain, surfaceType: "panel",
+  });
+  return { paintCostPerM: spray.costPerDoor, breakdown: spray.breakdown };
+}
+
+// Supply + finishing pricing: (WRP cost + paint cost) × metres × (1 + markup/100)
+function calcWRPMouldingCost({
+  wrp_price_per_metre, linear_metres, markup_pct, qty = 1,
+  finishType, hasStain, dimensions, girth_mm_override, paint_rate_per_m_override,
+}) {
   const price = wrp_price_per_metre || 0;
   const metres = linear_metres || 0;
   const markup = markup_pct ?? DB.settings.wrpMouldingMarkupPct;
   const materialCost = price * metres;
-  const sellExVAT = materialCost * (1 + markup / 100);
+  // Finishing: manual override OR area-based auto via spray booth rates
+  let paintRatePerM = 0, paintBreakdown = null;
+  if (paint_rate_per_m_override != null && paint_rate_per_m_override !== "") {
+    paintRatePerM = +paint_rate_per_m_override || 0;
+  } else if (finishType && finishType !== "none") {
+    const res = calcWRPFinishCostPerM({ dimensions, girth_mm_override, finishType, hasStain });
+    paintRatePerM = res.paintCostPerM;
+    paintBreakdown = res.breakdown;
+  }
+  const finishCost = paintRatePerM * metres;
+  const totalCost = materialCost + finishCost;
+  const sellExVAT = totalCost * (1 + markup / 100);
   return {
-    costPerUnit: materialCost, sellPerUnit: sellExVAT,
-    totalCost: materialCost * qty, totalSellExVAT: sellExVAT * qty,
+    costPerUnit: totalCost, sellPerUnit: sellExVAT,
+    totalCost: totalCost * qty, totalSellExVAT: sellExVAT * qty,
     totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
-    breakdown: { material: materialCost * qty, markup_pct: markup },
+    breakdown: {
+      material: materialCost * qty,
+      finishing: finishCost * qty,
+      paint_rate_per_m: +paintRatePerM.toFixed(2),
+      finish_type: finishType || "none",
+      markup_pct: markup,
+      ...(paintBreakdown ? { spray: paintBreakdown } : {}),
+    },
   };
 }
 
@@ -1483,7 +1531,8 @@ function printQuote(quote, viewMode, roomFilter) {
       const isWRP = i.type === "wrp_moulding" && i.params;
       const wrpThumbSrc = isWRP && i.params.image_url ? (i.params.image_url.match(/\/uploads\/(.+)$/) ? `/api/wrp-image/${i.params.image_url.match(/\/uploads\/(.+)$/)[1]}` : i.params.image_url) : "";
       const wrpThumb = isWRP && i.params.image_url ? `<img src="${wrpThumbSrc}" referrerpolicy="no-referrer" style="width:32px;height:32px;object-fit:contain;vertical-align:middle;margin-right:8px;border-radius:2px;" />` : "";
-      const wrpMeta = isWRP ? `<div style="font-size:8pt;color:#888;margin-top:2px">${i.params.material||"Tulip"} · ${i.params.linear_metres||0}m · £${(i.bakedSellExVAT/(i.params.linear_metres||1)).toFixed(2)}/m</div>` : "";
+      const wrpFinishLabel = isWRP && i.params.finishType && i.params.finishType !== "none" ? `${({paint:"painted",lacquer:"lacquered",stain_lacquer:"stained & lacquered"})[i.params.finishType] || i.params.finishType} · ` : "";
+      const wrpMeta = isWRP ? `<div style="font-size:8pt;color:#888;margin-top:2px">${i.params.material||"Tulip"} · ${wrpFinishLabel}${i.params.linear_metres||0}m · £${(i.bakedSellExVAT/(i.params.linear_metres||1)).toFixed(2)}/m</div>` : "";
       return `<tr><td class="td-desc">${wrpThumb}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}${wrpMeta}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.bakedSellExVAT)}</td>` : ""}</tr>`;
     }).join("");
     const roomSubRow = mode === "itemised"
@@ -1591,7 +1640,7 @@ const ITEM_DEFAULTS = {
   endpanel: { type:"endpanel", materialKey:"MAT_BIRCH_UNF_18", widthMm:560, heightMm:720, thicknessMm:18, faces:1, exposedEdgeCount:2, finishType:"paint", hasStain:false, qty:1, description:"" },
   shelf:    { type:"shelf", materialKey:"MAT_BIRCH_PREF_18", lengthMm:600, depthMm:300, thicknessMm:18, visibleThicknessMm:18, faces:1, finishType:"lacquer", hasStain:false, qty:1, description:"" },
   moulding: { type:"moulding", mouldingKey:"MLD_SKR_MDF_95", metres:3, qty:1, description:"" },
-  wrp_moulding: { type:"wrp_moulding", profile_sku:"", profile_id:null, wrp_category:"", wrp_description:"", material:"Tulip Wood For Interior", linear_metres:3, wrp_price_per_metre:0, markup_pct:35, image_url:null, product_url:"", notes:"", qty:1, description:"" },
+  wrp_moulding: { type:"wrp_moulding", profile_sku:"", profile_id:null, wrp_category:"", wrp_description:"", material:"Tulip Wood For Interior", linear_metres:3, wrp_price_per_metre:0, markup_pct:35, image_url:null, product_url:"", notes:"", qty:1, description:"", dimensions:"", finishType:"paint", hasStain:false, girth_mm_override:null, paint_rate_per_m_override:"" },
   custom:  { type:"custom", unitCostExVAT:0, notes:"", qty:1, description:"" },
 };
 
@@ -1780,6 +1829,7 @@ function SABQuoteTool() {
       profile_id: profile.id,
       wrp_category: profile.category,
       wrp_description: profile.description || "",
+      dimensions: profile.dimensions || "",
       material: "Tulip Wood For Interior",
       linear_metres: f.linear_metres || 3,
       wrp_price_per_metre: price,
@@ -1788,6 +1838,10 @@ function SABQuoteTool() {
       product_url: profile.product_url,
       qty: f.qty || 1,
       description: desc,
+      finishType: f.finishType || DB.settings.wrpMouldingDefaultFinish || "paint",
+      hasStain: f.hasStain || false,
+      girth_mm_override: f.girth_mm_override || null,
+      paint_rate_per_m_override: f.paint_rate_per_m_override || "",
     }));
     setShowWRPPicker(false);
     setWrpPricePrompt(null);
@@ -2156,7 +2210,7 @@ function SABQuoteTool() {
         : addItemForm.type === "drawer"
         ? { type:"drawer", qty: addItemForm.qty, params: { drawerType: addItemForm.drawerType, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, depthMm: addItemForm.depthMm, runnerCostOverride: DB.hardware.runners[addItemForm.runnerKey]?.costPair, carcassMaterialKey: addItemForm.carcassMaterialKey } }
         : addItemForm.type === "wrp_moulding"
-        ? { type:"wrp_moulding", qty: addItemForm.qty, params: { wrp_price_per_metre: addItemForm.wrp_price_per_metre, linear_metres: addItemForm.linear_metres, markup_pct: addItemForm.markup_pct } }
+        ? { type:"wrp_moulding", qty: addItemForm.qty, params: { wrp_price_per_metre: addItemForm.wrp_price_per_metre, linear_metres: addItemForm.linear_metres, markup_pct: addItemForm.markup_pct, dimensions: addItemForm.dimensions, finishType: addItemForm.finishType, hasStain: addItemForm.hasStain, girth_mm_override: addItemForm.girth_mm_override, paint_rate_per_m_override: addItemForm.paint_rate_per_m_override } }
         : { type:"custom", qty: addItemForm.qty, params: { unitCostExVAT: addItemForm.unitCostExVAT, notes: addItemForm.notes } };
       return priceItem(item);
     } catch { return null; }
@@ -2179,7 +2233,7 @@ function SABQuoteTool() {
       : addItemForm.type === "moulding"
       ? { type:"moulding", description: addItemForm.description || `${DB.mouldings[addItemForm.mouldingKey]?.name||"Moulding"} — ${addItemForm.metres}m`, qty: Number(addItemForm.qty), params: { mouldingKey:addItemForm.mouldingKey||"MLD_SKR_MDF_95", metres:+addItemForm.metres||3 } }
       : addItemForm.type === "wrp_moulding"
-      ? { type:"wrp_moulding", description: addItemForm.description || `WRP ${addItemForm.profile_sku} ${addItemForm.wrp_category} — ${addItemForm.linear_metres}m`, qty: Number(addItemForm.qty), params: { profile_sku:addItemForm.profile_sku, profile_id:addItemForm.profile_id, wrp_category:addItemForm.wrp_category, material:addItemForm.material, linear_metres:+addItemForm.linear_metres||0, wrp_price_per_metre:+addItemForm.wrp_price_per_metre||0, markup_pct:+addItemForm.markup_pct, image_url:addItemForm.image_url, product_url:addItemForm.product_url, notes:addItemForm.notes||"" } }
+      ? { type:"wrp_moulding", description: addItemForm.description || `WRP ${addItemForm.profile_sku} ${addItemForm.wrp_category} — ${addItemForm.linear_metres}m`, qty: Number(addItemForm.qty), params: { profile_sku:addItemForm.profile_sku, profile_id:addItemForm.profile_id, wrp_category:addItemForm.wrp_category, material:addItemForm.material, linear_metres:+addItemForm.linear_metres||0, wrp_price_per_metre:+addItemForm.wrp_price_per_metre||0, markup_pct:+addItemForm.markup_pct, image_url:addItemForm.image_url, product_url:addItemForm.product_url, notes:addItemForm.notes||"", dimensions:addItemForm.dimensions||"", finishType:addItemForm.finishType||"paint", hasStain:!!addItemForm.hasStain, girth_mm_override:addItemForm.girth_mm_override||null, paint_rate_per_m_override:addItemForm.paint_rate_per_m_override||"" } }
       : { type:"custom", description: addItemForm.description, qty: Number(addItemForm.qty), params: { unitCostExVAT:+addItemForm.unitCostExVAT, notes:addItemForm.notes } };
     item.pricing = priceItem(item);
     const updated = { ...quotes };
@@ -2585,8 +2639,33 @@ function SABQuoteTool() {
                                         <div style={{ fontSize:11, color:"#777777" }}>{item.params?.material||"Tulip"}</div>
                                       </div>
                                     </div>
+                                    {/* Finishing controls — second row */}
+                                    <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:8, paddingTop:8, borderTop:"1px solid #d8d3cc" }}>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Finish</div>
+                                        <select value={item.params?.finishType||"paint"} onClick={e=>e.stopPropagation()} onChange={e => { const v=e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.finishType=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", padding:"2px 0", outline:"none" }}>
+                                          <option value="none">None</option>
+                                          <option value="paint">Paint</option>
+                                          <option value="lacquer">Lacquer</option>
+                                          <option value="stain_lacquer">Stain+Lacq</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Paint £/m (override)</div>
+                                        <input type="number" step="0.01" min="0" placeholder="auto" value={item.params?.paint_rate_per_m_override||""} onClick={e=>e.stopPropagation()} onChange={e => { const v=e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.paint_rate_per_m_override=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:70, padding:"2px 0", outline:"none", textAlign:"center" }} />
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Girth mm (override)</div>
+                                        <input type="number" step="1" min="0" placeholder="auto" value={item.params?.girth_mm_override||""} onClick={e=>e.stopPropagation()} onChange={e => { const v = e.target.value===""?null:+e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.girth_mm_override=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:70, padding:"2px 0", outline:"none", textAlign:"center" }} />
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Effective paint £/m</div>
+                                        <div style={{ fontSize:11, color:"#777777" }}>£{(item.pricing?.breakdown?.paint_rate_per_m||0).toFixed(2)}</div>
+                                      </div>
+                                    </div>
                                     <div style={{ display:"flex", gap:16 }}>
-                                      <div><span style={{ fontSize:9, color:"#999999" }}>Material cost: </span><span style={{ fontSize:11, color:"#999999" }}>{fmt(item.pricing?.totalCost)}</span></div>
+                                      <div><span style={{ fontSize:9, color:"#999999" }}>Material: </span><span style={{ fontSize:11, color:"#999999" }}>{fmt(item.pricing?.breakdown?.material)}</span></div>
+                                      <div><span style={{ fontSize:9, color:"#999999" }}>Finishing: </span><span style={{ fontSize:11, color:"#999999" }}>{fmt(item.pricing?.breakdown?.finishing||0)}</span></div>
                                       <div><span style={{ fontSize:9, color:"#999999" }}>Markup ({item.params?.markup_pct||0}%): </span><span style={{ fontSize:11, color:"#c8a96e" }}>+{fmt((item.pricing?.totalSellExVAT||0)-(item.pricing?.totalCost||0))}</span></div>
                                       <div><span style={{ fontSize:9, color:"#999999" }}>Sell: </span><span style={{ fontSize:11, color:"#c8a96e", fontWeight:600 }}>{fmt(item.pricing?.totalSellExVAT)}</span></div>
                                     </div>
@@ -3373,13 +3452,36 @@ function SABQuoteTool() {
                     </div>
                   </div>
                 )}
+                {/* Finishing controls — Finish dropdown + paint rate override + girth override */}
+                {addItemForm.profile_sku && (
+                  <div style={{ display:"grid", gridTemplateColumns:"1.4fr 1fr 1fr", gap:12, marginBottom:14 }}>
+                    <div>
+                      <label style={lbl}>Finish</label>
+                      <select value={addItemForm.finishType || "paint"} onChange={e => updateForm("finishType", e.target.value)} style={{ ...sel, width:"100%" }}>
+                        <option value="none">No finishing (supply only)</option>
+                        <option value="paint">Paint — primer + 2 topcoats</option>
+                        <option value="lacquer">Lacquer — clear, 2 coats</option>
+                        <option value="stain_lacquer">Stain + Lacquer</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={lbl}>Paint £/m (override)</label>
+                      <input type="number" step="0.01" min="0" placeholder="auto" value={addItemForm.paint_rate_per_m_override||""} onChange={e => updateForm("paint_rate_per_m_override", e.target.value)} style={inp} />
+                    </div>
+                    <div>
+                      <label style={lbl}>Girth mm (override)</label>
+                      <input type="number" step="1" min="0" placeholder="auto" value={addItemForm.girth_mm_override||""} onChange={e => updateForm("girth_mm_override", e.target.value===""?null:+e.target.value)} style={inp} />
+                    </div>
+                  </div>
+                )}
                 {addItemForm.profile_sku && (
                   <>
                     <div style={{ marginBottom:14 }}><label style={lbl}>Description</label><input value={addItemForm.description} onChange={e=>updateForm("description",e.target.value)} style={{ ...inp, width:"100%" }} /></div>
-                    {formPreview && (<div style={{ background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:6, padding:"12px 16px", marginBottom:16, display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
-                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Material Cost</div><div style={{ fontSize:15, color:"#777777" }}>{fmt(formPreview.totalCost)}</div></div>
-                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Sell ex VAT</div><div style={{ fontSize:15, color:"#c8a96e" }}>{fmt(formPreview.totalSellExVAT)}</div></div>
-                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Sell inc VAT</div><div style={{ fontSize:15, color:"#1a1a1a" }}>{fmt(formPreview.totalSellIncVAT)}</div></div>
+                    {formPreview && (<div style={{ background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:6, padding:"12px 16px", marginBottom:16, display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12 }}>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Material</div><div style={{ fontSize:14, color:"#777777" }}>{fmt(formPreview.breakdown?.material)}</div></div>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Finishing</div><div style={{ fontSize:14, color:"#777777" }}>{fmt(formPreview.breakdown?.finishing||0)}</div></div>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Sell ex VAT</div><div style={{ fontSize:14, color:"#c8a96e" }}>{fmt(formPreview.totalSellExVAT)}</div></div>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Sell inc VAT</div><div style={{ fontSize:14, color:"#1a1a1a" }}>{fmt(formPreview.totalSellIncVAT)}</div></div>
                     </div>)}
                     <div style={{ display:"flex", gap:10 }}>
                       <button onClick={submitAddItem} style={{ padding:"10px 28px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>{editingItem?"Save Changes":`Add to ${activeRoom}`}</button>
@@ -4016,6 +4118,8 @@ function SABQuoteTool() {
               <div style={{ background:"#f0eeeb", borderRadius:8, padding:"20px 22px", marginBottom:24, border:"1px solid #d8d3cc" }}>
                 <SectionHead title="WRP Mouldings" sub="WRP Timber Mouldings — supply-and-markup pricing for moulding profiles" />
                 <Field label="Default markup %" path={["settings","wrpMouldingMarkupPct"]} unit="%" hint="Applied to WRP cost price. 35% is typical for supply items." step={1} min={0} />
+                <Field label="Girth multiplier" path={["settings","wrpMouldingGirthMultiplier"]} hint="Applied to (w+h) from profile dimensions to estimate painted surface per metre. 1.2 ≈ flat-ish profile; 1.5+ for compound/profiled." step={0.1} min={0.5} />
+                <Field label="Default finish" path={["settings","wrpMouldingDefaultFinish"]} hint="Default for new WRP items. Valid values: paint, lacquer, stain_lacquer, none." />
                 <Field label="Prices last scraped" path={[]} readOnly calcVal={wrpCatalogue?.metadata?.prices_last_scraped || "—"} hint="When the WRP catalogue was last updated" />
                 <Field label="Profiles in catalogue" path={[]} readOnly calcVal={`${wrpCatalogue?.profiles?.length || 0} profiles`} hint="Total WRP profiles available" />
                 <div style={{ display:"flex", gap:10, marginTop:14 }}>
