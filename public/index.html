@@ -303,6 +303,12 @@
         grid-template-columns: 1fr 1fr !important;
         gap: 10px !important;
       }
+      /* Override per-item gridColumn spans (set for the 8-col desktop layout) —
+         on mobile they push items into phantom columns 3-4, crushing the rest
+         to 43-92px wide. Reset to auto so everything flows into the 2-col grid. */
+      .sab-room-defaults-grid > div {
+        grid-column: auto !important;
+      }
       .sab-room-defaults-grid select,
       .sab-room-defaults-grid input {
         font-size: 14px !important;
@@ -314,18 +320,90 @@
       }
 
       /* ══════════════════════════════
-         ITEMS TABLE
+         ITEMS TABLE — stacked-card layout on mobile
          ══════════════════════════════ */
       .sab-items-table .sab-col-whd,
       .sab-items-table .sab-col-cost { display:none !important; }
       .sab-items-table .sab-col-depth { display:none !important; }
 
-      /* Table action buttons (Edit, Dup, ×) */
-      .sab-items-panel table button {
-        min-height: 36px !important;
-        min-width: 36px !important;
+      /* Convert each row into a stacked card so the description gets full
+         width and tap targets are big. Column order in the source:
+         1=Item, 2=Qty, 3=W (hidden), 4=H (hidden), 5=D (hidden), 6=Cost (hidden),
+         7=Sell ex VAT, 8=actions.
+         Must break out of <table> layout — display:grid on <tr> alone is ignored
+         by the table-layout algorithm and yields 0px-wide columns. */
+      .sab-items-table {
+        width: 100% !important;
+        display: block !important;
+      }
+      .sab-items-table thead { display: none !important; }
+      .sab-items-table tbody { display: block !important; width: 100% !important; }
+      .sab-items-table tbody tr {
+        display: grid !important;
+        width: 100% !important;
+        grid-template-columns: 1fr auto !important;
+        grid-template-areas:
+          "desc desc"
+          "qty  sell"
+          "actions actions" !important;
+        gap: 6px 10px;
+        padding: 12px 0 !important;
+        border-bottom: 1px solid #d8d3cc !important;
+        background: transparent !important;
+        box-sizing: border-box;
+      }
+      .sab-items-table tbody td {
+        padding: 0 !important;
+        border: 0 !important;
+        min-width: 0;
+      }
+      .sab-items-table tbody td:nth-child(1) { grid-area: desc; }
+      .sab-items-table tbody td:nth-child(1) input {
+        font-size: 14px !important;
+        width: 100% !important;
+        padding: 4px 0 !important;
+      }
+      .sab-items-table tbody td:nth-child(2) {
+        grid-area: qty;
         font-size: 12px !important;
-        padding: 6px 10px !important;
+        color: #777777;
+      }
+      .sab-items-table tbody td:nth-child(2)::before {
+        content: "Qty ";
+        font-size: 10px;
+        color: #999999;
+      }
+      .sab-items-table tbody td:nth-child(2) input {
+        font-size: 14px !important;
+        width: 50px !important;
+        text-align: left !important;
+        padding: 4px 0 !important;
+      }
+      .sab-items-table tbody td:nth-child(7) {
+        grid-area: sell;
+        text-align: right !important;
+        font-size: 16px !important;
+        font-weight: 500;
+        color: #c8a96e !important;
+      }
+      .sab-items-table tbody td:nth-child(8) {
+        grid-area: actions;
+        display: flex !important;
+        gap: 8px;
+        justify-content: stretch;
+      }
+      .sab-items-table tbody td:nth-child(8) button {
+        flex: 1;
+        min-height: 38px !important;
+        font-size: 12px !important;
+      }
+      /* Edit button — make it bigger + clearer as the primary action */
+      .sab-items-table tbody td:nth-child(8) button:nth-child(1) {
+        background: #c8a96e !important;
+        color: #ffffff !important;
+        border: none !important;
+        font-weight: 500;
+        flex: 2;
       }
 
       /* Items panel + Add Item button */
