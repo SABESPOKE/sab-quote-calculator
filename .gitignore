@@ -2,6 +2,7 @@ node_modules/
 .env
 .DS_Store
 *.log
+.claude/
 
 # WRP scrape outputs — only the canonical catalogue under data/ is tracked
 /wrp_catalogue.json
@@ -9,3 +10,4 @@ node_modules/
 
 # Working spec docs (not part of the codebase)
 /CLAUDE_CODE_PROMPT.md
+
