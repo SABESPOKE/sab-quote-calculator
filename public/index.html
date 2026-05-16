@@ -2234,30 +2234,45 @@ function SABQuoteTool() {
         });
       };
       // Unconditional propagation — applies to every cabinet in the room, regardless
-      // of whether the param previously existed. Use for cabinet-only fields added
-      // after some items were already created (carcassFinish, sprayFinishOverride).
-      const propagateToAllCabinets = (paramKey, newVal) => {
+      // of whether the param previously existed. Use for cabinet-only fields where
+      // legacy items may be missing the field. Optional `filter` narrows to items
+      // that actually USE the param (e.g. hinges/handles only matter for doored cabinets).
+      const propagateToAllCabinets = (paramKey, newVal, filter) => {
         room.items = room.items.map(item => {
-          if (item.type === "cabinet" && item.params) {
-            const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
-            upd.pricing = priceItem(upd);
-            return upd;
-          }
-          return item;
+          if (item.type !== "cabinet" || !item.params) return item;
+          if (filter && !filter(item)) return item;
+          const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
+          upd.pricing = priceItem(upd);
+          return upd;
         });
       };
-      // Direct param mappings: room default field → item param key (strict).
+      // Filters
+      const hasDoors    = (item) => Number(item.params?.doorCount) > 0;
+      const hasDrawers  = (item) => Number(item.params?.drawerCount) > 0;
+      // Direct param mappings (strict — only items where the field exists).
+      // Kept narrow: only fields that should ALSO touch non-cabinet items
+      // (e.g. carcassMaterialKey can apply to endpanel/shelf too).
       const directMappings = {
         carcassMaterialKey: "carcassMaterialKey",
-        hingeKey: "hingeKey",
-        handleKey: "handleKey",
         runnerKey: "runnerKey",
-        frameKey: "frameKey",
-        edgebandKey: "edgebandKey",
         hasStain: "hasStain",
       };
       if (directMappings[field]) {
         propagateToItems(directMappings[field], val);
+      }
+      // Cabinet-only field changes — propagate to every cabinet in the room
+      // (legacy items get the field added if missing).
+      if (field === "edgebandKey") {
+        propagateToAllCabinets("edgebandKey", val);
+      }
+      if (field === "frameKey") {
+        propagateToAllCabinets("frameKey", val);
+      }
+      if (field === "hingeKey") {
+        propagateToAllCabinets("hingeKey", val, hasDoors);
+      }
+      if (field === "handleKey") {
+        propagateToAllCabinets("handleKey", val, hasDoors);
       }
       // Carcass finish — direct change OR derived from material change. Apply
       // unconditionally to every cabinet so legacy items (created before the field
@@ -2269,23 +2284,22 @@ function SABQuoteTool() {
         propagateToAllCabinets("carcassFinish", derived.carcassFinish);
       }
       // Door profile/finish changes derive the doorType key + spray override.
+      // Both propagate to every cabinet with doors (not just ones that happened to
+      // have the field set previously).
       if (field === "doorProfile" || field === "doorFinish") {
         const defs = room.defaults;
         const newDoorType = PROFILE_FINISH_TO_TYPE[`${defs.doorProfile}+${defs.doorFinish}`];
         if (newDoorType) {
-          room.items = room.items.map(item => {
-            if (item.params && item.params.doorType !== undefined) {
-              const upd = { ...item, params: { ...item.params, doorType: newDoorType } };
-              upd.pricing = priceItem(upd);
-              return upd;
-            }
-            return item;
-          });
+          propagateToAllCabinets("doorType", newDoorType, hasDoors);
         }
         // Door finish drives the spray override — propagate the derived value to
-        // every cabinet, including legacy ones that don't yet have the field.
+        // every cabinet (carcass spray for open cabinets uses it too).
         const derivedSpray = FINISH_TO_SPRAY_OVERRIDE[defs.doorFinish] || "";
         propagateToAllCabinets("sprayFinishOverride", derivedSpray);
+        // Also stamp doorProfile + doorFinish on cabinets so the per-item view in
+        // the Edit form reflects the room change.
+        propagateToAllCabinets("doorProfile", defs.doorProfile);
+        propagateToAllCabinets("doorFinish", defs.doorFinish);
       }
       // Drawer type changes
       if (field === "useSolidDrawers" || field === "solidDrawerType") {
