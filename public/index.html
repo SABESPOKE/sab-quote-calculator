@@ -795,9 +795,11 @@ function calcDesignTimePerRoom(roomData) {
 // surfaceType: "door" (2 faces + 4 edges) | "panel" (1 face)
 //
 // Optional overrides for richer surface models (e.g. open carcass interiors):
-//   sprayAreaM2Override — replaces the computed face×faces area entirely
-//   perimMOverride      — replaces the computed 2(W+H) perimeter
-function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType = "paint", hasStain = false, surfaceType = "door", sprayAreaM2Override, perimMOverride }) {
+//   sprayAreaM2Override   — replaces the computed face×faces area entirely
+//   perimMOverride        — replaces the computed 2(W+H) perimeter
+//   disableTopcoatRework  — set true for items where re-spray risk is low
+//                           (e.g. flat strips like fillers): bypasses topCoatReworkFactor
+function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType = "paint", hasStain = false, surfaceType = "door", sprayAreaM2Override, perimMOverride, disableTopcoatRework = false }) {
   const sf = DB.settings.sprayFinish;
   const dt = DB.doorTypes[doorType] || {};
 
@@ -907,7 +909,9 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
     // Top coats: spray all, sand between all except after the final coat.
     // Uses the finer-grit topcoat-specific sand rate. Rework factor scales topcoat
     // labour + material to cover re-spray risk on tricky finishes.
-    const reworkFactor = p.topCoatReworkFactor || 1;
+    // disableTopcoatRework bypasses it (used for flat strips like fillers where
+    // re-spray risk is low).
+    const reworkFactor = disableTopcoatRework ? 1 : (p.topCoatReworkFactor || 1);
     const topHrs = (tHrsPerCoat * p.topCoats + topcoatSandHrs() * (p.topCoats - 1)) * reworkFactor;
     const topMat = (tMatPerCoat * p.topCoats) * reworkFactor;
 
@@ -1043,7 +1047,6 @@ function calcCabinetCost({
   frameKey = "FRAME_NONE",
   edgebandKey = "EDGE_OAK_05",
   hasStain = false,
-  fillerCount = 0,
   sprayFinishOverride = "",
   qty = 1,
 }) {
@@ -1174,17 +1177,11 @@ function calcCabinetCost({
     carcassFinishCost = cf ? cf.costPerDoor : 0;
   }
 
-  // ── Fillers — scribed strips in matching door material, ~50mm wide × cabinet height ──
-  // Each filler = a narrow door-finished strip; bench cost includes material + finish.
-  // On-site scribing time (1h per filler) is added in the Fitting Estimate panel separately.
-  let fillersCost = 0;
-  const FILLER_WIDTH_MM = 50;
-  if (fillerCount > 0 && doorType && DB.doorTypes[doorType]) {
-    const fp = calcDoorCost({ doorType, widthMm: FILLER_WIDTH_MM, heightMm, qty: fillerCount, hingeCost: 0, handleCost: 0, sprayFinish: true, hasStain, sprayFinishOverride });
-    fillersCost = fp ? fp.totalCost : 0;
-  }
+  // (Filler items are now top-level items priced independently — see calcFillerCost.
+  // Any legacy fillerCount on cabinet items is migrated to separate filler items at
+  // quote-load time via migrateLegacyFillers.)
 
-  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + fillersCost;
+  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total;
   const totalCost = totalCostPerUnit * qty;
   const sellExVAT = totalCost * DB.settings.margin;
 
@@ -1362,6 +1359,37 @@ function calcCabinetEdgebandCost({ edgebandKey, widthMm, heightMm, shelfCount = 
   return { costPerUnit: +costPerUnit.toFixed(2), total: +(costPerUnit * qty).toFixed(2), totalM: +totalM.toFixed(3) };
 }
 
+// ── FILLER COST ────────────────────────────────────────────────────────────
+// Scribed strip in matching door finish. Self-contained line item (not bundled
+// inside a cabinet). Pricing scales with strip size — bench labour is flat per
+// filler since cut/sand/drill prep is constant regardless of length.
+function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720, qty = 1, hasStain = false, sprayFinishOverride = "" }) {
+  const dt = DB.doorTypes[doorType];
+  if (!dt) return null;
+  const FILLER_BENCH_LABOUR_HRS = 0.20;  // 12 min — cut, sand, edge ease, drill for fixings
+  const area = (widthMm / 1000) * (heightMm / 1000);
+  const materialCost = area * dt.baseCostPerM2;
+  const labourCost = FILLER_BENCH_LABOUR_HRS * er();
+  const finishType = sprayFinishOverride || dt.finishType || "paint";
+  const spray = calcSprayFinishCost({
+    doorType, widthMm, heightMm, qty: 1, finishType, hasStain,
+    surfaceType: "panel",         // 1 face — back is hidden in the wall gap
+    disableTopcoatRework: true,   // flat strip = low re-spray risk
+  });
+  const sprayCost = spray ? spray.costPerDoor : 0;
+  const costPerUnit = materialCost + labourCost + sprayCost;
+  const totalCost = costPerUnit * qty;
+  const sellExVAT = totalCost * DB.settings.margin;
+  return {
+    costPerUnit,
+    sellPerUnit: costPerUnit * DB.settings.margin,
+    totalCost,
+    totalSellExVAT: sellExVAT,
+    totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
+    breakdown: { material: +materialCost.toFixed(2), labour: +labourCost.toFixed(2), spray: +sprayCost.toFixed(2) },
+  };
+}
+
 function priceItem(item) {
   if (item.type === "cabinet")  return calcCabinetCost({ ...item.params, qty: item.qty });
   if (item.type === "door")     return calcDoorCost({ ...item.params, qty: item.qty });
@@ -1371,6 +1399,7 @@ function priceItem(item) {
   if (item.type === "shelf")    return calcFloatingShelfCost({ ...item.params, qty: item.qty });
   if (item.type === "moulding") return calcMouldingCost({ ...item.params, qty: item.qty });
   if (item.type === "wrp_moulding") return calcWRPMouldingCost({ ...item.params, qty: item.qty });
+  if (item.type === "filler")   return calcFillerCost({ ...item.params, qty: item.qty });
   if (item.type === "custom") {
     const cost = (item.params.unitCostExVAT || 0) * item.qty;
     const sell = cost * DB.settings.margin;
@@ -1379,11 +1408,62 @@ function priceItem(item) {
   return null;
 }
 
+// One-time migration: cabinets with legacy `fillerCount > 0` get their fillers
+// split off into separate filler items in the same room. Cabinet's fillerCount
+// is zeroed so the migration doesn't re-run. Idempotent.
+function migrateLegacyFillers(quote) {
+  if (!quote || !quote.rooms) return { quote, migratedCount: 0 };
+  let migratedCount = 0;
+  const newRooms = {};
+  for (const [roomName, room] of Object.entries(quote.rooms)) {
+    const items = room.items || [];
+    const newItems = [];
+    for (const item of items) {
+      newItems.push(item);
+      if (item.type === "cabinet" && item.params && Number(item.params.fillerCount) > 0) {
+        const fc = Number(item.params.fillerCount);
+        const cabQty = Number(item.qty) || 1;
+        const totalFillers = fc * cabQty;
+        const fillerItem = {
+          type: "filler",
+          description: `Filler — ${cabQty > 1 ? cabQty + "× " : ""}${item.description || "cabinet"}`,
+          qty: totalFillers,
+          params: {
+            doorType: item.params.doorType || "SHAKER_PNT",
+            doorProfile: item.params.doorProfile || "shaker",
+            doorFinish: item.params.doorFinish || "painted",
+            widthMm: 50,
+            heightMm: item.params.heightMm || 720,
+            hasStain: !!item.params.hasStain,
+            sprayFinishOverride: item.params.sprayFinishOverride || "",
+          },
+        };
+        try { fillerItem.pricing = priceItem(fillerItem); } catch (e) {}
+        newItems.push(fillerItem);
+        // Zero out the cabinet's fillerCount so re-loads don't re-migrate. Replace
+        // the just-pushed cabinet entry with the cleared version (mutate the last
+        // entry, which is the cabinet itself).
+        const idx = newItems.length - 2;
+        newItems[idx] = {
+          ...item,
+          params: { ...item.params, fillerCount: 0 },
+        };
+        try { newItems[idx].pricing = priceItem(newItems[idx]); } catch (e) {}
+        migratedCount++;
+      }
+    }
+    newRooms[roomName] = { ...room, items: newItems };
+  }
+  return { quote: { ...quote, rooms: newRooms }, migratedCount };
+}
+
 // Ensure every item in a quotes object has pricing calculated.
+// Runs migrateLegacyFillers first so old fillerCount data is converted on load.
 // Returns a new object so React detects the state change.
 function ensurePricing(quotesObj) {
   const result = {};
-  for (const [id, q] of Object.entries(quotesObj)) {
+  for (const [id, q0] of Object.entries(quotesObj)) {
+    const { quote: q } = migrateLegacyFillers(q0);
     const newRooms = {};
     for (const [roomName, room] of Object.entries(q.rooms || {})) {
       newRooms[roomName] = {
@@ -1788,7 +1868,7 @@ function printQuote(quote, viewMode, roomFilter) {
 
 // ─── ADD ITEM FORM DEFAULTS ───────────────────────────────────────────────────
 const ITEM_DEFAULTS = {
-  cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:720, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", carcassFinish:"none", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, drawerCount:0, drawerType:"DRW_SHEET", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", edgebandKey:"EDGE_OAK_05", fillerCount:0, qty:1, description:"" },
+  cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:720, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", carcassFinish:"none", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, drawerCount:0, drawerType:"DRW_SHEET", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", edgebandKey:"EDGE_OAK_05", qty:1, description:"" },
   door:    { type:"door", widthMm:726, heightMm:2040, doorType:"SLAB_PNT", doorProfile:"slab", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", qty:1, description:"" },
   frame:    { type:"frame", species:"TIM_OAK", widthMm:826, heightMm:2040, labourHrs:3, qty:1, description:"" },
   drawer:  { type:"drawer", drawerType:"DRW_SHEET", carcassMaterialKey:"MAT_BIRCH_UNF_18", widthMm:500, heightMm:200, depthMm:500, runnerKey:"HW_RUN_BLUM_SM", qty:1, description:"" },
@@ -1796,6 +1876,7 @@ const ITEM_DEFAULTS = {
   shelf:    { type:"shelf", materialKey:"MAT_BIRCH_PREF_18", lengthMm:600, depthMm:300, thicknessMm:18, visibleThicknessMm:18, faces:1, finishType:"lacquer", hasStain:false, qty:1, description:"" },
   moulding: { type:"moulding", mouldingKey:"MLD_SKR_MDF_95", metres:3, qty:1, description:"" },
   wrp_moulding: { type:"wrp_moulding", profile_sku:"", profile_id:null, wrp_category:"", wrp_description:"", material:"Tulip Wood For Interior", linear_metres:3, wrp_price_per_metre:0, markup_pct:35, image_url:null, product_url:"", notes:"", qty:1, description:"", dimensions:"", finishType:"paint", hasStain:false, girth_mm_override:null, paint_rate_per_m_override:"" },
+  filler:  { type:"filler", widthMm:50, heightMm:720, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, qty:1, description:"" },
   custom:  { type:"custom", unitCostExVAT:0, notes:"", qty:1, description:"" },
 };
 
@@ -2444,6 +2525,8 @@ function SABQuoteTool() {
         ? { type:"moulding", qty: addItemForm.qty, params: { mouldingKey: addItemForm.mouldingKey || "MLD_SKR_MDF_95", metres: +addItemForm.metres || 3 } }
         : addItemForm.type === "wrp_moulding"
         ? { type:"wrp_moulding", qty: addItemForm.qty, params: { wrp_price_per_metre: addItemForm.wrp_price_per_metre, linear_metres: addItemForm.linear_metres, markup_pct: addItemForm.markup_pct, dimensions: addItemForm.dimensions, finishType: addItemForm.finishType, hasStain: addItemForm.hasStain, girth_mm_override: addItemForm.girth_mm_override, paint_rate_per_m_override: addItemForm.paint_rate_per_m_override } }
+        : addItemForm.type === "filler"
+        ? { type:"filler", qty: addItemForm.qty, params: { doorType: addItemForm.doorType, doorProfile: addItemForm.doorProfile, doorFinish: addItemForm.doorFinish, widthMm: +addItemForm.widthMm || 50, heightMm: +addItemForm.heightMm || 720, hasStain: !!addItemForm.hasStain, sprayFinishOverride: addItemForm.sprayFinishOverride || "" } }
         : { type:"custom", qty: addItemForm.qty, params: { unitCostExVAT: addItemForm.unitCostExVAT, notes: addItemForm.notes } };
       return priceItem(item);
     } catch { return null; }
@@ -2467,6 +2550,8 @@ function SABQuoteTool() {
       ? { type:"moulding", description: addItemForm.description || `${DB.mouldings[addItemForm.mouldingKey]?.name||"Moulding"} — ${addItemForm.metres}m`, qty: Number(addItemForm.qty), params: { mouldingKey:addItemForm.mouldingKey||"MLD_SKR_MDF_95", metres:+addItemForm.metres||3 } }
       : addItemForm.type === "wrp_moulding"
       ? { type:"wrp_moulding", description: addItemForm.description || `WRP ${addItemForm.profile_sku} ${addItemForm.wrp_category} — ${addItemForm.linear_metres}m`, qty: Number(addItemForm.qty), params: { profile_sku:addItemForm.profile_sku, profile_id:addItemForm.profile_id, wrp_category:addItemForm.wrp_category, material:addItemForm.material, linear_metres:+addItemForm.linear_metres||0, wrp_price_per_metre:+addItemForm.wrp_price_per_metre||0, markup_pct:+addItemForm.markup_pct, image_url:addItemForm.image_url, product_url:addItemForm.product_url, notes:addItemForm.notes||"", dimensions:addItemForm.dimensions||"", finishType:addItemForm.finishType||"paint", hasStain:!!addItemForm.hasStain, girth_mm_override:addItemForm.girth_mm_override||null, paint_rate_per_m_override:addItemForm.paint_rate_per_m_override||"" } }
+      : addItemForm.type === "filler"
+      ? { type:"filler", description: addItemForm.description || `Filler ${addItemForm.widthMm}×${addItemForm.heightMm}mm — ${DB.doorTypes[addItemForm.doorType]?.name || "Painted"}`, qty: Number(addItemForm.qty), params: { doorType:addItemForm.doorType, doorProfile:addItemForm.doorProfile, doorFinish:addItemForm.doorFinish, widthMm:+addItemForm.widthMm||50, heightMm:+addItemForm.heightMm||720, hasStain:!!addItemForm.hasStain, sprayFinishOverride:addItemForm.sprayFinishOverride||"" } }
       : { type:"custom", description: addItemForm.description, qty: Number(addItemForm.qty), params: { unitCostExVAT:+addItemForm.unitCostExVAT, notes:addItemForm.notes } };
     item.pricing = priceItem(item);
     const updated = { ...quotes };
@@ -3240,7 +3325,7 @@ function SABQuoteTool() {
 
             {/* Type tabs */}
             <div className="sab-type-tabs" style={{ display:"flex", gap:4, marginBottom:20 }}>
-              {["cabinet","door","frame","drawer","endpanel","shelf","moulding","wrp_moulding","custom"].map(t => {
+              {["cabinet","door","frame","drawer","endpanel","shelf","filler","moulding","wrp_moulding","custom"].map(t => {
                 const typeLabels = { wrp_moulding: "WRP Moulding", endpanel: "End Panel" };
                 return <button key={t} onClick={() => { setAddItemForm({ ...ITEM_DEFAULTS[t] }); }} style={{ padding:"6px 14px", background:addItemForm.type===t?"#c8a96e":"#f5f5f5", color:addItemForm.type===t?"#ffffff":"#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontSize:10, letterSpacing:"0.08em", textTransform:"capitalize", fontFamily:"inherit" }}>{typeLabels[t] || t}</button>;
               })}
@@ -3320,16 +3405,14 @@ function SABQuoteTool() {
                   {/* Counts */}
                   <div style={{ marginBottom:14 }}>
                     <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Counts</div>
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:8 }}>
-                      {[["Doors","doorCount",0,6],["Drawers","drawerCount",0,8],["Shelves","shelfCount",0,8],["Fillers","fillerCount",0,2],["Qty","qty",1,99]].map(([label,field,min,max]) => (
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:8 }}>
+                      {[["Doors","doorCount",0,6],["Drawers","drawerCount",0,8],["Shelves","shelfCount",0,8],["Qty","qty",1,99]].map(([label,field,min,max]) => (
                         <div key={field}><label style={lbl}>{label}</label><input type="number" min={min} max={max} value={addItemForm[field] || ""} onChange={e => updateForm(field, e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                       ))}
                     </div>
-                    {addItemForm.fillerCount > 0 && (
-                      <div style={{ fontSize:9, color:"#c8a96e", marginTop:4 }}>
-                        → {addItemForm.fillerCount} × scribed filler ({50}mm wide, door-finish material) — adds {addItemForm.fillerCount}h on-site scribing to fitting estimate
-                      </div>
-                    )}
+                    <div style={{ fontSize:9, color:"#999999", marginTop:4 }}>
+                      Need fillers? Add them as separate <strong>Filler</strong> items via the type tabs above.
+                    </div>
                   </div>
                 </div>
 
@@ -3775,6 +3858,61 @@ function SABQuoteTool() {
                 <div style={{ display:"flex", gap:10 }}>
                   <button onClick={submitAddItem} style={{ padding:"10px 28px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>{editingItem?"Save Changes":`Add to ${activeRoom}`}</button>
                   <button onClick={()=>{setShowAddItem(false);setEditingItem(null);}} style={{ padding:"10px 18px", background:"transparent", color:"#777777", border:"1px solid #d8d3cc", borderRadius:4, cursor:"pointer", fontSize:11, fontFamily:"inherit" }}>Cancel</button>
+                </div>
+              </>
+            )}
+
+            {/* ── FILLER FORM ── */}
+            {addItemForm.type === "filler" && (
+              <>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0 24px" }}>
+                  <div>
+                    <div style={{ marginBottom:14 }}>
+                      <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Dimensions (mm)</div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+                        <div><label style={lbl}>Width</label><input type="number" value={addItemForm.widthMm || ""} onChange={e => updateForm("widthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                        <div><label style={lbl}>Height</label><input type="number" value={addItemForm.heightMm || ""} onChange={e => updateForm("heightMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                        <div><label style={lbl}>Qty</label><input type="number" min="1" value={addItemForm.qty || ""} onChange={e => updateForm("qty", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      </div>
+                      <div style={{ fontSize:9, color:"#999999", marginTop:6 }}>
+                        Typical filler: 50mm wide × cabinet height. Adds 1h on-site scribing per filler to the Fitting Estimate.
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ marginBottom:14 }}>
+                      <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Finish (matches doors)</div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+                        <div>
+                          <label style={lbl}>Profile</label>
+                          <select value={addItemForm.doorProfile || "shaker"} onChange={e => updateForm("doorProfile", e.target.value)} style={{ ...sel, width:"100%" }}>
+                            {Object.entries(DOOR_PROFILES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={lbl}>Finish</label>
+                          <select value={addItemForm.doorFinish || "painted"} onChange={e => updateForm("doorFinish", e.target.value)} style={{ ...sel, width:"100%" }}>
+                            {(DOOR_PROFILES[addItemForm.doorProfile || "shaker"]?.finishes || ["painted"]).map(f => <option key={f} value={f}>{DOOR_FINISHES[f]}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ fontSize:9, color:"#999999", marginTop:4 }}>
+                        → {DB.doorTypes[addItemForm.doorType]?.name || ""}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ gridColumn:"1/-1" }}>
+                    <div style={{ marginBottom:12 }}><label style={lbl}>Description</label><input value={addItemForm.description} onChange={e=>updateForm("description",e.target.value)} style={{ ...inp, width:"100%" }} /></div>
+                    {formPreview && (<div style={{ background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:6, padding:"12px 16px", marginBottom:16, display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Total Cost</div><div style={{ fontSize:15, color:"#777777" }}>{fmt(formPreview.totalCost)}</div></div>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Sell ex VAT</div><div style={{ fontSize:15, color:"#c8a96e" }}>{fmt(formPreview.totalSellExVAT)}</div></div>
+                      <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Sell inc VAT</div><div style={{ fontSize:15, color:"#1a1a1a" }}>{fmt(formPreview.totalSellIncVAT)}</div></div>
+                    </div>)}
+                    <div style={{ display:"flex", gap:10 }}>
+                      <button onClick={submitAddItem} style={{ padding:"10px 28px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>{editingItem?"Save Changes":`Add to ${activeRoom}`}</button>
+                      <button onClick={()=>{setShowAddItem(false);setEditingItem(null);}} style={{ padding:"10px 18px", background:"transparent", color:"#777777", border:"1px solid #d8d3cc", borderRadius:4, cursor:"pointer", fontSize:11, fontFamily:"inherit" }}>Cancel</button>
+                    </div>
+                  </div>
                 </div>
               </>
             )}
