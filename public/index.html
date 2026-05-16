@@ -2211,12 +2211,18 @@ function SABQuoteTool() {
       const rooms = { ...q.rooms };
       const room = { ...rooms[roomName] };
       room.defaults = { ...(room.defaults || DEFAULT_ROOM_SETTINGS), [field]: val };
-      // Snap carcass finish to the material's natural finish when material changes.
+      // Track derived changes (e.g. material change auto-snaps carcassFinish) so we
+      // propagate them too — not just the field the user directly changed.
+      const derived = {};
       if (field === "carcassMaterialKey") {
         const m = DB.materials[val];
-        if (m && m.naturalFinish) room.defaults.carcassFinish = m.naturalFinish;
+        if (m && m.naturalFinish) {
+          room.defaults.carcassFinish = m.naturalFinish;
+          derived.carcassFinish = m.naturalFinish;
+        }
       }
-      // Propagate room default changes to existing items and reprice
+      // Strict propagation — only touches items where the param already exists.
+      // Keeps shelf/door/custom items from being polluted with cabinet-only params.
       const propagateToItems = (paramKey, newVal) => {
         room.items = room.items.map(item => {
           if (item.params && item.params[paramKey] !== undefined) {
@@ -2227,7 +2233,20 @@ function SABQuoteTool() {
           return item;
         });
       };
-      // Direct param mappings: room default field → item param key
+      // Unconditional propagation — applies to every cabinet in the room, regardless
+      // of whether the param previously existed. Use for cabinet-only fields added
+      // after some items were already created (carcassFinish, sprayFinishOverride).
+      const propagateToAllCabinets = (paramKey, newVal) => {
+        room.items = room.items.map(item => {
+          if (item.type === "cabinet" && item.params) {
+            const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
+            upd.pricing = priceItem(upd);
+            return upd;
+          }
+          return item;
+        });
+      };
+      // Direct param mappings: room default field → item param key (strict).
       const directMappings = {
         carcassMaterialKey: "carcassMaterialKey",
         hingeKey: "hingeKey",
@@ -2240,7 +2259,16 @@ function SABQuoteTool() {
       if (directMappings[field]) {
         propagateToItems(directMappings[field], val);
       }
-      // Door profile/finish changes need to derive the doorType key
+      // Carcass finish — direct change OR derived from material change. Apply
+      // unconditionally to every cabinet so legacy items (created before the field
+      // existed) actually receive the new value.
+      if (field === "carcassFinish") {
+        propagateToAllCabinets("carcassFinish", val);
+      }
+      if (derived.carcassFinish !== undefined) {
+        propagateToAllCabinets("carcassFinish", derived.carcassFinish);
+      }
+      // Door profile/finish changes derive the doorType key + spray override.
       if (field === "doorProfile" || field === "doorFinish") {
         const defs = room.defaults;
         const newDoorType = PROFILE_FINISH_TO_TYPE[`${defs.doorProfile}+${defs.doorFinish}`];
@@ -2254,6 +2282,10 @@ function SABQuoteTool() {
             return item;
           });
         }
+        // Door finish drives the spray override — propagate the derived value to
+        // every cabinet, including legacy ones that don't yet have the field.
+        const derivedSpray = FINISH_TO_SPRAY_OVERRIDE[defs.doorFinish] || "";
+        propagateToAllCabinets("sprayFinishOverride", derivedSpray);
       }
       // Drawer type changes
       if (field === "useSolidDrawers" || field === "solidDrawerType") {
