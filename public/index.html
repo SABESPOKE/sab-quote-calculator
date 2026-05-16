@@ -1920,6 +1920,7 @@ function SABQuoteTool() {
   const [expandedItem, setExpandedItem] = useState(null);
   const [showProjectCosts, setShowProjectCosts] = useState(false);
   const [showFittingEst, setShowFittingEst] = useState(false);
+  const [recalcFlash, setRecalcFlash] = useState(null);
   const [editingItem, setEditingItem] = useState(null); // { room, idx }
   const [settingsVer, setSettingsVer] = useState(0);   // bumped to force re-render after DB mutation
   const [showRoomSetup, setShowRoomSetup] = useState(null); // room name being configured
@@ -2460,6 +2461,27 @@ function SABQuoteTool() {
             {[["build","Build"],["margin","Margin"],["client","Client View"]].map(([v,l]) => (
               <button key={v} onClick={() => setView(v)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", background:view===v?"#c8a96e":"transparent", color:view===v?"#1a1a1a":"#777777", border:"none", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
             ))}
+            <button onClick={() => {
+              // Force-recompute pricing on every item in the active quote.
+              // Safety net for items that were imported, duplicated, restored from server
+              // with stale cached pricing, or saved before a pricing-engine change.
+              if (!activeQuote) return;
+              const updated = { ...quotes };
+              const q = { ...updated[activeQuoteId] };
+              const newRooms = {};
+              let count = 0;
+              for (const [roomName, room] of Object.entries(q.rooms || {})) {
+                newRooms[roomName] = { ...room, items: (room.items || []).map(item => {
+                  try { const pricing = priceItem(item); count++; return { ...item, pricing }; }
+                  catch (e) { return item; }
+                })};
+              }
+              q.rooms = newRooms;
+              updated[activeQuoteId] = q;
+              saveQuotes(updated);
+              setRecalcFlash(count);
+              setTimeout(() => setRecalcFlash(null), 2000);
+            }} title="Re-run priceItem on every item in this quote — forces a refresh of cached prices used by Client View / PDF" style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background: recalcFlash != null ? "#6a8a4a" : "transparent", color: recalcFlash != null ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>{recalcFlash != null ? `✓ ${recalcFlash} repriced` : "↻ Recalc"}</button>
             <button onClick={() => printQuote(activeQuote, clientViewMode, clientViewRoomFilter)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>↓ PDF {clientViewRoomFilter ? `(${clientViewRoomFilter})` : ""}</button>
             <button onClick={() => { setView("quotes"); setActiveQuoteId(null); }} style={{ padding:"6px 14px", fontSize:11, background:"transparent", color:"#777777", border:"none", cursor:"pointer", fontFamily:"inherit" }}>← All</button>
             <div style={{ width:1, height:20, background:"#d8d3cc", margin:"0 4px" }} />
