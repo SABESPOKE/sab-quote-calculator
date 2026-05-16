@@ -795,9 +795,11 @@ function calcDesignTimePerRoom(roomData) {
 // surfaceType: "door" (2 faces + 4 edges) | "panel" (1 face)
 //
 // Optional overrides for richer surface models (e.g. open carcass interiors):
-//   sprayAreaM2Override — replaces the computed face×faces area entirely
-//   perimMOverride      — replaces the computed 2(W+H) perimeter
-function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType = "paint", hasStain = false, surfaceType = "door", sprayAreaM2Override, perimMOverride }) {
+//   sprayAreaM2Override   — replaces the computed face×faces area entirely
+//   perimMOverride        — replaces the computed 2(W+H) perimeter
+//   disableTopcoatRework  — set true for items where re-spray risk is low (e.g.
+//                           flat strips like fillers): bypasses paint.topCoatReworkFactor
+function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType = "paint", hasStain = false, surfaceType = "door", sprayAreaM2Override, perimMOverride, disableTopcoatRework = false }) {
   const sf = DB.settings.sprayFinish;
   const dt = DB.doorTypes[doorType] || {};
 
@@ -907,7 +909,9 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
     // Top coats: spray all, sand between all except after the final coat.
     // Uses the finer-grit topcoat-specific sand rate. Rework factor scales topcoat
     // labour + material to cover re-spray risk on tricky finishes.
-    const reworkFactor = p.topCoatReworkFactor || 1;
+    // disableTopcoatRework bypasses it (used for flat strips like fillers where
+    // re-spray risk is low).
+    const reworkFactor = disableTopcoatRework ? 1 : (p.topCoatReworkFactor || 1);
     const topHrs = (tHrsPerCoat * p.topCoats + topcoatSandHrs() * (p.topCoats - 1)) * reworkFactor;
     const topMat = (tMatPerCoat * p.topCoats) * reworkFactor;
 
@@ -1174,14 +1178,33 @@ function calcCabinetCost({
     carcassFinishCost = cf ? cf.costPerDoor : 0;
   }
 
-  // ── Fillers — scribed strips in matching door material, ~50mm wide × cabinet height ──
-  // Each filler = a narrow door-finished strip; bench cost includes material + finish.
-  // On-site scribing time (1h per filler) is added in the Fitting Estimate panel separately.
+  // ── Fillers — scribed strips in matching door finish, ~50mm wide × cabinet height ──
+  // A filler is a thin strip, NOT a full door. Pricing scales with the strip's size,
+  // not full-door overhead.
+  //   Material: 1-face area × baseCostPerM2 (no door-finish premium — fillers are not
+  //             veneered/applied-finish components)
+  //   Labour:   flat 0.20h per filler (cut to length, sand, edge ease, drill for fixings)
+  //   Spray:    1 face + perimeter only (back hidden inside cabinet), no rework factor
+  //             (flat strips have low re-spray risk vs profiled doors)
+  // On-site scribing time (1 SCRIBE_FILLER per filler) is added separately in the
+  // Fitting Estimate panel, not here.
   let fillersCost = 0;
   const FILLER_WIDTH_MM = 50;
+  const FILLER_BENCH_LABOUR_HRS = 0.20;
   if (fillerCount > 0 && doorType && DB.doorTypes[doorType]) {
-    const fp = calcDoorCost({ doorType, widthMm: FILLER_WIDTH_MM, heightMm, qty: fillerCount, hingeCost: 0, handleCost: 0, sprayFinish: true, hasStain, sprayFinishOverride });
-    fillersCost = fp ? fp.totalCost : 0;
+    const dtFiller = DB.doorTypes[doorType];
+    const fillerArea = (FILLER_WIDTH_MM / 1000) * (heightMm / 1000);
+    const fillerMatCost = fillerArea * dtFiller.baseCostPerM2;
+    const fillerLabourCost = FILLER_BENCH_LABOUR_HRS * er();
+    const fillerFinishType = sprayFinishOverride || dtFiller.finishType || "paint";
+    const fillerSpray = calcSprayFinishCost({
+      doorType, widthMm: FILLER_WIDTH_MM, heightMm,
+      qty: 1, finishType: fillerFinishType, hasStain,
+      surfaceType: "panel",         // 1 face — back is hidden inside cabinet
+      disableTopcoatRework: true,   // flat strip: no re-spray risk buffer
+    });
+    const perFillerCost = fillerMatCost + fillerLabourCost + (fillerSpray?.costPerDoor || 0);
+    fillersCost = perFillerCost * fillerCount;
   }
 
   const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + fillersCost;
