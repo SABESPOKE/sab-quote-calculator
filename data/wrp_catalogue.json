@@ -1,0 +1,1955 @@
+{
+  "metadata": {
+    "supplier": "WRP Timber Mouldings",
+    "source_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profiles",
+    "catalogue_date": "2026-05-14",
+    "total_profiles": 131,
+    "pricing_note": "Prices shown are per metre excl. VAT at standard single-order rate. WRP pricing is dynamic (volume discounts apply). Run scrape_wrp_prices.js to refresh all prices. Prices marked null need to be fetched.",
+    "image_note": "Thumbnail images are 284px wide. Replace _284.jpg with _500.jpg for larger version. Profile drawing PDFs available per product page.",
+    "materials_available": [
+      "Tulip Wood For Interior",
+      "Sapele",
+      "European Oak",
+      "Accoya (6\" and under)",
+      "Basswood",
+      "Abachi",
+      "Walnut",
+      "American Cherry",
+      "Maple",
+      "American Ash",
+      "Southern Yellow Pine"
+    ],
+    "categories": [
+      "cornices",
+      "skirtings",
+      "architraves",
+      "dado_rails",
+      "picture_rails",
+      "beads",
+      "window_boards",
+      "skirting_tops",
+      "compound_mouldings"
+    ],
+    "prices_last_scraped": "2026-05-14"
+  },
+  "profiles": [
+    {
+      "id": 3463,
+      "sku": "C1380",
+      "category": "cornices",
+      "description": "A classical profile cornice. All of our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "34mm x 32mm",
+      "price_per_metre_gbp": 4.03,
+      "price_last_updated": "2026-05-14",
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/d48211680679ea288f2a7dd080b98060_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3463/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3464,
+      "sku": "C1381",
+      "category": "cornices",
+      "description": "Ogee/lambs tongue. Expertly machined in house to a smooth finish.",
+      "dimensions": "55mm x 52mm",
+      "price_per_metre_gbp": 6.98,
+      "price_last_updated": "2026-05-14",
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/b230f405013d415ea2b04922c2a70265_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3464/in_all",
+      "materials": [
+        "Tulip Wood For Interior",
+        "Sapele",
+        "European Oak"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3936,
+      "sku": "C1564",
+      "category": "cornices",
+      "description": "Ogee, Lambs tongue. Expertly machined in house to a smooth finish.",
+      "dimensions": "57mm x 44mm",
+      "price_per_metre_gbp": 7.72,
+      "price_last_updated": "2026-05-14",
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/fee647af0d952915f3d6ccb48ad66643_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3936/in_all",
+      "materials": [
+        "Tulip Wood For Interior",
+        "Sapele",
+        "European Oak"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 126,
+      "sku": "C865",
+      "category": "cornices",
+      "description": "Classical profile cornice",
+      "dimensions": "76mm x 69mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/b82d7ff8b031f8092edb4cc5dfe759e9_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/126/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3577,
+      "sku": "C1482",
+      "category": "cornices",
+      "description": "Classic period cornice.\nExpertly machined in house to a smooth finish and left clean for polishing or painting. Glue block C1709.",
+      "dimensions": "104mm x 109mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/dbbe46d75b387208f88b509a2b6bd55c_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3577/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3823,
+      "sku": "C1508",
+      "category": "cornices",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Glue block C1709.",
+      "dimensions": "77mm x 80mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/285ef2d21cd8284e1460105c02e25ec5_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3823/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3853,
+      "sku": "C1498",
+      "category": "cornices",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "64mm x 77mm",
+      "price_per_metre_gbp": 11.8,
+      "price_last_updated": "2026-05-14",
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/b130d8c336d00254774c813a0d479701_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3853/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3826,
+      "sku": "C1517",
+      "category": "cornices",
+      "description": "A classical, concave period profile. Expertly machined in house to a smooth finish and left clean for polishing or painting. Glue block C1709.",
+      "dimensions": "76mm x 76mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/71e345231b47176843abf1558b5405c3_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3826/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3852,
+      "sku": "C1518",
+      "category": "cornices",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Glue block C1709.",
+      "dimensions": "68mm x 72mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/dcfbf8d60e4d22f00b3e48f652c73899_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3852/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3848,
+      "sku": "C1516",
+      "category": "cornices",
+      "description": "A classical, concave period profile. Expertly machined in house to a smooth finish and left clean for polishing or painting. Glue block C1709.",
+      "dimensions": "55mm x 55mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/ccf7dbad0d070e33f483838cefef9ce1_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3848/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3868,
+      "sku": "C1453",
+      "category": "cornices",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Price per metre reduces on quantity. Glue block C1709.",
+      "dimensions": "95mm x 95mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/d255bec2e4f2b0740f9772b54e4a8103_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3868/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3867,
+      "sku": "C1452",
+      "category": "cornices",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Price per metre reduces on quantity. Glue block C1709.",
+      "dimensions": "75mm x 75mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/b722b28a344bff9119aca2dbb7ec47dd_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3867/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 4023,
+      "sku": "C1620",
+      "category": "cornices",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Price per metre reduces on quantity.",
+      "dimensions": "62mm x 94mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/7977d4f77d9637b0192ea6d8e11d2cf6_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/4023/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3462,
+      "sku": "C1369",
+      "category": "cornices",
+      "description": "Quadrant profile. Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain. Used as post together with S1630 or C1619, glue block C1709.",
+      "dimensions": "50mm x 50mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/238b3a97ce78532325821fb0aae56bd6_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3462/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 294,
+      "sku": "C892",
+      "category": "cornices",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain. Provided in 2 parts.",
+      "dimensions": "95mm x 44mm (2 parts)",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/95d586be874ee3fe0e33b095bf27583b_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/294/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3917,
+      "sku": "C1558",
+      "category": "cornices",
+      "description": "Classical canted cornice. Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain. Glue block C1709.",
+      "dimensions": "86mm x 86mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/164f8cae7aca4f2f9b847404a9c8c9a0_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3917/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3824,
+      "sku": "C1478",
+      "category": "cornices",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "90mm x 58mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/960fdf4e7310ec59846db8091f004475_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3824/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3338,
+      "sku": "C1259",
+      "category": "cornices",
+      "description": "Dentil cornice in 2 parts.",
+      "dimensions": "111mm x 101mm (2 parts)",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/355f54714694b0f98f226c1b661f5050_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3338/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 1674,
+      "sku": "C501",
+      "category": "cornices",
+      "description": "Large quadrant, corner post or cornice. By fixing 2 together will give you a half round.\nOur mouldings are expertly machined in house to a smooth finish, ready to paint or stain. Glue block C1709.",
+      "dimensions": "70mm x 70mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/7aa02c1b3dcfee514a7e58124a0acddb_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/1674/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 262,
+      "sku": "S888",
+      "category": "skirtings",
+      "description": "All of our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "215mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/39d83c3ec1db167e5e692b7006aa77f9_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/262/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 2512,
+      "sku": "S888-1",
+      "category": "skirtings",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "150mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/e0d71d257e3112a1cf0556946fcda025_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/2512/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3516,
+      "sku": "S888-11",
+      "category": "skirtings",
+      "description": "All of our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "175mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/be6a604690545f56a938b3322105531b_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3516/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 244,
+      "sku": "S725",
+      "category": "skirtings",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "175mm x 20mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/a8acbfa5e541c00ee1f85e21e7dd416f_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/244/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3820,
+      "sku": "S1429-1",
+      "category": "skirtings",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "175mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/954bc40d9df19707209a6bfe0bca3722_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3820/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3821,
+      "sku": "S1429",
+      "category": "skirtings",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "215mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/102ca0921a50cf933de8b66058c6b44b_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3821/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 4052,
+      "sku": "S1629",
+      "category": "skirtings",
+      "description": "Also part of curved skirting Set, other pars in image: Curved plinth block S1630, quadrant post C1369.",
+      "dimensions": "120mm x 17mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/bc64eeb8c74bfe6e4b1fd720b9248ba8_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/4052/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3941,
+      "sku": "S1565",
+      "category": "skirtings",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "135mm x 18mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/09ef0b3769c54c4ece4877b8acd3150a_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3941/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 4142,
+      "sku": "S1676",
+      "category": "skirtings",
+      "description": "Skirting bottom, multiple top parts to choose from. See PDF for more information or click on matching items. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "170mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/2d954271721716b50fb0d90e06bd4010_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/4142/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 4051,
+      "sku": "S1634",
+      "category": "skirtings",
+      "description": "Also part of curved skirting set, other pars in image: Curved plinth block S1630, quadrant post C1369",
+      "dimensions": "115mm x 17mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/591d8e3d45c3c4872035e94fd924fa48_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/4051/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3793,
+      "sku": "S1463-1",
+      "category": "skirtings",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.\nPrice per metre reduces on quantity.",
+      "dimensions": "135mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/a89cf6b76a6e82008de1cdb359282d7d_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3793/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 4116,
+      "sku": "S1667",
+      "category": "skirtings",
+      "description": "Expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "175mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/2428d2e67757425ae5b31f01d4422c3d_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/4116/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 4117,
+      "sku": "S1668",
+      "category": "skirtings",
+      "description": "Expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "215mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/1dc725296ddada625d29ea506b54ae14_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/4117/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 4144,
+      "sku": "ST1681",
+      "category": "skirting_tops",
+      "description": "Skirting top moulding",
+      "dimensions": "134mm x 20mm",
+      "price_per_metre_gbp": 7.82,
+      "price_last_updated": "2026-05-14",
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/a3e253f2908103d3ec39fc3438f3ffe5_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/4144/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3822,
+      "sku": "A1427",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Rosette ROS1521, ROS1665 and plinth block P1533 are shown on the images purchased separately.",
+      "dimensions": "105mm x 28mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/9cc20e5858872ca50c4a91c7f91d4333_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3822/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3842,
+      "sku": "A1426",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Rosette ROS1519 and plinth block P1531 are shown on the images purchased separately.",
+      "dimensions": "75mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/b59ad76773b1df83d8a0520df7bc66e4_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3842/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3835,
+      "sku": "A1487",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Rosette ROS1519 and plinth block P1531 are shown on the images purchased separately.",
+      "dimensions": "75mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/e996f25dee0854077e86efa5d64bc1b7_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3835/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3834,
+      "sku": "A1488",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Rosette ROS1544 and plinth block P1532 are shown on the images purchased separately.",
+      "dimensions": "90mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/24483dd35c477fd69c40bb365b67486a_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3834/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3840,
+      "sku": "A1424",
+      "category": "architraves",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "65mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/cc5059f04ecfa9a234e35a751e057a30_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3840/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3870,
+      "sku": "A1491",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Rosette ROS1519 and plinth block P1528 are shown on the images purchased separately.",
+      "dimensions": "75mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/37ae25f6162153a59d3f6a7aa3e13551_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3870/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3817,
+      "sku": "A1547",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Rosette ROS1520 and plinth block P1529 are shown on the images purchased separately.",
+      "dimensions": "90mm x 27mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/0c519c0f88725c8781a79daa2f475c2f_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3817/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3832,
+      "sku": "A1490",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Rosette ROS1523, ROS1666 and plinth block P1539 are shown on the images purchased separately.",
+      "dimensions": "125mm x 34mm (2 parts)",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/5321ed2d355a2e9c405ead616757d489_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3832/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3833,
+      "sku": "A1489",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.\nRosette ROS1521, ROS1665 and plinth block P1538 are shown on the images purchased separately.",
+      "dimensions": "105mm x 28mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/9f3d19d8dbbd5213bcb48936efcb6f17_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3833/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3841,
+      "sku": "A1425",
+      "category": "architraves",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "75mm x 25mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/ccd909b678024d87b2ef0293212c4556_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3841/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3873,
+      "sku": "A1548",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Rosette ROS1520 and plinth block P1529 are shown on the images purchased separately.",
+      "dimensions": "85mm x 26mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/0c7247842ac16db74151033dde6206d3_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3873/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3869,
+      "sku": "A1492",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "65mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/531a6e10ae0d8a44822f47c89c05f9a3_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3869/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3809,
+      "sku": "A1457",
+      "category": "architraves",
+      "description": "Reeded or fluted. A choice of either side. Expertly machined in house to a smooth finish and left clean for polishing or painting. Rosette ROS1561 and plinth block PAR1621 are shown on the images purchased separately.",
+      "dimensions": "85mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/2fe58c206007175ead7ebc71c68f5436_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3809/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3802,
+      "sku": "A1510",
+      "category": "architraves",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain. Rosette ROS1520 and plinth block P1529 are shown on the images purchased separately.",
+      "dimensions": "85mm x 25mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/b5417ab5319a3b3eb696c8870c71248d_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3802/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3930,
+      "sku": "A1562",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "48mm x 20mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/06baaa661541a14d108d8f03c3e76494_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3930/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3844,
+      "sku": "A1474",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Price per metre reduces on quantity.",
+      "dimensions": "105mm x 12mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/7e65049232818307d2b547b509b0febd_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3844/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3363,
+      "sku": "A1285",
+      "category": "architraves",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Rosette ROS1522 and plinth block P1530 items are shown on the images purchased separately.",
+      "dimensions": "120mm x 34mm (2 parts)",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/050442d70fe977a8e97c133679c98798_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3363/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 2637,
+      "sku": "A1032",
+      "category": "architraves",
+      "description": "All our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "73mm x 25mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/874e1b2eaaf47ea7ca1d9d23a856def5_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/2637/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 164,
+      "sku": "D880",
+      "category": "dado_rails",
+      "description": "Chair rail/dado rail. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "50mm x 19mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/63c8b12c079b7a5632d021aa2bdd8ae9_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/164/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 1570,
+      "sku": "D606",
+      "category": "dado_rails",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "65mm x 20mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/0730d2dea1b2c7bd366bd3b20c8bf357_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/1570/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 162,
+      "sku": "D868",
+      "category": "dado_rails",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "65mm x 27mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/e9e173fe7eb1ea2c67b5e2225d70004b_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/162/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3926,
+      "sku": "D1559",
+      "category": "dado_rails",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "75mm x 27mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/af7c42cdfbc2b1bad1e118c127598e0d_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3926/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3811,
+      "sku": "D1512",
+      "category": "dado_rails",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "68mm x 20mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/1559bf6d8900d7778e68483d70562cbe_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3811/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3998,
+      "sku": "D1597",
+      "category": "dado_rails",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.\nPrice per metre reduces on quantity.",
+      "dimensions": "54mm x 25mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/20e78dc7af7e6b4f74a831b329dff770_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3998/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3996,
+      "sku": "D1595",
+      "category": "dado_rails",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "68mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/3acc7d4e085300262812ee3844cae1bb_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3996/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3854,
+      "sku": "P1445",
+      "category": "picture_rails",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Price per metre reduces on quantity.",
+      "dimensions": "63mm x 27mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/9082886d5289e35b36d1c6f8b6589508_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3854/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3574,
+      "sku": "P1444",
+      "category": "picture_rails",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.\nPrice per metre reduces on quantity.",
+      "dimensions": "43mm x 19mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/8ab30d505f9c2c9351c31d0a0e5f507f_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3574/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3925,
+      "sku": "P1560",
+      "category": "picture_rails",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "47mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/700f12cf0ea87667da146cc4dce69110_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3925/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 37,
+      "sku": "P940LED",
+      "category": "picture_rails",
+      "description": "Picture rail with LED channel",
+      "dimensions": "45mm x 19mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/8b5e59078b1ff6470473c0c3ed4ae553_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/37/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3508,
+      "sku": "W1407",
+      "category": "window_boards",
+      "description": "Wainscot moulding, popular for wall panelling. Wainscotting. \nExpertly machined in house to a smooth finish and left clean for polishing or painting. Price per metre reduces on quantity.",
+      "dimensions": "36mm x 20mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/c755176b45cd5eb3fe102acb39177a52_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3508/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 1568,
+      "sku": "B600",
+      "category": "beads",
+      "description": "Astragal bead.\nAlso shown in the images is a matching corner scoop B600C, and a rounded corner B1643. Left clean for polishing or painting.",
+      "dimensions": "40mm x 18mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/89e973d9786959fd6ffa7e777fb57e99_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/1568/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3838,
+      "sku": "B1422",
+      "category": "beads",
+      "description": "Ogee. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "26mm x 12mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/ddb841731408252fac7bc5f013dad380_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3838/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3747,
+      "sku": "B1416",
+      "category": "beads",
+      "description": "Astragal bead. Also shown in the images is a matching corner scoop B1416C, and a rounded corner B1642. Left clean for polishing or painting.",
+      "dimensions": "30mm x 13mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/7da171d4db3d8249ee5ea488605b56ab_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3747/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3839,
+      "sku": "B1423",
+      "category": "beads",
+      "description": "Ogee. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "32mm x 12mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/7d16c29a1ec1373d973a062ed513fdd5_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3839/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 188,
+      "sku": "B740",
+      "category": "beads",
+      "description": "Broken Ogee. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "38mm x 15mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/0f7ace4cb4d8c68ad91ce8fb7f05c547_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/188/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3837,
+      "sku": "B1421",
+      "category": "beads",
+      "description": "Ogee. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "20mm x 9mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/b93e1b1d274dd7e92796e37f6b5b24bf_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3837/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 194,
+      "sku": "B750",
+      "category": "beads",
+      "description": "Astragal bead. Also shown in the images is a matching corner scoop B750C, and a rounded corner B1641. Left clean for polishing or painting.",
+      "dimensions": "22mm x 10mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/ee966dfa09ab85d09e0a0e9100677b1a_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/194/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 187,
+      "sku": "B739",
+      "category": "beads",
+      "description": "Broken Ogee. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "32mm x 14mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/c30fe9800890221378b6e4b6e55cdac1_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/187/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 203,
+      "sku": "B777",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "28mm x 19mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/feff86c97a8ccb88a77fc1c6da5b91cf_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/203/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3541,
+      "sku": "B1430",
+      "category": "beads",
+      "description": "Half Round. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "25mm x 12mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/370c9bd2cbb523bfd31140faabb86e31_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3541/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3856,
+      "sku": "B1442",
+      "category": "beads",
+      "description": "Half round and scotia. Expertly machined in house to a smooth finish and left clean for polishing or painting",
+      "dimensions": "25mm x 16mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/f6a3507acb2c1b4c3af4377779d62a75_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3856/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 212,
+      "sku": "B801",
+      "category": "beads",
+      "description": "Broken Ogee. \nExpertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "24mm x 10mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/9bd8b4d5b7b748aad7dab4c4b13abb78_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/212/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3872,
+      "sku": "B1451",
+      "category": "beads",
+      "description": "Bead moulding",
+      "dimensions": "35mm x 21mm",
+      "price_per_metre_gbp": 3.59,
+      "price_last_updated": "2026-05-14",
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/81dea13915403b944e6d4c7217bce3cb_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3872/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 233,
+      "sku": "B938",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "33mm x 9mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/f7073338b77adbba00d277836cba77de_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/233/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 175,
+      "sku": "B711",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "56mm x 26mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/959af61e09941a16a13161640529d58e_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/175/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3754,
+      "sku": "B1420",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "26mm x 12mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/62ce4b61f718a16d0c4a9ecd3d6c663b_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3754/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3749,
+      "sku": "B1414",
+      "category": "beads",
+      "description": "Astragal bead. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "50mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/82816b472a5145a7adda90ae1b58c3b1_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3749/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3711,
+      "sku": "B801S",
+      "category": "beads",
+      "description": "Broken Ogee. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "20mm x 9mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/48be861c2155028be8e841ae53ada0ee_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3711/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3753,
+      "sku": "B1419",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "32mm x 14mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/0becb5b49b7ba5a27ad534a563f80aed_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3753/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3755,
+      "sku": "B1431",
+      "category": "beads",
+      "description": "Half Round. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "30mm x 15mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/e7d9f4fa078366617af116a2505c982f_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3755/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3756,
+      "sku": "B1432",
+      "category": "beads",
+      "description": "Half Round. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "40mm x 20mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/8e8bf88f8d5b61cdcf63352307c43cdd_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3756/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3750,
+      "sku": "B1413",
+      "category": "beads",
+      "description": "Astragal bead. Also shown in the images is a matching corner scoop B1413C, and a rounded corner B1644. Left clean for polishing or painting.",
+      "dimensions": "60mm x 25mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/d0eb11670a521496e3a0f3ee04127478_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3750/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 176,
+      "sku": "B712",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "55mm x 27mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/9ef5232d85dc0a00f4114421c004de82_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/176/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 225,
+      "sku": "B826",
+      "category": "beads",
+      "description": "Broken Ogee. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "50mm x 20mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/0a3e0e979369255a8fcc2152754ef03c_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/225/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 193,
+      "sku": "B749",
+      "category": "beads",
+      "description": "Astragal bead. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "16mm x 8mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/0c123493fce8d11070391dc4ec35c8af_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/193/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 213,
+      "sku": "B802",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "40mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/f24a6ab45193fb430b77d4e1ac446be0_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/213/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3855,
+      "sku": "B1443",
+      "category": "beads",
+      "description": "Half round and scotia. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "32mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/b46227c53be61e8f4b4f1a8afcaa6a56_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3855/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3827,
+      "sku": "B1553",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "50mm x 24mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/6bf4dc29d4a0adfd73a92c04d56c6712_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3827/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3573,
+      "sku": "B1480",
+      "category": "beads",
+      "description": "Period panel bead. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "41mm x 11mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/958113e6ac1f4dd8bd551a8dfb38f25a_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3573/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3567,
+      "sku": "B1441",
+      "category": "beads",
+      "description": "Half round and scotia. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "20mm x 12mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/70d50eb7962d0e906f27e6d6231db745_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3567/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 200,
+      "sku": "B759",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "31mm x 15mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/05f6367c6c3fcb40f247f49802c15119_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/200/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3499,
+      "sku": "B1406",
+      "category": "beads",
+      "description": "Cock bead. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "26mm x 8mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/075fa986ae7c43917971ddaa955deee5_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3499/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 227,
+      "sku": "B827S",
+      "category": "beads",
+      "description": "A modern simplistic stepped moulding. Expertly machined in house to a smooth finish and left clean for polishing or painting.\nPrice per metre reduces on quantity.",
+      "dimensions": "37mm x 9mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/9b86141545ce8fa4c43525e294cf6081_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/227/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 426,
+      "sku": "B935S",
+      "category": "beads",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "21mm x 10mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/58258591044e26b6a04acc7ee8613cae_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/426/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3990,
+      "sku": "B1589",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.\nPrice per metre reduces on quantity.",
+      "dimensions": "45mm x 13mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/0fc9f327be445eb3f0b90ef8576c5c90_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3990/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3989,
+      "sku": "B1588",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "28mm x 10mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/f6a59d78b28ecda2ef48b03ab5b5ba81_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3989/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 192,
+      "sku": "B748",
+      "category": "beads",
+      "description": "Matching curved corner bead B748C.\nExpertly machined in house to a smooth finish and left clean for polishing or painting.\nPrice per metre reduces on quantity.",
+      "dimensions": "9mm x 5mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/e8b776c4d1a8ee8c9b37d4ca4a152790_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/192/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 2538,
+      "sku": "B748L",
+      "category": "beads",
+      "description": "Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "14mm x 7mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/29b6567c6e4f5ef6c93dc6122a25b59c_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/2538/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3796,
+      "sku": "B1460",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Price per metre reduces on quantity.",
+      "dimensions": "22mm x 12mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/857f69e11f56faef121ebeef0f8b8525_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3796/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3067,
+      "sku": "B777-1",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "28mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/d57708234c8d9565f950ea1e842a1bdc_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3067/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 2596,
+      "sku": "B1000",
+      "category": "beads",
+      "description": "Half round. Expertly machined in house to a smooth finish and left clean for polishing or painting.",
+      "dimensions": "12mm x 6mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/ddd6de4fbcc54a235e4d2cac72303b0d_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/2596/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 184,
+      "sku": "B720",
+      "category": "beads",
+      "description": "A corner bead. Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "15mm x 15mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/3e18e6db4b433d105d2eecb6790ef17e_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/184/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3751,
+      "sku": "B1417",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. Price per metre reduces on quantity.",
+      "dimensions": "25mm x 12mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/343c660fb61bb46ede71522240399a1c_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3751/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 183,
+      "sku": "B719",
+      "category": "beads",
+      "description": "A corner bead. All of our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "19mm x 19mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/b1cb996de00f9b8d91d09b09ea649984_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/183/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3468,
+      "sku": "B1364",
+      "category": "beads",
+      "description": "A classical, concave period profile. Expertly machined in house to a smooth finish and left clean for polishing or painting. Price per metre reduces on quantity.",
+      "dimensions": "13mm x 13mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/94a906b3a49140b19d708dd889955c72_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3468/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 235,
+      "sku": "B948",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting.\nPrice per metre reduces on quantity.",
+      "dimensions": "21mm x 10mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/5cba32062cd97bad06ad5087cebefb92_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/235/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3877,
+      "sku": "B1483",
+      "category": "beads",
+      "description": "Decorative corner cover. Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain. L bead",
+      "dimensions": "29mm x 29mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/46536c5a5231ae684be3c09a62c91003_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3877/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 226,
+      "sku": "B827",
+      "category": "beads",
+      "description": "A modern simplistic stepped moulding. Our mouldings are expertly machined in house to a smooth finish, ready to paint or stain.",
+      "dimensions": "45mm x 13mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/a2570f72c0312c9c1b2308b014f77a18_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/226/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": 3846,
+      "sku": "B1513",
+      "category": "beads",
+      "description": "Expertly machined in house to a smooth finish and left clean for polishing or painting. \nMatching curves:\nB1542, Inner R60mm.\nB1543, Inner R210mm.\nMatching 49deg miter curve:\nB1546, Inner R69mm.",
+      "dimensions": "25mm x 10mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": "https://www.wrp-timber-mouldings.co.uk/uploads/7e92f67995aee99da58493d6396feaac_284.jpg",
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/moulding-profile/3846/in_all",
+      "materials": [
+        "Tulip Wood For Interior"
+      ],
+      "is_compound": false
+    },
+    {
+      "id": "combo_1",
+      "sku": "Regal Oval",
+      "category": "compound_mouldings",
+      "description": "Compound/combination moulding - Regal Oval",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/1/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_2",
+      "sku": "Majestic Volute L/H",
+      "category": "compound_mouldings",
+      "description": "Majestic Volute Left Hand combination moulding",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/2/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_3",
+      "sku": "Majestic Volute R/H",
+      "category": "compound_mouldings",
+      "description": "Majestic Volute Right Hand combination moulding",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/3/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_4",
+      "sku": "Artisan Curved Corner",
+      "category": "compound_mouldings",
+      "description": "Artisan Curved Corner combination moulding",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/4/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_5",
+      "sku": "Artisan Curved Plinth",
+      "category": "compound_mouldings",
+      "description": "Artisan Curved Plinth combination moulding",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/5/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_7",
+      "sku": "M122",
+      "category": "compound_mouldings",
+      "description": "Compound/combination moulding M122",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/7/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_9",
+      "sku": "M124",
+      "category": "compound_mouldings",
+      "description": "Compound/combination moulding M124",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/9/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_10",
+      "sku": "M125",
+      "category": "compound_mouldings",
+      "description": "Two-part skirting combination moulding",
+      "dimensions": "250mm x 21mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/10/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_11",
+      "sku": "M126",
+      "category": "compound_mouldings",
+      "description": "Compound/combination moulding M126",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/11/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_12",
+      "sku": "M127",
+      "category": "compound_mouldings",
+      "description": "Compound/combination moulding M127",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/12/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_13",
+      "sku": "M128",
+      "category": "compound_mouldings",
+      "description": "Compound/combination moulding M128",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/13/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_14",
+      "sku": "M129",
+      "category": "compound_mouldings",
+      "description": "Compound/combination moulding M129",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/14/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_15",
+      "sku": "M130",
+      "category": "compound_mouldings",
+      "description": "Compound/combination moulding M130",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/15/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_16",
+      "sku": "M137",
+      "category": "compound_mouldings",
+      "description": "Compound/combination moulding M137",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/16/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_17",
+      "sku": "M101",
+      "category": "compound_mouldings",
+      "description": "Stellar Weave Set M101",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/17/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_19",
+      "sku": "M139",
+      "category": "compound_mouldings",
+      "description": "Large Reeded Post M139",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/19/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_20",
+      "sku": "M140",
+      "category": "compound_mouldings",
+      "description": "Small Reeded Post M140",
+      "dimensions": null,
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/20/in_all",
+      "materials": [],
+      "is_compound": true
+    },
+    {
+      "id": "combo_21",
+      "sku": "M131",
+      "category": "compound_mouldings",
+      "description": "Compound/combination moulding M131",
+      "dimensions": "255mm x 46mm",
+      "price_per_metre_gbp": null,
+      "price_last_updated": null,
+      "image_url": null,
+      "product_url": "https://www.wrp-timber-mouldings.co.uk/combinations/21/in_all",
+      "materials": [],
+      "is_compound": true
+    }
+  ]
+}
