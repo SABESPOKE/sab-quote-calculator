@@ -2215,6 +2215,27 @@ function SABQuoteTool() {
   });
   const [dbReady, setDbReady] = useState(false);
   const syncTimerRef = React.useRef(null);
+  // Quote IDs with unsent local writes. Tracked so the visibility/online
+  // resync doesn't replace local state with a stale server view before our
+  // debounced PUT lands — the race that resurrects deleted items.
+  const dirtyRef = React.useRef(new Set());
+  // Per-quote JSON snapshot of the last "known-saved" (or last server-supplied)
+  // state. Used by saveQuotes to detect which quotes actually changed, so we
+  // don't bulk-stamp updated_at and PUT every quote on every save (which
+  // broke timestamp-based conflict resolution and let stale versions on other
+  // devices clobber newer ones — root cause of the £30k Sarah loss).
+  // Stored as strings so it survives mutate-in-place callers.
+  const baselineRef = React.useRef({});
+  const captureBaseline = React.useCallback((qs) => {
+    const snap = {};
+    for (const [id, q] of Object.entries(qs || {})) {
+      snap[id] = JSON.stringify({ ...q, updated_at: null });
+    }
+    baselineRef.current = snap;
+  }, []);
+
+  // Seed baseline from whatever localStorage gave us on first render.
+  React.useEffect(() => { captureBaseline(quotes); }, []); // eslint-disable-line
 
   // Initial sync with server database
   useEffect(() => {
@@ -2229,7 +2250,9 @@ function SABQuoteTool() {
             const server = merged[id] && merged[id].updated_at ? new Date(merged[id].updated_at) : new Date(0);
             if (!merged[id] || local > server) merged[id] = q;
           }
-          return ensurePricing(merged);
+          const priced = ensurePricing(merged);
+          captureBaseline(priced); // server view is now the baseline
+          return priced;
         });
       });
     }).catch(() => {});
@@ -2239,12 +2262,20 @@ function SABQuoteTool() {
   useEffect(() => {
     const doSync = () => {
       if (!dbReady) return;
+      // Skip resync if we have unsent local writes — otherwise the server's
+      // pre-write view will overwrite the local state (e.g. resurrecting a
+      // just-deleted item before the debounced PUT lands).
+      if (dirtyRef.current.size > 0) return;
       fetch('/api/quotes/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quotes })
       }).then(r => r.json()).then(res => {
-        if (res.quotes) setQuotes(ensurePricing(res.quotes));
+        if (res.quotes) {
+          const priced = ensurePricing(res.quotes);
+          captureBaseline(priced);
+          setQuotes(priced);
+        }
       }).catch(() => {});
     };
     const onVisible = () => { if (document.visibilityState === 'visible') doSync(); };
@@ -2401,23 +2432,44 @@ function SABQuoteTool() {
   }, [quotes]);
 
   const saveQuotes = useCallback(q => {
-    // Stamp updated_at on any changed quotes
+    // Only stamp `updated_at` on quotes whose CONTENT has actually changed —
+    // not every quote on every save. Bulk-stamping breaks timestamp-based
+    // conflict resolution and lets older versions on other devices win.
+    // Compare against baselineRef (string snapshot) rather than the live
+    // `quotes` state, because most callers mutate in place — so `q[id]` and
+    // `quotes[id]` point to the SAME (already-mutated) object.
     const stamped = {};
+    const changedIds = [];
     for (const [id, quote] of Object.entries(q)) {
-      stamped[id] = { ...quote, updated_at: new Date().toISOString() };
+      const currJson = JSON.stringify({ ...quote, updated_at: null });
+      const baseJson = baselineRef.current[id];
+      const isChanged = !baseJson || currJson !== baseJson;
+      if (isChanged) {
+        stamped[id] = { ...quote, updated_at: new Date().toISOString() };
+        changedIds.push(id);
+        dirtyRef.current.add(id);
+        baselineRef.current[id] = currJson; // advance baseline to the saved state
+      } else {
+        stamped[id] = quote; // preserve existing timestamp
+      }
+    }
+    // Drop baseline entries for quotes the caller removed.
+    for (const id of Object.keys(baselineRef.current)) {
+      if (!(id in q)) delete baselineRef.current[id];
     }
     setQuotes(stamped);
-    // Debounced push to server
+    // Debounced push to server — only changed quotes.
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
       if (!dbReady) return;
-      // Find changed quotes and upsert each
-      for (const [id, quote] of Object.entries(stamped)) {
+      for (const id of changedIds) {
         fetch('/api/quotes/' + id, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(quote)
-        }).catch(() => {});
+          body: JSON.stringify(stamped[id])
+        })
+          .catch(() => {})
+          .finally(() => { dirtyRef.current.delete(id); });
       }
     }, 500);
   }, [dbReady]);
