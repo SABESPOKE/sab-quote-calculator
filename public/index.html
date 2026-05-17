@@ -259,6 +259,50 @@
         grid-template-columns: 1fr !important;
       }
 
+      /* Add-item modal — prevent long <option> labels from expanding the grid
+         column wider than the viewport. Grid items default to min-content
+         minimum-width; we force them to 0 so they shrink, and constrain selects
+         + inputs to the container width with border-box sizing. */
+      .sab-add-modal,
+      .sab-add-modal > div,
+      .sab-add-grid,
+      .sab-add-grid > div,
+      .sab-add-grid > div > div {
+        min-width: 0 !important;
+      }
+      .sab-add-modal select,
+      .sab-add-modal input[type="number"],
+      .sab-add-modal input[type="text"],
+      .sab-add-modal input:not([type]) {
+        max-width: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+      /* Inline-styled multi-col grids inside the modal: collapse 6-col → 3, 4-col → 2 */
+      .sab-add-modal div[style*="repeat(6,1fr)"],
+      .sab-add-modal div[style*="repeat(6, 1fr)"] {
+        grid-template-columns: repeat(3, 1fr) !important;
+      }
+      .sab-add-modal div[style*="repeat(4, 1fr)"],
+      .sab-add-modal div[style*="repeat(4,1fr)"],
+      .sab-add-modal div[style*="repeat(5, 1fr)"],
+      .sab-add-modal div[style*="repeat(5,1fr)"] {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+
+      /* Native <select> on mobile has an invisible/illegible chevron — looks
+         like a plain text box. Force appearance:none and draw a custom chevron. */
+      .sab-room-defaults-grid select,
+      .sab-add-modal select {
+        appearance: none !important;
+        -webkit-appearance: none !important;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23c8a96e' d='M7 10l5 5 5-5z'/></svg>") !important;
+        background-repeat: no-repeat !important;
+        background-position: right 6px center !important;
+        background-size: 18px !important;
+        padding-right: 30px !important;
+      }
+
       /* Modal section headers */
       .sab-add-modal div[style*="letter-spacing: 0.1em"] {
         font-size: 12px !important;
@@ -270,12 +314,18 @@
         font-size: 12px !important;
       }
 
-      /* Modal inputs and selects */
+      /* Modal inputs and selects — split padding so chevron rule's padding-right
+         on selects survives */
       .sab-add-modal input,
       .sab-add-modal select {
         font-size: 16px !important;
         min-height: 44px !important;
-        padding: 10px 12px !important;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+        padding-left: 12px !important;
+      }
+      .sab-add-modal input {
+        padding-right: 12px !important;
       }
 
       /* Modal action buttons */
@@ -313,7 +363,14 @@
       .sab-room-defaults-grid input {
         font-size: 14px !important;
         min-height: 40px !important;
-        padding: 8px 10px !important;
+        padding-top: 8px !important;
+        padding-bottom: 8px !important;
+        padding-left: 10px !important;
+        /* padding-right intentionally not set here — the chevron rule above sets
+           it to 30px for selects, and the rule below sets 10px for inputs. */
+      }
+      .sab-room-defaults-grid input {
+        padding-right: 10px !important;
       }
       .sab-room-defaults-grid label {
         font-size: 11px !important;
