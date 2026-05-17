@@ -1618,7 +1618,8 @@ function migrateLegacyFillers(quote) {
 function ensurePricing(quotesObj) {
   const result = {};
   for (const [id, q0] of Object.entries(quotesObj)) {
-    const { quote: q } = migrateLegacyFillers(q0);
+    const qMig = migrateInstallDays(q0);
+    const { quote: q } = migrateLegacyFillers(qMig);
     const newRooms = {};
     for (const [roomName, room] of Object.entries(q.rooms || {})) {
       newRooms[roomName] = {
@@ -1779,7 +1780,7 @@ function getDefaultProjectCosts() {
   const s = DB.settings;
   return {
     surveyFee:           s.surveyFee,           // £ flat
-    installDays:         1,                      // number of install days (user sets per job)
+    installDaysByRoom:   {},                     // { [roomName]: days } — per-room fitting
     installDayRate:      s.installDayRate,       // £/day
     deliveryFee:         s.deliveryFee,          // £ flat
     pmPercent:           s.pmPercent,            // % of mfg sell ex VAT
@@ -1795,6 +1796,36 @@ function getDefaultProjectCosts() {
     includeContingency:  false,   // user enables for complex/risky jobs
     includeWarranty:     false,   // user enables as appropriate
   };
+}
+
+// Sum install days from per-room map. Falls back to legacy single `installDays`
+// for quotes that haven't been migrated yet (read-side compatibility).
+function totalInstallDays(pc) {
+  if (pc && pc.installDaysByRoom && typeof pc.installDaysByRoom === "object") {
+    return Object.values(pc.installDaysByRoom).reduce((s, n) => s + (Number(n) || 0), 0);
+  }
+  return Number(pc?.installDays) || 0;
+}
+
+// Convert legacy pc.installDays (single number) to pc.installDaysByRoom
+// (object keyed by room name). Drops the legacy field on first save.
+// Run on quote load via ensurePricing.
+function migrateInstallDays(quote) {
+  if (!quote || !quote.rooms) return quote;
+  const pc = quote.projectCosts;
+  if (!pc) return quote;
+  if (pc.installDaysByRoom && typeof pc.installDaysByRoom === "object") return quote; // already migrated
+  const legacy = Number(pc.installDays);
+  const rooms = Object.keys(quote.rooms);
+  const byRoom = {};
+  if (legacy > 0 && rooms.length > 0) {
+    // Park the legacy total on the first room — user can redistribute via
+    // the per-room USE buttons in the fitting panel.
+    byRoom[rooms[0]] = legacy;
+  }
+  const newPC = { ...pc, installDaysByRoom: byRoom };
+  delete newPC.installDays;
+  return { ...quote, projectCosts: newPC };
 }
 
 // ─── QUOTE TOTALS ─────────────────────────────────────────────────────────────
@@ -1814,7 +1845,7 @@ function quoteTotals(quote) {
   const totalItems = Object.values(quote.rooms || {}).reduce((sum, r) => sum + r.items.length, 0);
 
   const survey      = pc.includeSurvey       ? (pc.surveyFee          ?? s.surveyFee)          * s.margin : 0;
-  const install     = pc.includeInstall      ? (pc.installDays        ?? 1) * (pc.installDayRate ?? s.installDayRate) * s.margin : 0;
+  const install     = pc.includeInstall      ? totalInstallDays(pc) * (pc.installDayRate ?? s.installDayRate) * s.margin : 0;
   const delivery    = pc.includeDelivery     ? (pc.deliveryFee        ?? s.deliveryFee)         * s.margin : 0;
   const pm          = pc.includePM           ? mfgSellExVAT * ((pc.pmPercent         ?? s.pmPercent)        / 100) : 0;
   const consumables = pc.includeConsumables  ? totalItems   * (pc.consumablesPerItem ?? s.consumablesPerItem) : 0;
@@ -1834,6 +1865,48 @@ function quoteTotals(quote) {
   };
 }
 
+
+// Self-contained totals for ONE room when the quote is in alternatives mode.
+// Each room behaves like its own quote: full survey + delivery + warranty are
+// applied to each option, and PM%/consumables/contingency/warranty are
+// computed against just this room's items.
+//
+// Install days come from pc.installDaysByRoom[roomName] only (no project sum).
+function roomTotals(quote, roomName) {
+  const room = (quote.rooms || {})[roomName];
+  if (!room) return null;
+  let mfgCost = 0, mfgSellExVAT = 0;
+  (room.items || []).forEach(item => {
+    mfgCost      += item.pricing?.totalCost        || 0;
+    mfgSellExVAT += item.pricing?.totalSellExVAT   || 0;
+  });
+  const designFee = room.includeDesignTime !== false ? calcDesignTimePerRoom(room) : 0;
+  const pc = quote.projectCosts || getDefaultProjectCosts();
+  const s  = DB.settings;
+  const itemCount = (room.items || []).length;
+  const roomDays  = Number(pc.installDaysByRoom?.[roomName]) || 0;
+
+  const survey      = pc.includeSurvey      ? (pc.surveyFee     ?? s.surveyFee)     * s.margin : 0;
+  const install     = pc.includeInstall     ? roomDays * (pc.installDayRate ?? s.installDayRate) * s.margin : 0;
+  const delivery    = pc.includeDelivery    ? (pc.deliveryFee   ?? s.deliveryFee)    * s.margin : 0;
+  const pm          = pc.includePM          ? mfgSellExVAT * ((pc.pmPercent          ?? s.pmPercent)         / 100) : 0;
+  const consumables = pc.includeConsumables ? itemCount    * (pc.consumablesPerItem  ?? s.consumablesPerItem) : 0;
+
+  const subtotalBeforeContingency = mfgSellExVAT + designFee + survey + install + delivery + pm + consumables;
+  const contingency = pc.includeContingency ? subtotalBeforeContingency * ((pc.contingencyPercent ?? s.contingencyPercent) / 100) : 0;
+  const subtotalBeforeWarranty    = subtotalBeforeContingency + contingency;
+  const warranty    = pc.includeWarranty    ? subtotalBeforeWarranty   * ((pc.warrantyPercent     ?? s.warrantyPercent)     / 100) : 0;
+
+  const totalExVAT = subtotalBeforeWarranty + warranty;
+  const vat        = totalExVAT * s.vat;
+  return {
+    roomName, mfgCost, mfgSellExVAT, designFee,
+    survey, install, delivery, pm, consumables, contingency, warranty,
+    installDays: roomDays,
+    totalExVAT, vat, totalIncVAT: totalExVAT + vat,
+    margin: mfgCost > 0 ? mfgSellExVAT / mfgCost : 0,
+  };
+}
 
 // ─── DISTRIBUTE PROJECT COSTS INTO ITEMS ──────────────────────────────────────
 // Spreads all active project costs + design fee proportionally across items
@@ -2021,6 +2094,7 @@ function applySpecToAllItems(quote, field, name) {
 // ─── PRINT / PDF ──────────────────────────────────────────────────────────────
 function printQuote(quote, viewMode, roomFilter) {
   const mode = viewMode || "itemised";
+  const altMode = !!quote.alternativesMode;
   const dist = distributeProjectCosts(quote);
   const filteredRooms = dist.rooms.filter(({ roomName }) => roomFilter == null || roomFilter === roomName);
   const filteredSubtotal = filteredRooms.reduce((s, r) => s + r.items.reduce((rs, i) => rs + (i.bakedSellExVAT || 0), 0), 0);
@@ -2029,7 +2103,10 @@ function printQuote(quote, viewMode, roomFilter) {
   const totals = roomFilter == null
     ? quoteTotals(quote)
     : { totalExVAT: filteredSubtotal, vat: filteredVAT, totalIncVAT: filteredSubtotal + filteredVAT };
-  const roomSections = filteredRooms.map(({ roomName, items }) => {
+  // In alternatives mode each room is rendered as a self-contained option with
+  // its own full cost breakdown — see altRoomSections below. Skip the standard
+  // baked-into-items rendering and the project-wide totals block.
+  const roomSections = altMode ? "" : filteredRooms.map(({ roomName, items }) => {
     const roomTotal = items.reduce((s, i) => s + (i.bakedSellExVAT || 0), 0);
     const itemRows = items.map(i => {
       const isWRP = i.type === "wrp_moulding" && i.params;
@@ -2043,6 +2120,38 @@ function printQuote(quote, viewMode, roomFilter) {
       ? `<tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomTotal)}</td></tr>`
       : `<tr class="room-sub"><td style="text-align:right">${fmt(roomTotal)} ex VAT</td></tr>`;
     return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}${roomSubRow}</tbody></table></div>`;
+  }).join("");
+  const altRoomSections = !altMode ? "" : filteredRooms.map(({ roomName }) => {
+    const rt = roomTotals(quote, roomName);
+    if (!rt) return "";
+    const items = (quote.rooms[roomName]?.items || []);
+    const itemRows = items.map(i => {
+      const isWRP = i.type === "wrp_moulding" && i.params;
+      const wrpThumbSrc = isWRP && i.params.image_url ? (i.params.image_url.match(/\/uploads\/(.+)$/) ? `/api/wrp-image/${i.params.image_url.match(/\/uploads\/(.+)$/)[1]}` : i.params.image_url) : "";
+      const wrpThumb = isWRP && i.params.image_url ? `<img src="${wrpThumbSrc}" referrerpolicy="no-referrer" style="width:32px;height:32px;object-fit:contain;vertical-align:middle;margin-right:8px;border-radius:2px;" />` : "";
+      return `<tr><td class="td-desc">${wrpThumb}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.pricing?.totalSellExVAT)}</td>` : ""}</tr>`;
+    }).join("");
+    const costLines = [
+      ["Design & Drawing Service", rt.designFee],
+      ["Site Survey",              rt.survey],
+      [`Installation & Fitting (${rt.installDays} day${rt.installDays === 1 ? "" : "s"})`, rt.install],
+      ["Delivery & Transport",     rt.delivery],
+      ["Project Management",       rt.pm],
+      ["Consumables & Fixings",    rt.consumables],
+      ["Contingency",              rt.contingency],
+      ["Warranty & Aftercare",     rt.warranty],
+    ].filter(([, v]) => v > 0)
+     .map(([l, v]) => `<tr><td class="td-desc" style="font-style:italic;color:#777">${l}</td><td class="td-price" style="color:#777">${fmt(v)}</td></tr>`).join("");
+    return `<div class="room-block" style="page-break-inside:avoid;margin-bottom:30px;padding:14px 18px;background:#fbfaf8;border:0.5pt solid #d8d3cc;border-radius:4px">
+      <div style="font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:3px">Option</div>
+      <div style="font-size:11pt;color:#1a1815;margin-bottom:10px;padding-bottom:6px;border-bottom:0.5pt solid #d8d3cc">${roomName}</div>
+      <table class="item-tbl"><tbody>${itemRows}${costLines}</tbody></table>
+      <div style="margin-top:8px;padding-top:6px;border-top:0.75pt solid #c8a96e">
+        <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:9pt;color:#777">Subtotal (ex VAT)<span>${fmt(rt.totalExVAT)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:9pt;color:#999">VAT (20%)<span>${fmt(rt.vat)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0 0;font-size:13pt;color:#c8a96e;font-weight:600">Option total (inc VAT)<span>${fmt(rt.totalIncVAT)}</span></div>
+      </div>
+    </div>`;
   }).join("");
   // Cabinetry spec for PDF
   const derived = deriveSpec(quote);
@@ -2103,15 +2212,15 @@ function printQuote(quote, viewMode, roomFilter) {
   <div class="client-blk"><div><div class="client-name">${quote.client}</div><div class="client-proj">${quote.project}</div></div>
   <div class="contact-info">design@stevenandrewsbespoke.com<br>www.stevenandrewsbespoke.com</div></div>
   ${specBlock}
-  <div class="sec-label">Scope of Works</div>${roomSections}
-  ${dist.services.length > 0 ? `<div style="margin-bottom:18px;padding:12px 16px;background:#f9f8f6;border:0.5pt solid #e0d8cc;border-radius:4px">
+  <div class="sec-label">${altMode ? "Quotation Options" : "Scope of Works"}</div>${altMode ? altRoomSections : roomSections}
+  ${!altMode && dist.services.length > 0 ? `<div style="margin-bottom:18px;padding:12px 16px;background:#f9f8f6;border:0.5pt solid #e0d8cc;border-radius:4px">
   <div style="font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:8px">What's Included</div>
   ${dist.services.map(s => `<div style="padding:3px 0;font-size:9pt;color:#5a5045">✓ ${s}</div>`).join("")}
   </div>` : ""}
-  <div class="totals-blk">
+  ${altMode ? `<div style="margin-top:18px;padding:10px 14px;background:#f5f5f5;border-radius:4px;font-size:9pt;color:#777;font-style:italic">The options above are alternatives. Each is a self-contained quotation; only one option is to be selected.</div>` : `<div class="totals-blk">
   <div class="tot-row"><span>Subtotal (ex VAT)</span><span>${fmt(totals.totalExVAT)}</span></div>
   <div class="tot-row"><span>VAT (20%)</span><span>${fmt(totals.vat)}</span></div>
-  <div class="tot-final"><span>Total (inc VAT)</span><span>${fmt(totals.totalIncVAT)}</span></div></div>
+  <div class="tot-final"><span>Total (inc VAT)</span><span>${fmt(totals.totalIncVAT)}</span></div></div>`}
   <div class="terms">This quotation is valid for 30 days from the date of issue. All prices are subject to VAT at the prevailing rate.
   This quotation is based on the specifications detailed above — any changes to specification may result in revised pricing.
   SABESPOKE LTD is registered in England &amp; Wales.</div>
@@ -2763,6 +2872,23 @@ function SABQuoteTool() {
     saveQuotes(updated);
   }
 
+  function updateInstallDaysForRoom(roomName, days) {
+    const updated = { ...quotes };
+    if (!updated[activeQuoteId].projectCosts) updated[activeQuoteId].projectCosts = getDefaultProjectCosts();
+    const pc = updated[activeQuoteId].projectCosts;
+    pc.installDaysByRoom = { ...(pc.installDaysByRoom || {}) };
+    const d = Number(days) || 0;
+    if (d > 0) pc.installDaysByRoom[roomName] = d;
+    else delete pc.installDaysByRoom[roomName];
+    saveQuotes(updated);
+  }
+
+  function toggleAlternativesMode() {
+    const updated = { ...quotes };
+    updated[activeQuoteId] = { ...updated[activeQuoteId], alternativesMode: !updated[activeQuoteId].alternativesMode };
+    saveQuotes(updated);
+  }
+
   // AI Chat
   async function sendMessage() {
     if (!chatInput.trim() || !activeRoom || !activeQuoteId) return;
@@ -3044,6 +3170,11 @@ function SABQuoteTool() {
               <input value={activeQuote.ref} onChange={e => { const u = { ...quotes }; u[activeQuoteId].ref = e.target.value; saveQuotes(u); }} style={{ fontSize:9, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:3, background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
               <input value={activeQuote.client} onChange={e => { const u = { ...quotes }; u[activeQuoteId].client = e.target.value; saveQuotes(u); }} style={{ fontSize:12, color:"#1a1a1a", background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
               <input value={activeQuote.project} onChange={e => { const u = { ...quotes }; u[activeQuoteId].project = e.target.value; saveQuotes(u); }} style={{ fontSize:10, color:"#999999", marginTop:2, background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
+              {/* Alternatives toggle — when ON, each room is its own self-contained quote (no grand total). */}
+              <div onClick={toggleAlternativesMode} title="When ON, each room is treated as an alternative quote option — no grand total. Each room gets its own full project costs (survey, delivery, fitting, etc.)." style={{ marginTop:10, padding:"6px 8px", background: activeQuote.alternativesMode ? "rgba(200,169,110,0.12)" : "transparent", border:`1px solid ${activeQuote.alternativesMode ? "#c8a96e" : "#d8d3cc"}`, borderRadius:4, cursor:"pointer", display:"flex", alignItems:"center", gap:7 }}>
+                <div style={{ width:14, height:14, borderRadius:3, border:`1.5px solid ${activeQuote.alternativesMode ? "#c8a96e" : "#c8c3bc"}`, background: activeQuote.alternativesMode ? "#c8a96e" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, lineHeight:1, flexShrink:0 }}>{activeQuote.alternativesMode ? "✓" : ""}</div>
+                <div style={{ fontSize:9, color: activeQuote.alternativesMode ? "#c8a96e" : "#999", letterSpacing:"0.04em", lineHeight:1.3 }}>Rooms are alternatives<br/><span style={{ fontSize:8, color:"#999" }}>(don't total)</span></div>
+              </div>
             </div>
             <div style={{ padding:"14px 15px 6px", fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase" }}>Rooms</div>
             <div style={{ flex:1, overflowY:"auto" }}>
@@ -3460,7 +3591,7 @@ function SABQuoteTool() {
               </>
             )}
 
-            {/* ── Fitting Estimate Panel (quote-level, read-only suggestion) ── */}
+            {/* ── Fitting Estimate Panel — per-room days × per-fitter day rate ── */}
             {(() => {
               if (!window.SAB_FITTING) return null;
               const hrsPerPersonDay = DB.settings.fittingHoursPerPersonPerDay || 7.5;
@@ -3468,68 +3599,76 @@ function SABQuoteTool() {
               try { est = window.SAB_FITTING.calculateFittingEstimate(activeQuote); }
               catch (e) { return null; }
               const pc = activeQuote.projectCosts || getDefaultProjectCosts();
-              const manualDays = pc.installDays;
-              const delta = manualDays != null ? (manualDays - est.estimatedDays) : null;
-              const deltaColor = delta == null ? "#999" : (Math.abs(delta) < 0.51 ? "#6a8a4a" : (delta > 0 ? "#999" : "#b86a3e"));
               const accent = "#c8a96e";
               const dayRate = pc.installDayRate ?? DB.settings.installDayRate;
-              const labourCost = est.estimatedDays * dayRate;
+              const installDaysByRoom = pc.installDaysByRoom || {};
+              const ceilHalf = (x) => Math.ceil((x || 0) * 2) / 2;
+              // Per-room estimated days (independent of project-wide aggregate).
+              const roomEstimates = Object.entries(est.byRoom).map(([roomName, room]) => {
+                const hours = (room.cabinetHours || 0) + (room.scribingHours || 0) + (room.hardwareHours || 0) + (room.setupHours || 0);
+                return {
+                  roomName,
+                  room,
+                  hours: Math.round(hours * 100) / 100,
+                  estDays: ceilHalf(hours / hrsPerPersonDay),
+                  manualDays: installDaysByRoom[roomName] != null ? Number(installDaysByRoom[roomName]) : null,
+                };
+              });
+              const totalManualDays = roomEstimates.reduce((s, r) => s + (r.manualDays || 0), 0);
+              const totalEstDays    = roomEstimates.reduce((s, r) => s + r.estDays, 0);
+              const totalCost       = totalManualDays * dayRate;
               return (
                 <div style={{ marginTop:10, border:"1px solid #d8d3cc", borderRadius:6, background:"#fbfaf8", overflow:"hidden" }}>
                   <div onClick={() => setShowFittingEst(p => !p)} style={{ padding:"12px 14px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                     <div>
                       <div style={{ fontSize:11, color:accent }}>Fitting Estimate</div>
                       <div style={{ fontSize:10, color:"#999999", marginTop:2 }}>
-                        {est.totalPersonHours}h of labour ÷ {hrsPerPersonDay}h/day — guide only, override below
+                        Per-room — {est.totalPersonHours}h labour ÷ {hrsPerPersonDay}h/day · £{dayRate}/day
                       </div>
                     </div>
                     <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-                      <div style={{ fontSize:14, color:accent }}>{est.estimatedDays} labour day{est.estimatedDays !== 1 ? "s" : ""}</div>
+                      <div style={{ fontSize:14, color:accent }}>
+                        {totalManualDays > 0 ? `${totalManualDays}d · ${fmt(totalCost)}` : `${totalEstDays}d est`}
+                      </div>
                       <span style={{ color:"#777777", fontSize:11 }}>{showFittingEst ? "▲" : "▼"}</span>
                     </div>
                   </div>
                   {showFittingEst && (
                     <div style={{ borderTop:"1px solid #d8d3cc", padding:"10px 14px" }}>
-                      <div style={{ display:"flex", gap:14, flexWrap:"wrap", marginBottom:10 }}>
-                        <div style={{ flex:"1 1 130px" }}>
-                          <div style={{ fontSize:9, letterSpacing:"0.1em", color:"#999", textTransform:"uppercase" }}>Estimated</div>
-                          <div style={{ fontSize:18, color:accent, marginTop:2 }}>{est.estimatedDays}d</div>
-                          <div style={{ fontSize:9, color:"#999" }}>raw {est.rawDays}d · {est.totalPersonHours}h ÷ {hrsPerPersonDay}h/day · {fmt(labourCost)} @ £{dayRate}/day</div>
-                        </div>
-                        <div style={{ flex:"1 1 130px" }}>
-                          <div style={{ fontSize:9, letterSpacing:"0.1em", color:"#999", textTransform:"uppercase" }}>Manual</div>
-                          <div style={{ fontSize:18, color:"#777", marginTop:2 }}>{manualDays != null ? manualDays + "d" : "—"}</div>
-                          <div style={{ fontSize:9, color: deltaColor }}>
-                            {delta == null ? "not set" : (delta === 0 ? "matches estimate" : (delta > 0 ? `+${delta}d over` : `${delta}d under`))}
-                          </div>
-                        </div>
-                        <div style={{ flex:"0 0 auto", alignSelf:"center" }}>
-                          <button
-                            onClick={() => updateProjectCost("installDays", est.estimatedDays)}
-                            disabled={manualDays === est.estimatedDays}
-                            style={{ padding:"7px 12px", background: manualDays === est.estimatedDays ? "#e8e3dc" : accent, color: manualDays === est.estimatedDays ? "#999" : "#fff", border:"none", borderRadius:4, cursor: manualDays === est.estimatedDays ? "default" : "pointer", fontSize:10, fontFamily:"inherit", letterSpacing:"0.08em" }}>
-                            {manualDays === est.estimatedDays ? "IN SYNC" : `USE ${est.estimatedDays}d`}
-                          </button>
-                        </div>
+                      <div style={{ fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase", marginBottom:10 }}>
+                        Set fitting days per room. Each row's cost = days × £{dayRate}/day.
                       </div>
-                      <div style={{ fontSize:10, color:"#777", marginBottom:8 }}>
-                        cabinet <strong>{est.breakdown.cabinetHours}h</strong> · scribing <strong>{est.breakdown.scribingHours}h</strong> · hardware <strong>{est.breakdown.hardwareHours}h</strong> · setup <strong>{est.breakdown.roomSetupHours}h</strong>
-                      </div>
-                      {Object.entries(est.byRoom).map(([roomName, room]) => (
-                        <div key={roomName} style={{ marginTop:8, borderTop:"1px dashed #e8e3dc", paddingTop:6 }}>
-                          <div style={{ fontSize:10, color:"#777", marginBottom:3 }}>
-                            <strong>{roomName}</strong> — cabinet {room.cabinetHours}h · scribing {room.scribingHours}h · hardware {room.hardwareHours}h · setup {room.setupHours}h
-                          </div>
-                          {room.items.map((it, i) => (
-                            <div key={i} style={{ fontSize:9, color:"#999", display:"flex", gap:8 }}>
-                              <span style={{ width:30, textAlign:"right" }}>×{it.qty}</span>
-                              <span style={{ width:50, textAlign:"right" }}>{it.totalHours}h</span>
-                              <span style={{ width:120, color:"#bbb" }}>[{it.matchedAs}]</span>
-                              <span style={{ flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{it.description || "(no description)"}</span>
+                      {roomEstimates.map(({ roomName, room, hours, estDays, manualDays }) => {
+                        const inSync = manualDays === estDays;
+                        const cost = (manualDays || 0) * dayRate;
+                        return (
+                          <div key={roomName} style={{ padding:"8px 0", borderBottom:"1px solid #f0eeeb" }}>
+                            <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+                              <div style={{ flex:"1 1 200px", minWidth:0 }}>
+                                <div style={{ fontSize:11, color:"#1a1a1a", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{roomName}</div>
+                                <div style={{ fontSize:9, color:"#999" }}>est {estDays}d · {hours}h labour</div>
+                              </div>
+                              <input type="number" step="0.5" min="0" value={manualDays ?? ""} placeholder="—"
+                                onChange={e => updateInstallDaysForRoom(roomName, e.target.value === "" ? 0 : +e.target.value)}
+                                style={{ width:60, background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:3, padding:"5px 7px", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", textAlign:"right" }} />
+                              <div style={{ width:60, textAlign:"right", fontSize:11, color: manualDays > 0 ? accent : "#d8d3cc" }}>{fmt(cost)}</div>
+                              <button
+                                onClick={() => updateInstallDaysForRoom(roomName, estDays)}
+                                disabled={inSync}
+                                style={{ padding:"5px 9px", background: inSync ? "#e8e3dc" : accent, color: inSync ? "#999" : "#fff", border:"none", borderRadius:3, cursor: inSync ? "default" : "pointer", fontSize:9, fontFamily:"inherit", letterSpacing:"0.08em" }}>
+                                {inSync ? "IN SYNC" : `USE ${estDays}d`}
+                              </button>
                             </div>
-                          ))}
-                        </div>
-                      ))}
+                            <div style={{ fontSize:9, color:"#999", marginTop:3 }}>
+                              cabinet {room.cabinetHours}h · scribing {room.scribingHours}h · hardware {room.hardwareHours}h · setup {room.setupHours}h
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div style={{ marginTop:10, paddingTop:8, borderTop:"1px solid #d8d3cc", display:"flex", justifyContent:"space-between", fontSize:11, color:"#777" }}>
+                        <span>Total</span>
+                        <span style={{ color:accent, fontWeight:500 }}>{totalManualDays}d · {fmt(totalCost)}</span>
+                      </div>
                       {est.unresolved.length > 0 && (
                         <div style={{ marginTop:8, padding:"6px 8px", background:"#fdf6e8", borderRadius:3, fontSize:9, color:"#a8761a" }}>
                           <div style={{ fontWeight:600, marginBottom:3 }}>Unresolved ({est.unresolved.length}) — matched but hours TBC:</div>
@@ -3557,9 +3696,10 @@ function SABQuoteTool() {
               const pc = activeQuote.projectCosts || getDefaultProjectCosts();
               const t  = quoteTotals(activeQuote);
               const pcTotal = t.survey + t.install + t.delivery + t.pm + t.consumables + t.contingency + t.warranty;
+              const installTotalDays = totalInstallDays(pc);
               const pcRows = [
                 { key:"includeSurvey",      label:"Site Survey",             hint:"Flat fee for site visit & measure-up",               valField:"surveyFee",          valFmt: v => `£${v}` },
-                { key:"includeInstall",     label:"Installation & Fitting",  hint:`${pc.installDays ?? 1} day(s) × £${pc.installDayRate ?? DB.settings.installDayRate}/day`, valField:"installDays", valFmt: v => `${v} day${v!==1?"s":""}`, step:1, min:1 },
+                { key:"includeInstall",     label:"Installation & Fitting",  hint:`${installTotalDays} day(s) total — set per room in Fitting Estimate above`, valField:"installDayRate", valFmt: v => `£${v}/day`, step:10, min:0 },
                 { key:"includeDelivery",    label:"Delivery & Transport",    hint:"Flat fee for van hire & delivery to site",           valField:"deliveryFee",        valFmt: v => `£${v}` },
                 { key:"includePM",          label:"Project Management",      hint:`${pc.pmPercent ?? DB.settings.pmPercent}% of manufacturing sell`,  valField:"pmPercent", valFmt: v => `${v}%`, step:0.5, min:0 },
                 { key:"includeConsumables", label:"Consumables & Fixings",   hint:`£${pc.consumablesPerItem ?? DB.settings.consumablesPerItem} per item — screws, glue, tape, abrasives`, valField:"consumablesPerItem", valFmt: v => `£${v}/item` },
@@ -4586,6 +4726,7 @@ function SABQuoteTool() {
 
       {/* ── CLIENT VIEW ── */}
       {view === "client" && activeQuote && (() => {
+        const altMode = !!activeQuote.alternativesMode;
         const dist = distributeProjectCosts(activeQuote);
         const t = dist.totals;
         const filteredRooms = dist.rooms.filter(({ roomName }) => clientViewRoomFilter === null || clientViewRoomFilter === roomName);
@@ -4653,8 +4794,53 @@ function SABQuoteTool() {
               ))}
             </div>
 
-            {/* Room items — shown in both modes */}
-            {filteredRooms.map(({ roomName, items }) => {
+            {/* Room items — shown in both modes. In alternatives mode each room
+                is a self-contained quote: its own full project costs (survey,
+                install, delivery, PM, consumables, contingency, warranty) plus
+                its own VAT and total. No project-wide totals at the bottom. */}
+            {altMode ? filteredRooms.map(({ roomName }) => {
+              const rt = roomTotals(activeQuote, roomName);
+              if (!rt) return null;
+              const items = (activeQuote.rooms[roomName]?.items || []);
+              const costLines = [
+                ["Design & Drawing Service", rt.designFee, rt.designFee > 0],
+                ["Site Survey",              rt.survey,    rt.survey    > 0],
+                [`Installation & Fitting (${rt.installDays} day${rt.installDays === 1 ? "" : "s"})`, rt.install, rt.install > 0],
+                ["Delivery & Transport",     rt.delivery,  rt.delivery  > 0],
+                ["Project Management",       rt.pm,        rt.pm        > 0],
+                ["Consumables & Fixings",    rt.consumables, rt.consumables > 0],
+                ["Contingency",              rt.contingency, rt.contingency > 0],
+                ["Warranty & Aftercare",     rt.warranty,  rt.warranty  > 0],
+              ].filter(([, , show]) => show);
+              return (
+                <div key={roomName} style={{ marginBottom:36, padding:"22px 24px", background:"#fbfaf8", border:"1px solid #d8d3cc", borderRadius:8 }}>
+                  <div style={{ fontSize:9, letterSpacing:"0.2em", color:"#c8a96e", textTransform:"uppercase", marginBottom:4 }}>Option</div>
+                  <div style={{ fontSize:15, color:"#1a1a1a", marginBottom:14, paddingBottom:10, borderBottom:"1px solid #d8d3cc" }}>{roomName}</div>
+                  {items.map((item, i) => (
+                    <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:"1px solid #e8e3dc", fontSize:12 }}>
+                      <div>
+                        <span style={{ color:"#333333" }}>{item.qty > 1 ? item.qty + "× " : ""}{item.description}</span>
+                        {item.params?.widthMm && <span style={{ fontSize:10, color:"#999999", marginLeft:10 }}>{item.params.widthMm}×{item.params.heightMm}{item.params.depthMm ? "×" + item.params.depthMm : ""} mm</span>}
+                      </div>
+                      {clientViewMode === "itemised" && <span className="sab-item-price" style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.pricing?.totalSellExVAT)}</span>}
+                    </div>
+                  ))}
+                  {costLines.length > 0 && (
+                    <div style={{ marginTop:10, paddingTop:8 }}>
+                      <div style={{ fontSize:9, letterSpacing:"0.15em", color:"#999999", textTransform:"uppercase", marginBottom:4 }}>Project Costs</div>
+                      {costLines.map(([label, val]) => (
+                        <div key={label} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", fontSize:11, color:"#777" }}><span>{label}</span><span>{fmt(val)}</span></div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ marginTop:12, paddingTop:10, borderTop:"1px solid #d8d3cc" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", fontSize:11, color:"#777777" }}><span>Subtotal (ex VAT)</span><span>{fmt(rt.totalExVAT)}</span></div>
+                    <div style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", fontSize:11, color:"#999999" }}><span>VAT (20%)</span><span>{fmt(rt.vat)}</span></div>
+                    <div style={{ display:"flex", justifyContent:"space-between", padding:"6px 0 0", fontSize:15, color:"#c8a96e", fontWeight:500 }}><span>Option total (inc VAT)</span><span>{fmt(rt.totalIncVAT)}</span></div>
+                  </div>
+                </div>
+              );
+            }) : filteredRooms.map(({ roomName, items }) => {
               const roomSubtotal = items.reduce((s, item) => s + (item.bakedSellExVAT || 0), 0);
               const roomVAT = roomSubtotal * (DB.settings.vat || 0.2);
               return (
@@ -4678,8 +4864,9 @@ function SABQuoteTool() {
               );
             })}
 
-            {/* What's included — services list (no values) */}
-            {dist.services.length > 0 && (
+            {/* What's included — services list (no values). Hidden in
+                alternatives mode because each option carries its own cost lines. */}
+            {!altMode && dist.services.length > 0 && (
               <div style={{ marginBottom:28, padding:"16px 20px", background:"#f9f8f6", borderRadius:6, border:"1px solid #d8d3cc" }}>
                 <div style={{ fontSize:9, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:10 }}>What’s Included</div>
                 {dist.services.map(s => (
@@ -4690,12 +4877,15 @@ function SABQuoteTool() {
               </div>
             )}
 
-            {/* Totals — clean, no line-by-line breakdown */}
-            <div style={{ marginTop:28, padding:"22px", background:"#f0eeeb", borderRadius:8, border:"1px solid #d8d3cc" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>Subtotal (ex VAT)</span><span>{fmt(filteredSubtotal)}</span></div>
-              <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>VAT (20%)</span><span>{fmt(filteredVAT)}</span></div>
-              <div style={{ display:"flex", justifyContent:"space-between", padding:"14px 0 0", fontSize:17, color:"#c8a96e" }}><span>Total (inc VAT)</span><span>{fmt(filteredTotal)}</span></div>
-            </div>
+            {/* Project-wide totals — suppressed in alternatives mode since each
+                option is its own self-contained quote with its own total above. */}
+            {!altMode && (
+              <div style={{ marginTop:28, padding:"22px", background:"#f0eeeb", borderRadius:8, border:"1px solid #d8d3cc" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>Subtotal (ex VAT)</span><span>{fmt(filteredSubtotal)}</span></div>
+                <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>VAT (20%)</span><span>{fmt(filteredVAT)}</span></div>
+                <div style={{ display:"flex", justifyContent:"space-between", padding:"14px 0 0", fontSize:17, color:"#c8a96e" }}><span>Total (inc VAT)</span><span>{fmt(filteredTotal)}</span></div>
+              </div>
+            )}
             <div style={{ marginTop:36, fontSize:10, color:"#d8d3cc", lineHeight:1.9, borderTop:"1px solid #1a1815", paddingTop:20 }}>
               This quotation is valid for 30 days from the date of issue. All prices are exclusive of VAT unless stated.
               A 50% deposit is required to commence work; balance payable on completion. Prices are based on the specifications above — any changes may result in revised pricing.
