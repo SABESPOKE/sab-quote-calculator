@@ -291,16 +291,25 @@
       }
 
       /* Native <select> on mobile has an invisible/illegible chevron — looks
-         like a plain text box. Force appearance:none and draw a custom chevron. */
+         like a plain text box. Force appearance:none and draw a high-contrast
+         custom chevron. Use a FULLY URL-encoded SVG data URI (iOS Safari is
+         picky about `;utf8,` form). Also force a contrasting background so the
+         select reads as an interactive box even before the chevron is parsed. */
       .sab-room-defaults-grid select,
       .sab-add-modal select {
         appearance: none !important;
         -webkit-appearance: none !important;
-        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23c8a96e' d='M7 10l5 5 5-5z'/></svg>") !important;
-        background-repeat: no-repeat !important;
-        background-position: right 6px center !important;
-        background-size: 18px !important;
-        padding-right: 30px !important;
+        -moz-appearance: none !important;
+        background-color: #ffffff !important;
+        background-image:
+          linear-gradient(to right, transparent calc(100% - 32px), rgba(200,169,110,0.10) calc(100% - 32px)),
+          url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%23555%22%20d%3D%22M7%2010l5%205%205-5z%22%2F%3E%3C%2Fsvg%3E") !important;
+        background-repeat: no-repeat, no-repeat !important;
+        background-position: 0 0, right 8px center !important;
+        background-size: 100% 100%, 20px !important;
+        padding-right: 36px !important;
+        border: 1px solid #c8c3bc !important;
+        border-radius: 4px !important;
       }
 
       /* Modal section headers */
