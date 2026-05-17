@@ -296,7 +296,8 @@
          picky about `;utf8,` form). Also force a contrasting background so the
          select reads as an interactive box even before the chevron is parsed. */
       .sab-room-defaults-grid select,
-      .sab-add-modal select {
+      .sab-add-modal select,
+      .sab-spec-overrides select {
         appearance: none !important;
         -webkit-appearance: none !important;
         -moz-appearance: none !important;
@@ -310,6 +311,16 @@
         padding-right: 36px !important;
         border: 1px solid #c8c3bc !important;
         border-radius: 4px !important;
+      }
+      .sab-spec-overrides select {
+        font-size: 14px !important;
+        min-height: 40px !important;
+        padding-top: 8px !important;
+        padding-bottom: 8px !important;
+        padding-left: 10px !important;
+      }
+      .sab-spec-overrides div[style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
       }
 
       /* Modal section headers */
@@ -1893,6 +1904,120 @@ function deriveSpec(quote) {
   };
 }
 
+// ─── SPEC PROPAGATION ─────────────────────────────────────────────────────────
+// Given a spec field (carcassMaterial, frame, etc.) and the human-readable name
+// the user picked from the dropdown, rewrite every item in every room to use
+// that selection — and re-price each affected item. Returns a new quote object.
+//
+// Strategy by field:
+//   carcassMaterial → params.carcassMaterialKey (strict: only items that already have it)
+//   frame           → params.frameKey on every cabinet
+//   doorStyle       → params.doorType on cabinets with doors (preserves current finish)
+//   doorFinish      → params.doorFinish + sprayFinishOverride + retargeted doorType
+//                     on cabinets with doors (preserves current profile)
+//   drawerSystem    → params.drawerType on items with drawers
+//   hinge           → params.hingeKey on cabinets with doors
+//   hardware        → params.handleKey on cabinets with doors
+function applySpecToAllItems(quote, field, name) {
+  // Reverse-lookup name → catalogue key
+  const findKey = (table, n) => Object.entries(table).find(([, v]) => v.name === n)?.[0] || null;
+  const findFinishKey = (n) => Object.entries(DOOR_FINISHES).find(([, v]) => v === n)?.[0] || null;
+  const hasDoors   = (it) => Number(it.params?.doorCount)   > 0;
+  const hasDrawers = (it) => Number(it.params?.drawerCount) > 0;
+
+  const mapAllItems = (mutator) => {
+    const rooms = { ...quote.rooms };
+    Object.keys(rooms).forEach(roomName => {
+      const room = { ...rooms[roomName] };
+      room.items = room.items.map(item => {
+        const m = mutator(item);
+        if (!m) return item;
+        const upd = { ...item, params: { ...item.params, ...m } };
+        upd.pricing = priceItem(upd);
+        return upd;
+      });
+      rooms[roomName] = room;
+    });
+    return { ...quote, rooms };
+  };
+
+  if (field === "carcassMaterial") {
+    const key = findKey(DB.materials, name);
+    if (!key) return quote;
+    const mat = DB.materials[key];
+    return mapAllItems(item => {
+      if (!item.params || item.params.carcassMaterialKey === undefined) return null;
+      const patch = { carcassMaterialKey: key };
+      // Auto-snap carcassFinish to the material's natural finish, matching
+      // updateRoomDefault's behaviour. Only on items that already use it.
+      if (item.params.carcassFinish !== undefined && mat?.naturalFinish) {
+        patch.carcassFinish = mat.naturalFinish;
+      }
+      return patch;
+    });
+  }
+
+  if (field === "frame") {
+    const key = name === "Frameless" ? "FRAME_NONE" : findKey(FRAME_MATERIALS, name);
+    if (!key) return quote;
+    return mapAllItems(item => (item.type === "cabinet" && item.params) ? { frameKey: key } : null);
+  }
+
+  if (field === "doorStyle") {
+    const newType = findKey(DB.doorTypes, name);
+    if (!newType) return quote;
+    // Preserve each item's current finish — pick the doorType that matches
+    // (currentFinish, newProfile). Falls back to the chosen type if no match.
+    const newProfile = TYPE_TO_PROFILE_FINISH[newType]?.profile;
+    return mapAllItems(item => {
+      if (item.type !== "cabinet" || !item.params || !hasDoors(item)) return null;
+      const currentFinish = item.params.doorFinish || TYPE_TO_PROFILE_FINISH[item.params.doorType]?.finish || "painted";
+      const retarget = newProfile ? (PROFILE_FINISH_TO_TYPE[`${newProfile}+${currentFinish}`] || newType) : newType;
+      const patch = { doorType: retarget };
+      if (newProfile) patch.doorProfile = newProfile;
+      return patch;
+    });
+  }
+
+  if (field === "doorFinish") {
+    const finishKey = findFinishKey(name);
+    if (!finishKey) return quote;
+    return mapAllItems(item => {
+      if (item.type !== "cabinet" || !item.params || !hasDoors(item)) return null;
+      const currentProfile = item.params.doorProfile || TYPE_TO_PROFILE_FINISH[item.params.doorType]?.profile || "shaker";
+      const retarget = PROFILE_FINISH_TO_TYPE[`${currentProfile}+${finishKey}`];
+      const patch = { doorFinish: finishKey, sprayFinishOverride: FINISH_TO_SPRAY_OVERRIDE[finishKey] || "" };
+      if (retarget) patch.doorType = retarget;
+      return patch;
+    });
+  }
+
+  if (field === "drawerSystem") {
+    const key = findKey(DB.drawerTypes, name);
+    if (!key) return quote;
+    return mapAllItems(item => {
+      if (!item.params) return null;
+      if (item.type === "drawer") return { drawerType: key };
+      if (item.type === "cabinet" && hasDrawers(item)) return { drawerType: key };
+      return null;
+    });
+  }
+
+  if (field === "hinge") {
+    const key = findKey(DB.hardware.hinges, name);
+    if (!key) return quote;
+    return mapAllItems(item => (item.type === "cabinet" && item.params && hasDoors(item)) ? { hingeKey: key } : null);
+  }
+
+  if (field === "hardware") {
+    const key = findKey(DB.hardware.handles, name);
+    if (!key) return quote;
+    return mapAllItems(item => (item.type === "cabinet" && item.params && hasDoors(item)) ? { handleKey: key } : null);
+  }
+
+  return quote;
+}
+
 // ─── PRINT / PDF ──────────────────────────────────────────────────────────────
 function printQuote(quote, viewMode, roomFilter) {
   const mode = viewMode || "itemised";
@@ -3044,8 +3169,17 @@ function SABQuoteTool() {
                     ["hinge", "Hinge"],
                     ["hardware", "Hardware"],
                   ];
+                  const specOptions = {
+                    carcassMaterial: Object.values(DB.materials).map(m => m.name).filter(n => !n.startsWith("HDF Back") && !n.startsWith("Back Panel")),
+                    frame: ["Frameless", ...Object.values(FRAME_MATERIALS).map(f => f.name).filter(n => n !== "No Frame")],
+                    doorStyle: Object.values(DB.doorTypes).map(d => d.name),
+                    doorFinish: Object.values(DOOR_FINISHES),
+                    drawerSystem: Object.values(DB.drawerTypes).map(d => d.name),
+                    hinge: Object.values(DB.hardware.hinges).map(h => h.name),
+                    hardware: Object.values(DB.hardware.handles).map(h => h.name),
+                  };
                   return (
-                    <div style={{ marginBottom:16, border:"1px solid #d8d3cc", borderRadius:6, background:"#f5f5f5", overflow:"hidden" }}>
+                    <div className="sab-spec-overrides" style={{ marginBottom:16, border:"1px solid #d8d3cc", borderRadius:6, background:"#f5f5f5", overflow:"hidden" }}>
                       <div onClick={() => setSpecOpen(!specOpen)} style={{ padding:"10px 14px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                         <div style={{ fontSize:10, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase" }}>Specification</div>
                         <span style={{ color:"#777777", fontSize:11 }}>{specOpen ? "▲" : "▼"}</span>
@@ -3057,18 +3191,27 @@ function SABQuoteTool() {
                             {specFields.map(([key, label]) => {
                               const isOverridden = !!spec[key];
                               const displayValue = spec[key] || derived[key];
+                              const baseOptions = specOptions[key] || [];
+                              const options = displayValue && displayValue !== "—" && !baseOptions.includes(displayValue)
+                                ? [displayValue, ...baseOptions]
+                                : baseOptions;
                               return (
-                              <div key={key}>
+                              <div key={key} style={{ minWidth:0 }}>
                                 <div style={{ fontSize:9, color:"#777777", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:3, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                                   <span>{label}</span>
                                   {isOverridden && <span onClick={() => { const updated = { ...quotes }; if (updated[activeQuoteId].spec) { delete updated[activeQuoteId].spec[key]; saveQuotes(updated); } }} style={{ color:"#c8a96e", cursor:"pointer", fontSize:8, fontWeight:400, letterSpacing:0, textTransform:"none" }}>↺ Reset</span>}
                                 </div>
-                                <input value={displayValue} onChange={e => {
+                                <select value={displayValue || ""} onChange={e => {
+                                  const newName = e.target.value;
                                   const updated = { ...quotes };
-                                  if (!updated[activeQuoteId].spec) updated[activeQuoteId].spec = {};
-                                  updated[activeQuoteId].spec[key] = e.target.value;
+                                  const propagated = applySpecToAllItems(updated[activeQuoteId], key, newName);
+                                  propagated.spec = { ...(propagated.spec || {}), [key]: newName };
+                                  updated[activeQuoteId] = propagated;
                                   saveQuotes(updated);
-                                }} style={{ background:"#ffffff", border: isOverridden ? "1px solid #c8a96e" : "1px solid #d8d3cc", borderRadius:3, padding:"5px 8px", color: isOverridden ? "#1a1a1a" : "#777777", fontSize:11, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }} />
+                                }} style={{ background:"#ffffff", border: isOverridden ? "1px solid #c8a96e" : "1px solid #d8d3cc", borderRadius:3, padding:"5px 8px", color: isOverridden ? "#1a1a1a" : "#777777", fontSize:11, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}>
+                                  {(!displayValue || displayValue === "—") && <option value="">—</option>}
+                                  {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                </select>
                               </div>
                               );
                             })}
