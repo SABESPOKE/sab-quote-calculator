@@ -2618,6 +2618,9 @@ function SABQuoteTool() {
     setView("build");
     setChatHistory([{ role:"assistant", text:`Quote started for **${q.client}** — ${q.project}. Add a room to begin.` }]);
     setAiConvHistory([]); setActiveRoom(null);
+    // On mobile the Rooms panel is hidden behind a tab — without this the
+    // user lands on Items with nowhere to add a room.
+    setMobilePanel("rooms");
   }
 
   function addRoom() {
@@ -3203,9 +3206,10 @@ function SABQuoteTool() {
           {/* Centre — items */}
           <div className={"sab-items-panel" + (mobilePanel === "items" ? " active" : "")} style={{ flex:1, overflowY:"auto", padding:"22px 26px" }}>
             {!activeRoom ? (
-              <div style={{ textAlign:"center", padding:"80px 0", color:"#d8d3cc" }}>
-                <div style={{ fontSize:32, marginBottom:10 }}>🏠</div>
-                <div style={{ fontSize:12 }}>Select or add a room to begin</div>
+              <div style={{ textAlign:"center", padding:"80px 0", color:"#999999" }}>
+                <div style={{ fontSize:32, marginBottom:10, color:"#d8d3cc" }}>🏠</div>
+                <div style={{ fontSize:12, marginBottom:14 }}>Select or add a room to begin</div>
+                <button onClick={() => setMobilePanel("rooms")} style={{ padding:"10px 22px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>+ Add Room</button>
               </div>
             ) : (
               <>
