@@ -2147,14 +2147,20 @@ function printQuote(quote, viewMode, roomFilter) {
     const rt = roomTotals(quote, roomName, altEstDays[roomName]);
     if (!rt) return "";
     const items = (quote.rooms[roomName]?.items || []);
+    // Bake project costs into each item proportionally to mfg-sell share —
+    // mirrors distributeProjectCosts() for non-alt mode. Item prices include
+    // their share of fitting, survey, delivery, PM, consumables, contingency,
+    // warranty + design. Items sum to rt.totalExVAT.
+    const overhead = rt.designFee + rt.survey + rt.install + rt.delivery + rt.pm + rt.consumables + rt.contingency + rt.warranty;
     const itemRows = items.map(i => {
+      const itemSell = i.pricing?.totalSellExVAT || 0;
+      const share = rt.mfgSellExVAT > 0 ? itemSell / rt.mfgSellExVAT : 0;
+      const bakedSell = itemSell + overhead * share;
       const isWRP = i.type === "wrp_moulding" && i.params;
       const wrpThumbSrc = isWRP && i.params.image_url ? (i.params.image_url.match(/\/uploads\/(.+)$/) ? `/api/wrp-image/${i.params.image_url.match(/\/uploads\/(.+)$/)[1]}` : i.params.image_url) : "";
       const wrpThumb = isWRP && i.params.image_url ? `<img src="${wrpThumbSrc}" referrerpolicy="no-referrer" style="width:32px;height:32px;object-fit:contain;vertical-align:middle;margin-right:8px;border-radius:2px;" />` : "";
-      return `<tr><td class="td-desc">${wrpThumb}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.pricing?.totalSellExVAT)}</td>` : ""}</tr>`;
+      return `<tr><td class="td-desc">${wrpThumb}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td>${mode === "itemised" ? `<td class="td-price">${fmt(bakedSell)}</td>` : ""}</tr>`;
     }).join("");
-    // Project costs are silently rolled into Subtotal / Option total below —
-    // no separate line, per Steve.
     return `<div class="room-block" style="page-break-inside:avoid;margin-bottom:30px;padding:14px 18px;background:#fbfaf8;border:0.5pt solid #d8d3cc;border-radius:4px">
       <div style="font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:3px">Option</div>
       <div style="font-size:11pt;color:#1a1815;margin-bottom:10px;padding-bottom:6px;border-bottom:0.5pt solid #d8d3cc">${roomName}</div>
@@ -4870,17 +4876,28 @@ function SABQuoteTool() {
                 const rt = roomTotals(activeQuote, roomName, estDays[roomName]);
                 if (!rt) return null;
                 const items = (activeQuote.rooms[roomName]?.items || []);
+                // Bake project costs into each item proportionally to its share
+                // of mfgSellExVAT. Mirrors distributeProjectCosts() from non-alt
+                // mode so item prices include their share of fitting, survey,
+                // delivery, PM, consumables, contingency, warranty + design.
+                // Items then sum exactly to rt.totalExVAT.
+                const overhead = rt.designFee + rt.survey + rt.install + rt.delivery + rt.pm + rt.consumables + rt.contingency + rt.warranty;
+                const bakedItems = items.map(item => {
+                  const itemSell = item.pricing?.totalSellExVAT || 0;
+                  const share = rt.mfgSellExVAT > 0 ? itemSell / rt.mfgSellExVAT : 0;
+                  return { ...item, bakedSellExVAT: itemSell + overhead * share };
+                });
                 return (
                 <div key={roomName} style={{ marginBottom:36, padding:"22px 24px", background:"#fbfaf8", border:"1px solid #d8d3cc", borderRadius:8 }}>
                   <div style={{ fontSize:9, letterSpacing:"0.2em", color:"#c8a96e", textTransform:"uppercase", marginBottom:4 }}>Option</div>
                   <div style={{ fontSize:15, color:"#1a1a1a", marginBottom:14, paddingBottom:10, borderBottom:"1px solid #d8d3cc" }}>{roomName}</div>
-                  {items.map((item, i) => (
+                  {bakedItems.map((item, i) => (
                     <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:"1px solid #e8e3dc", fontSize:12 }}>
                       <div>
                         <span style={{ color:"#333333" }}>{item.qty > 1 ? item.qty + "× " : ""}{item.description}</span>
                         {item.params?.widthMm && <span style={{ fontSize:10, color:"#999999", marginLeft:10 }}>{item.params.widthMm}×{item.params.heightMm}{item.params.depthMm ? "×" + item.params.depthMm : ""} mm</span>}
                       </div>
-                      {clientViewMode === "itemised" && <span className="sab-item-price" style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.pricing?.totalSellExVAT)}</span>}
+                      {clientViewMode === "itemised" && <span className="sab-item-price" style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.bakedSellExVAT)}</span>}
                     </div>
                   ))}
                   <div style={{ marginTop:12, paddingTop:10, borderTop:"1px solid #d8d3cc" }}>
