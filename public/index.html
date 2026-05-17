@@ -1866,13 +1866,33 @@ function quoteTotals(quote) {
 }
 
 
+// Build a roomName → estimator-derived days map from SAB_FITTING.
+// Returns {} if the estimator is unavailable or throws. Used as a fallback
+// when pc.installDaysByRoom doesn't have an entry for a room.
+function estimatedDaysByRoom(quote) {
+  if (!window.SAB_FITTING) return {};
+  try {
+    const est = window.SAB_FITTING.calculateFittingEstimate(quote);
+    const hrsPerPersonDay = DB.settings.fittingHoursPerPersonPerDay || 7.5;
+    const ceilHalf = (x) => Math.ceil((x || 0) * 2) / 2;
+    const out = {};
+    Object.entries(est.byRoom || {}).forEach(([roomName, r]) => {
+      const hours = (r.cabinetHours || 0) + (r.scribingHours || 0) + (r.hardwareHours || 0) + (r.setupHours || 0);
+      out[roomName] = ceilHalf(hours / hrsPerPersonDay);
+    });
+    return out;
+  } catch (e) { return {}; }
+}
+
 // Self-contained totals for ONE room when the quote is in alternatives mode.
 // Each room behaves like its own quote: full survey + delivery + warranty are
 // applied to each option, and PM%/consumables/contingency/warranty are
 // computed against just this room's items.
 //
-// Install days come from pc.installDaysByRoom[roomName] only (no project sum).
-function roomTotals(quote, roomName) {
+// Install days come from pc.installDaysByRoom[roomName]; callers can pass
+// `daysOverride` to inject a fallback (e.g. the SAB_FITTING estimate for
+// rooms that don't have a user-set value yet).
+function roomTotals(quote, roomName, daysOverride) {
   const room = (quote.rooms || {})[roomName];
   if (!room) return null;
   let mfgCost = 0, mfgSellExVAT = 0;
@@ -1884,7 +1904,8 @@ function roomTotals(quote, roomName) {
   const pc = quote.projectCosts || getDefaultProjectCosts();
   const s  = DB.settings;
   const itemCount = (room.items || []).length;
-  const roomDays  = Number(pc.installDaysByRoom?.[roomName]) || 0;
+  const explicitDays = pc.installDaysByRoom?.[roomName];
+  const roomDays = explicitDays != null ? Number(explicitDays) : (Number(daysOverride) || 0);
 
   const survey      = pc.includeSurvey      ? (pc.surveyFee     ?? s.surveyFee)     * s.margin : 0;
   const install     = pc.includeInstall     ? roomDays * (pc.installDayRate ?? s.installDayRate) * s.margin : 0;
@@ -2121,8 +2142,9 @@ function printQuote(quote, viewMode, roomFilter) {
       : `<tr class="room-sub"><td style="text-align:right">${fmt(roomTotal)} ex VAT</td></tr>`;
     return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}${roomSubRow}</tbody></table></div>`;
   }).join("");
+  const altEstDays = altMode ? estimatedDaysByRoom(quote) : {};
   const altRoomSections = !altMode ? "" : filteredRooms.map(({ roomName }) => {
-    const rt = roomTotals(quote, roomName);
+    const rt = roomTotals(quote, roomName, altEstDays[roomName]);
     if (!rt) return "";
     const items = (quote.rooms[roomName]?.items || []);
     const itemRows = items.map(i => {
@@ -2131,17 +2153,12 @@ function printQuote(quote, viewMode, roomFilter) {
       const wrpThumb = isWRP && i.params.image_url ? `<img src="${wrpThumbSrc}" referrerpolicy="no-referrer" style="width:32px;height:32px;object-fit:contain;vertical-align:middle;margin-right:8px;border-radius:2px;" />` : "";
       return `<tr><td class="td-desc">${wrpThumb}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.pricing?.totalSellExVAT)}</td>` : ""}</tr>`;
     }).join("");
-    // Single "Project Costs" line (sum of all enabled project-level fees +
-    // design fee) — clients see a clean per-option summary rather than the
-    // internal breakdown.
-    const projectCostsTotal = rt.designFee + rt.survey + rt.install + rt.delivery + rt.pm + rt.consumables + rt.contingency + rt.warranty;
-    const costLines = projectCostsTotal > 0
-      ? `<tr><td class="td-desc">Project Costs</td><td class="td-price">${fmt(projectCostsTotal)}</td></tr>`
-      : "";
+    // Project costs are silently rolled into Subtotal / Option total below —
+    // no separate line, per Steve.
     return `<div class="room-block" style="page-break-inside:avoid;margin-bottom:30px;padding:14px 18px;background:#fbfaf8;border:0.5pt solid #d8d3cc;border-radius:4px">
       <div style="font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:3px">Option</div>
       <div style="font-size:11pt;color:#1a1815;margin-bottom:10px;padding-bottom:6px;border-bottom:0.5pt solid #d8d3cc">${roomName}</div>
-      <table class="item-tbl"><tbody>${itemRows}${costLines}</tbody></table>
+      <table class="item-tbl"><tbody>${itemRows}</tbody></table>
       <div style="margin-top:8px;padding-top:6px;border-top:0.75pt solid #c8a96e">
         <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:9pt;color:#777">Subtotal (ex VAT)<span>${fmt(rt.totalExVAT)}</span></div>
         <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:9pt;color:#999">VAT (20%)<span>${fmt(rt.vat)}</span></div>
@@ -4822,12 +4839,13 @@ function SABQuoteTool() {
                 is a self-contained quote: its own full project costs (survey,
                 install, delivery, PM, consumables, contingency, warranty) plus
                 its own VAT and total. No project-wide totals at the bottom. */}
-            {altMode ? filteredRooms.map(({ roomName }) => {
-              const rt = roomTotals(activeQuote, roomName);
-              if (!rt) return null;
-              const items = (activeQuote.rooms[roomName]?.items || []);
-              const projectCostsTotal = rt.designFee + rt.survey + rt.install + rt.delivery + rt.pm + rt.consumables + rt.contingency + rt.warranty;
-              return (
+            {altMode ? (() => {
+              const estDays = estimatedDaysByRoom(activeQuote);
+              return filteredRooms.map(({ roomName }) => {
+                const rt = roomTotals(activeQuote, roomName, estDays[roomName]);
+                if (!rt) return null;
+                const items = (activeQuote.rooms[roomName]?.items || []);
+                return (
                 <div key={roomName} style={{ marginBottom:36, padding:"22px 24px", background:"#fbfaf8", border:"1px solid #d8d3cc", borderRadius:8 }}>
                   <div style={{ fontSize:9, letterSpacing:"0.2em", color:"#c8a96e", textTransform:"uppercase", marginBottom:4 }}>Option</div>
                   <div style={{ fontSize:15, color:"#1a1a1a", marginBottom:14, paddingBottom:10, borderBottom:"1px solid #d8d3cc" }}>{roomName}</div>
@@ -4840,20 +4858,15 @@ function SABQuoteTool() {
                       {clientViewMode === "itemised" && <span className="sab-item-price" style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.pricing?.totalSellExVAT)}</span>}
                     </div>
                   ))}
-                  {projectCostsTotal > 0 && (
-                    <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderBottom:"1px solid #e8e3dc", fontSize:12, color:"#333333" }}>
-                      <span>Project Costs</span>
-                      <span>{fmt(projectCostsTotal)}</span>
-                    </div>
-                  )}
                   <div style={{ marginTop:12, paddingTop:10, borderTop:"1px solid #d8d3cc" }}>
                     <div style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", fontSize:11, color:"#777777" }}><span>Subtotal (ex VAT)</span><span>{fmt(rt.totalExVAT)}</span></div>
                     <div style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", fontSize:11, color:"#999999" }}><span>VAT (20%)</span><span>{fmt(rt.vat)}</span></div>
                     <div style={{ display:"flex", justifyContent:"space-between", padding:"6px 0 0", fontSize:15, color:"#c8a96e", fontWeight:500 }}><span>Option total (inc VAT)</span><span>{fmt(rt.totalIncVAT)}</span></div>
                   </div>
                 </div>
-              );
-            }) : filteredRooms.map(({ roomName, items }) => {
+                );
+              });
+            })() : filteredRooms.map(({ roomName, items }) => {
               const roomSubtotal = items.reduce((s, item) => s + (item.bakedSellExVAT || 0), 0);
               const roomVAT = roomSubtotal * (DB.settings.vat || 0.2);
               return (
