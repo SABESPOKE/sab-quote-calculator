@@ -3235,8 +3235,33 @@ function SABQuoteTool() {
                 );
               })}
             </div>
-            <div style={{ padding:"10px 15px", borderTop:"1px solid #d8d3cc" }}>
-              <input value={newRoomName} onChange={e => setNewRoomName(e.target.value)} onKeyDown={e => e.key==="Enter" && addRoom()} placeholder="Add room…" style={{ ...inp, fontSize:10 }} />
+            <div style={{ padding:"10px 15px", borderTop:"1px solid #d8d3cc", display:"flex", gap:6 }}>
+              <input
+                value={newRoomName}
+                onChange={e => setNewRoomName(e.target.value)}
+                onKeyDown={e => e.key==="Enter" && addRoom()}
+                placeholder="Room name…"
+                autoFocus={Object.keys(activeQuote.rooms || {}).length === 0}
+                style={{ ...inp, fontSize:10, flex:1 }}
+              />
+              <button
+                onClick={addRoom}
+                disabled={!newRoomName.trim()}
+                title="Add room"
+                style={{
+                  padding:"0 12px",
+                  background: newRoomName.trim() ? "#c8a96e" : "#e0ddd8",
+                  color: newRoomName.trim() ? "#1a1a1a" : "#aaa",
+                  border:"none",
+                  borderRadius:3,
+                  cursor: newRoomName.trim() ? "pointer" : "default",
+                  fontSize:14,
+                  fontFamily:"inherit",
+                  fontWeight:600,
+                  lineHeight:1,
+                  flexShrink:0
+                }}
+              >+</button>
             </div>
           </div>
 
