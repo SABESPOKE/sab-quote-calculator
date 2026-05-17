@@ -2581,8 +2581,14 @@ function SABQuoteTool() {
   function deleteQuote(id) {
     const updated = { ...quotes }; delete updated[id]; saveQuotes(updated);
     if (activeQuoteId === id) { setActiveQuoteId(null); setView("quotes"); }
-    // Also delete from server
-    if (dbReady) fetch('/api/quotes/' + id, { method: 'DELETE' }).catch(() => {});
+    // Also delete from server. Mark dirty so the visibility/online resync
+    // doesn't bring the quote back before the DELETE has landed.
+    if (dbReady) {
+      dirtyRef.current.add(id);
+      fetch('/api/quotes/' + id, { method: 'DELETE' })
+        .catch(() => {})
+        .finally(() => { dirtyRef.current.delete(id); });
+    }
   }
 
   function updateQuoteStatus(id, newStatus) {
