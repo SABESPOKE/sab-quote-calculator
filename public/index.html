@@ -2437,6 +2437,7 @@ function SABQuoteTool() {
   const [addItemForm, setAddItemForm] = useState({ ...ITEM_DEFAULTS.cabinet });
   const [expandedItem, setExpandedItem] = useState(null);
   const [showProjectCosts, setShowProjectCosts] = useState(false);
+  const [showProjectSettings, setShowProjectSettings] = useState(false);
   const [showFittingEst, setShowFittingEst] = useState(false);
   const [recalcFlash, setRecalcFlash] = useState(null);
   const [editingItem, setEditingItem] = useState(null); // { room, idx }
@@ -2712,6 +2713,33 @@ function SABQuoteTool() {
     saveQuotes(updated);
   }
 
+  // Clone a whole quote so the user can try a different material / finish
+  // without losing the original. New id + auto-incremented ref. Lands on the
+  // Build view ready to edit.
+  function duplicateQuote(id) {
+    const orig = quotes[id];
+    if (!orig) return;
+    const clone = JSON.parse(JSON.stringify(orig));
+    const newId = "Q" + Date.now();
+    clone.id = newId;
+    clone.status = "active";
+    clone.created = new Date().toLocaleDateString("en-GB");
+    // Auto-increment ref. Only treat a trailing single capital letter as a
+    // version suffix when it follows digits (e.g. SAB-2026-013D → 013E).
+    // Otherwise append " (copy)".
+    const m = (orig.ref || "").match(/^(.*\d)([A-Z])$/);
+    if (m) {
+      clone.ref = m[1] + String.fromCharCode(m[2].charCodeAt(0) + 1);
+    } else if (orig.ref) {
+      clone.ref = orig.ref + " (copy)";
+    }
+    saveQuotes({ ...quotes, [newId]: clone });
+    setActiveQuoteId(newId);
+    setActiveRoom(null);
+    setView("build");
+    setStatusMenuOpen(null);
+  }
+
   function toggleDesignTime(room) {
     const updated = { ...quotes };
     updated[activeQuoteId].rooms[room].includeDesignTime = !(updated[activeQuoteId].rooms[room].includeDesignTime !== false);
@@ -2750,6 +2778,15 @@ function SABQuoteTool() {
       updated[qid] = { ...quote, rooms: updatedRooms };
     });
     return updated;
+  }
+
+  // Apply a default change to EVERY room in the active quote — useful when
+  // the user wants to change a spec across the whole project in one go.
+  // Reuses updateRoomDefault so the per-field propagation rules (carcassFinish
+  // auto-snap, door profile/finish → doorType, etc.) all run the same way.
+  function updateProjectDefault(field, val) {
+    const rooms = Object.keys((quotes[activeQuoteId]?.rooms) || {});
+    rooms.forEach(roomName => updateRoomDefault(roomName, field, val));
   }
 
   function updateRoomDefault(roomName, field, val) {
@@ -3198,7 +3235,8 @@ function SABQuoteTool() {
                   <div style={{ position:"relative" }}>
                     <button onClick={e => { e.stopPropagation(); setStatusMenuOpen(statusMenuOpen === q.id ? null : q.id); }} style={{ background:"transparent", border:"1px solid #d8d3cc", borderRadius:3, color:"#777777", cursor:"pointer", fontSize:16, padding:"2px 6px", fontFamily:"inherit", lineHeight:1 }}>⋮</button>
                     {statusMenuOpen === q.id && (
-                      <div style={{ position:"absolute", right:0, top:"100%", marginTop:4, background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:6, boxShadow:"0 4px 12px rgba(0,0,0,0.1)", zIndex:100, minWidth:130, overflow:"hidden" }}>
+                      <div style={{ position:"absolute", right:0, top:"100%", marginTop:4, background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:6, boxShadow:"0 4px 12px rgba(0,0,0,0.1)", zIndex:100, minWidth:150, overflow:"hidden" }}>
+                        <div onClick={e => { e.stopPropagation(); duplicateQuote(q.id); }} style={{ padding:"8px 14px", fontSize:11, color:"#1a1a1a", cursor:"pointer", borderBottom:"1px solid #f0eeeb", fontWeight:500 }} onMouseEnter={e => e.currentTarget.style.background="#f9f8f6"} onMouseLeave={e => e.currentTarget.style.background="transparent"}>⧉ Duplicate quote</div>
                         <div style={{ padding:"8px 12px", fontSize:9, color:"#999999", letterSpacing:"0.1em", textTransform:"uppercase", borderBottom:"1px solid #f0eeeb" }}>Move to</div>
                         {[["active","Active"],["sold","Sold"],["lost","Lost"],["archive","Archive"]].filter(([k]) => k !== (q.status || "active")).map(([k,l]) => (
                           <div key={k} onClick={e => { e.stopPropagation(); updateQuoteStatus(q.id, k); }} style={{ padding:"8px 14px", fontSize:11, color:"#555555", cursor:"pointer", borderBottom:"1px solid #f0eeeb" }} onMouseEnter={e => e.currentTarget.style.background="#f9f8f6"} onMouseLeave={e => e.currentTarget.style.background="transparent"}>{l}</div>
@@ -3700,6 +3738,105 @@ function SABQuoteTool() {
                           ))}
                         </div>
                       )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── Project Settings Panel — quote-wide spec defaults ── */}
+            {(() => {
+              const rooms = activeQuote.rooms || {};
+              const roomNames = Object.keys(rooms);
+              if (roomNames.length === 0) return null;
+              // Aggregate a default value across rooms: if every room has the
+              // same value, return it; otherwise return "__MIXED__".
+              const agg = (field) => {
+                const vals = new Set();
+                roomNames.forEach(rn => { const v = rooms[rn].defaults?.[field]; if (v !== undefined) vals.add(v); });
+                if (vals.size === 0) return null;
+                if (vals.size === 1) return [...vals][0];
+                return "__MIXED__";
+              };
+              const cur = {
+                carcassMaterialKey: agg("carcassMaterialKey"),
+                doorProfile:        agg("doorProfile"),
+                doorFinish:         agg("doorFinish"),
+                frameKey:           agg("frameKey"),
+                hingeKey:           agg("hingeKey"),
+                handleKey:          agg("handleKey"),
+                edgebandKey:        agg("edgebandKey"),
+                useSolidDrawers:    agg("useSolidDrawers"),
+                solidDrawerType:    agg("solidDrawerType"),
+              };
+              // Build dropdown options
+              const fields = [
+                { key:"carcassMaterialKey", label:"Cabinet Material",
+                  options: Object.entries(DB.materials).filter(([,m]) => !m.name.startsWith("HDF Back") && !m.name.startsWith("Back Panel")).map(([k,m]) => [k, m.name]) },
+                { key:"doorProfile",       label:"Door Profile",
+                  options: Object.entries(DOOR_PROFILES).map(([k,p]) => [k, p.label]) },
+                { key:"doorFinish",        label:"Door Finish",
+                  options: Object.entries(DOOR_FINISHES).map(([k,v]) => [k, v]) },
+                { key:"frameKey",          label:"Face Frame",
+                  options: Object.entries(FRAME_MATERIALS).map(([k,v]) => [k, v.name]) },
+                { key:"hingeKey",          label:"Hinge",
+                  options: Object.entries(DB.hardware.hinges).map(([k,v]) => [k, v.name]) },
+                { key:"handleKey",         label:"Handle",
+                  options: Object.entries(DB.hardware.handles).map(([k,v]) => [k, v.name]) },
+                { key:"edgebandKey",       label:"Edgeband",
+                  options: Object.entries(EDGEBAND_TYPES).map(([k,v]) => [k, v.name]) },
+              ];
+              // Summary chip — shows current door profile + finish + material
+              const summary = (() => {
+                const mat = cur.carcassMaterialKey === "__MIXED__" ? "Mixed" : (DB.materials[cur.carcassMaterialKey]?.name || "—");
+                const prof = cur.doorProfile === "__MIXED__" ? "Mixed" : (DOOR_PROFILES[cur.doorProfile]?.label || "—");
+                const fin = cur.doorFinish === "__MIXED__" ? "Mixed" : (DOOR_FINISHES[cur.doorFinish] || "—");
+                return `${prof} · ${fin} · ${mat}`;
+              })();
+              return (
+                <div style={{ marginBottom:10, border:"1px solid #d8d3cc", borderRadius:6, background:"#f5f5f5", overflow:"hidden" }}>
+                  <div onClick={() => setShowProjectSettings(p => !p)} style={{ padding:"12px 14px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <div>
+                      <div style={{ fontSize:11, color:"#c8a96e" }}>Project Settings</div>
+                      <div style={{ fontSize:10, color:"#999999", marginTop:2 }}>{summary} — changes apply to every room</div>
+                    </div>
+                    <span style={{ color:"#777777", fontSize:11 }}>{showProjectSettings ? "▲" : "▼"}</span>
+                  </div>
+                  {showProjectSettings && (
+                    <div style={{ borderTop:"1px solid #d8d3cc", padding:"12px 14px" }}>
+                      <div style={{ fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase", marginBottom:10 }}>
+                        Edit any field — it will overwrite the corresponding default in every room and update every existing item across the quote.
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px 14px" }}>
+                        {fields.map(({ key, label, options }) => {
+                          const v = cur[key];
+                          const isMixed = v === "__MIXED__";
+                          return (
+                            <div key={key} style={{ minWidth:0 }}>
+                              <div style={{ fontSize:9, color:"#777777", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:3 }}>{label}{isMixed && <span style={{ color:"#b86a3e", marginLeft:6, textTransform:"none", letterSpacing:0 }}>(mixed)</span>}</div>
+                              <select value={isMixed ? "" : (v ?? "")} onChange={e => { if (e.target.value) updateProjectDefault(key, e.target.value); }} style={{ background:"#ffffff", border: isMixed ? "1px solid #b86a3e" : "1px solid #d8d3cc", borderRadius:3, padding:"5px 8px", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", width:"100%", boxSizing:"border-box" }}>
+                                {isMixed && <option value="">— Mixed across rooms —</option>}
+                                {options.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ marginTop:14, paddingTop:10, borderTop:"1px solid #e8e3dc" }}>
+                        <div style={{ fontSize:9, color:"#777777", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:6 }}>Drawer System</div>
+                        <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+                          <label style={{ fontSize:10, color:"#777", display:"flex", alignItems:"center", gap:5, cursor:"pointer" }}>
+                            <input type="checkbox" checked={cur.useSolidDrawers === true} onChange={e => updateProjectDefault("useSolidDrawers", e.target.checked)} />
+                            Solid timber drawers
+                          </label>
+                          {cur.useSolidDrawers === true && (
+                            <select value={cur.solidDrawerType === "__MIXED__" ? "" : (cur.solidDrawerType || "")} onChange={e => { if (e.target.value) updateProjectDefault("solidDrawerType", e.target.value); }} style={{ background:"#ffffff", border:"1px solid #d8d3cc", borderRadius:3, padding:"5px 8px", color:"#1a1a1a", fontSize:11, fontFamily:"inherit" }}>
+                              {Object.entries(DB.drawerTypes).filter(([k]) => k.startsWith("DRW_SOLID")).map(([k,v]) => <option key={k} value={k}>{v.name}</option>)}
+                            </select>
+                          )}
+                          {cur.useSolidDrawers === "__MIXED__" && <span style={{ fontSize:10, color:"#b86a3e" }}>(mixed across rooms)</span>}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
