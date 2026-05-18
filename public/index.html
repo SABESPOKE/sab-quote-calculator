@@ -3730,6 +3730,7 @@ function SABQuoteTool() {
               };
               const cur = {
                 carcassMaterialKey: agg("carcassMaterialKey"),
+                carcassFinish:      agg("carcassFinish"),
                 doorProfile:        agg("doorProfile"),
                 doorFinish:         agg("doorFinish"),
                 frameKey:           agg("frameKey"),
@@ -3743,6 +3744,8 @@ function SABQuoteTool() {
               const fields = [
                 { key:"carcassMaterialKey", label:"Cabinet Material",
                   options: Object.entries(DB.materials).filter(([,m]) => !m.name.startsWith("HDF Back") && !m.name.startsWith("Back Panel")).map(([k,m]) => [k, m.name]) },
+                { key:"carcassFinish",     label:"Cabinet Finish",
+                  options: [["none","No finish required"],["edge_polish","Edge polish only (sand + wax)"],["primed","Primed only (no topcoats)"],["paint","Paint (primer + topcoats)"],["lacquer","Lacquer (clear, 2 coats)"]] },
                 { key:"doorProfile",       label:"Door Profile",
                   options: Object.entries(DOOR_PROFILES).map(([k,p]) => [k, p.label]) },
                 { key:"doorFinish",        label:"Door Finish",
