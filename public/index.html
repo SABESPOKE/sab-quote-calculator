@@ -2780,131 +2780,101 @@ function SABQuoteTool() {
     return updated;
   }
 
-  // Apply a default change to EVERY room in the active quote — useful when
-  // the user wants to change a spec across the whole project in one go.
-  // Reuses updateRoomDefault so the per-field propagation rules (carcassFinish
-  // auto-snap, door profile/finish → doorType, etc.) all run the same way.
-  function updateProjectDefault(field, val) {
-    const rooms = Object.keys((quotes[activeQuoteId]?.rooms) || {});
-    rooms.forEach(roomName => updateRoomDefault(roomName, field, val));
-  }
-
-  function updateRoomDefault(roomName, field, val) {
-    setQuotes(prev => {
-      const updated = { ...prev };
-      const q = { ...updated[activeQuoteId] };
-      const rooms = { ...q.rooms };
-      const room = { ...rooms[roomName] };
-      room.defaults = { ...(room.defaults || DEFAULT_ROOM_SETTINGS), [field]: val };
-      // Track derived changes (e.g. material change auto-snaps carcassFinish) so we
-      // propagate them too — not just the field the user directly changed.
-      const derived = {};
-      if (field === "carcassMaterialKey") {
-        const m = DB.materials[val];
-        if (m && m.naturalFinish) {
-          room.defaults.carcassFinish = m.naturalFinish;
-          derived.carcassFinish = m.naturalFinish;
-        }
+  // Pure: apply a room-default change + propagation rules to one room of one
+  // quote, returning a new quote object. No state mutation, no setQuotes.
+  // Used by both updateRoomDefault (single room) and updateProjectDefault
+  // (all rooms in one go). Extracting this fixes a propagation bug where
+  // doing forEach(updateRoomDefault) lost all but the first room's changes —
+  // the nested setQuotes-inside-setQuotes calls overwrote each other.
+  function applyRoomDefaultPure(quoteIn, roomName, field, val) {
+    const q = { ...quoteIn };
+    const rooms = { ...q.rooms };
+    const room = { ...rooms[roomName] };
+    if (!room.items) return quoteIn;
+    room.defaults = { ...(room.defaults || DEFAULT_ROOM_SETTINGS), [field]: val };
+    const derived = {};
+    if (field === "carcassMaterialKey") {
+      const m = DB.materials[val];
+      if (m && m.naturalFinish) {
+        room.defaults.carcassFinish = m.naturalFinish;
+        derived.carcassFinish = m.naturalFinish;
       }
-      // Strict propagation — only touches items where the param already exists.
-      // Keeps shelf/door/custom items from being polluted with cabinet-only params.
-      const propagateToItems = (paramKey, newVal) => {
-        room.items = room.items.map(item => {
-          if (item.params && item.params[paramKey] !== undefined) {
-            const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
-            upd.pricing = priceItem(upd);
-            return upd;
-          }
-          return item;
-        });
-      };
-      // Unconditional propagation — applies to every cabinet in the room, regardless
-      // of whether the param previously existed. Use for cabinet-only fields where
-      // legacy items may be missing the field. Optional `filter` narrows to items
-      // that actually USE the param (e.g. hinges/handles only matter for doored cabinets).
-      const propagateToAllCabinets = (paramKey, newVal, filter) => {
-        room.items = room.items.map(item => {
-          if (item.type !== "cabinet" || !item.params) return item;
-          if (filter && !filter(item)) return item;
+    }
+    const propagateToItems = (paramKey, newVal) => {
+      room.items = room.items.map(item => {
+        if (item.params && item.params[paramKey] !== undefined) {
           const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
           upd.pricing = priceItem(upd);
           return upd;
-        });
-      };
-      // Filters
-      const hasDoors    = (item) => Number(item.params?.doorCount) > 0;
-      const hasDrawers  = (item) => Number(item.params?.drawerCount) > 0;
-      // Direct param mappings (strict — only items where the field exists).
-      // Kept narrow: only fields that should ALSO touch non-cabinet items
-      // (e.g. carcassMaterialKey can apply to endpanel/shelf too).
-      const directMappings = {
-        carcassMaterialKey: "carcassMaterialKey",
-        runnerKey: "runnerKey",
-        hasStain: "hasStain",
-      };
-      if (directMappings[field]) {
-        propagateToItems(directMappings[field], val);
-      }
-      // Cabinet-only field changes — propagate to every cabinet in the room
-      // (legacy items get the field added if missing).
-      if (field === "edgebandKey") {
-        propagateToAllCabinets("edgebandKey", val);
-      }
-      if (field === "frameKey") {
-        propagateToAllCabinets("frameKey", val);
-      }
-      if (field === "hingeKey") {
-        propagateToAllCabinets("hingeKey", val, hasDoors);
-      }
-      if (field === "handleKey") {
-        propagateToAllCabinets("handleKey", val, hasDoors);
-      }
-      // Carcass finish — direct change OR derived from material change. Apply
-      // unconditionally to every cabinet so legacy items (created before the field
-      // existed) actually receive the new value.
-      if (field === "carcassFinish") {
-        propagateToAllCabinets("carcassFinish", val);
-      }
-      if (derived.carcassFinish !== undefined) {
-        propagateToAllCabinets("carcassFinish", derived.carcassFinish);
-      }
-      // Door profile/finish changes derive the doorType key + spray override.
-      // Both propagate to every cabinet with doors (not just ones that happened to
-      // have the field set previously).
-      if (field === "doorProfile" || field === "doorFinish") {
-        const defs = room.defaults;
-        const newDoorType = PROFILE_FINISH_TO_TYPE[`${defs.doorProfile}+${defs.doorFinish}`];
-        if (newDoorType) {
-          propagateToAllCabinets("doorType", newDoorType, hasDoors);
         }
-        // Door finish drives the spray override — propagate the derived value to
-        // every cabinet (carcass spray for open cabinets uses it too).
-        const derivedSpray = FINISH_TO_SPRAY_OVERRIDE[defs.doorFinish] || "";
-        propagateToAllCabinets("sprayFinishOverride", derivedSpray);
-        // Also stamp doorProfile + doorFinish on cabinets so the per-item view in
-        // the Edit form reflects the room change.
-        propagateToAllCabinets("doorProfile", defs.doorProfile);
-        propagateToAllCabinets("doorFinish", defs.doorFinish);
-      }
-      // Drawer type changes
-      if (field === "useSolidDrawers" || field === "solidDrawerType") {
-        const defs = room.defaults;
-        room.items = room.items.map(item => {
-          if (item.params && (item.type === "cabinet" || item.type === "drawer")) {
-            const newDT = defs.useSolidDrawers ? (defs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET";
-            const upd = { ...item, params: { ...item.params, drawerType: newDT } };
-            upd.pricing = priceItem(upd);
-            return upd;
-          }
-          return item;
-        });
-      }
-      rooms[roomName] = room;
-      q.rooms = rooms;
-      updated[activeQuoteId] = q;
-      saveQuotes(updated);
-      return updated;
+        return item;
+      });
+    };
+    const propagateToAllCabinets = (paramKey, newVal, filter) => {
+      room.items = room.items.map(item => {
+        if (item.type !== "cabinet" || !item.params) return item;
+        if (filter && !filter(item)) return item;
+        const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
+        upd.pricing = priceItem(upd);
+        return upd;
+      });
+    };
+    const hasDoors    = (item) => Number(item.params?.doorCount) > 0;
+    const directMappings = {
+      carcassMaterialKey: "carcassMaterialKey",
+      runnerKey: "runnerKey",
+      hasStain: "hasStain",
+    };
+    if (directMappings[field]) propagateToItems(directMappings[field], val);
+    if (field === "edgebandKey") propagateToAllCabinets("edgebandKey", val);
+    if (field === "frameKey")    propagateToAllCabinets("frameKey", val);
+    if (field === "hingeKey")    propagateToAllCabinets("hingeKey",  val, hasDoors);
+    if (field === "handleKey")   propagateToAllCabinets("handleKey", val, hasDoors);
+    if (field === "carcassFinish") propagateToAllCabinets("carcassFinish", val);
+    if (derived.carcassFinish !== undefined) propagateToAllCabinets("carcassFinish", derived.carcassFinish);
+    if (field === "doorProfile" || field === "doorFinish") {
+      const defs = room.defaults;
+      const newDoorType = PROFILE_FINISH_TO_TYPE[`${defs.doorProfile}+${defs.doorFinish}`];
+      if (newDoorType) propagateToAllCabinets("doorType", newDoorType, hasDoors);
+      const derivedSpray = FINISH_TO_SPRAY_OVERRIDE[defs.doorFinish] || "";
+      propagateToAllCabinets("sprayFinishOverride", derivedSpray);
+      propagateToAllCabinets("doorProfile", defs.doorProfile);
+      propagateToAllCabinets("doorFinish", defs.doorFinish);
+    }
+    if (field === "useSolidDrawers" || field === "solidDrawerType") {
+      const defs = room.defaults;
+      room.items = room.items.map(item => {
+        if (item.params && (item.type === "cabinet" || item.type === "drawer")) {
+          const newDT = defs.useSolidDrawers ? (defs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET";
+          const upd = { ...item, params: { ...item.params, drawerType: newDT } };
+          upd.pricing = priceItem(upd);
+          return upd;
+        }
+        return item;
+      });
+    }
+    rooms[roomName] = room;
+    q.rooms = rooms;
+    return q;
+  }
+
+  // Apply a default change to EVERY room in the active quote — single
+  // setQuotes/saveQuotes call so no setQuotes nesting can drop updates.
+  function updateProjectDefault(field, val) {
+    const q = quotes[activeQuoteId];
+    if (!q) return;
+    let newQ = q;
+    Object.keys(q.rooms || {}).forEach(rn => {
+      newQ = applyRoomDefaultPure(newQ, rn, field, val);
     });
+    saveQuotes({ ...quotes, [activeQuoteId]: newQ });
+  }
+
+  function updateRoomDefault(roomName, field, val) {
+    const q = quotes[activeQuoteId];
+    if (!q) return;
+    const newQ = applyRoomDefaultPure(q, roomName, field, val);
+    saveQuotes({ ...quotes, [activeQuoteId]: newQ });
   }
 
   // Mutate a nested DB value then re-price and save all quotes
