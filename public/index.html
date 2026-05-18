@@ -24,10 +24,17 @@
     /* ── Prevent horizontal overflow globally ── */
     html, body { overflow-x: hidden; max-width: 100%; }
 
-    /* ── iOS input zoom prevention (always active) ── */
-    input, select, textarea { font-size: 16px; }
+    /* Desktop-only helper: hides any element marked .sab-mobile-only. */
+    .sab-mobile-only { display: none; }
 
     @media (max-width: 767px) {
+      /* ── iOS input zoom prevention — mobile only.
+           Previously this rule was outside the media query and was bloating
+           every inline-styled small input/select on desktop (sidebar inline
+           edits, fitting/project settings panels). Now desktop keeps inline
+           fontSize values; mobile forces 16px to stop focus-zoom on iOS. */
+      input, select, textarea { font-size: 16px; }
+      .sab-mobile-only { display: revert; }
       /* ══════════════════════════════════════════════
          GLOBAL TEXT & TOUCH TARGET OVERRIDES
          Override inline React styles with !important
@@ -372,6 +379,11 @@
       .sab-room-defaults-grid {
         grid-template-columns: 1fr 1fr !important;
         gap: 10px !important;
+      }
+      /* Project Settings panel — collapse the 2-col label grid to a single
+         column on mobile so each control gets full width. */
+      .sab-project-settings-grid {
+        grid-template-columns: 1fr !important;
       }
       /* Override per-item gridColumn spans (set for the 8-col desktop layout) —
          on mobile they push items into phantom columns 3-4, crushing the rest
@@ -3312,7 +3324,7 @@ function SABQuoteTool() {
               <div style={{ textAlign:"center", padding:"80px 0", color:"#999999" }}>
                 <div style={{ fontSize:32, marginBottom:10, color:"#d8d3cc" }}>🏠</div>
                 <div style={{ fontSize:12, marginBottom:14 }}>Select or add a room to begin</div>
-                <button onClick={() => setMobilePanel("rooms")} style={{ padding:"10px 22px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>+ Add Room</button>
+                <button className="sab-mobile-only" onClick={() => setMobilePanel("rooms")} style={{ padding:"10px 22px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>+ Add Room</button>
               </div>
             ) : (
               <>
@@ -3798,7 +3810,7 @@ function SABQuoteTool() {
                       <div style={{ fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase", marginBottom:10 }}>
                         Edit any field — it will overwrite the corresponding default in every room and update every existing item across the quote.
                       </div>
-                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px 14px" }}>
+                      <div className="sab-project-settings-grid" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px 14px" }}>
                         {fields.map(({ key, label, options }) => {
                           const v = cur[key];
                           const isMixed = v === "__MIXED__";
