@@ -18,6 +18,10 @@ app.use(express.json({ limit: '10mb' }));
 // unset (local dev), auth is bypassed entirely.
 const APP_PASSWORD   = process.env.APP_PASSWORD   || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || '';
+// Long random token for service-to-service auth (e.g. the SAB Business API
+// MCP server). Set on both this service and the MCP service. When unset, the
+// Bearer-token path is inactive and only cookie auth works.
+const API_TOKEN      = process.env.API_TOKEN      || '';
 const SESSION_DAYS   = 30;
 const COOKIE_NAME    = 'sab_session';
 const PUBLIC_PATHS   = new Set(['/login', '/api/login', '/api/logout', '/api/health']);
@@ -52,9 +56,26 @@ function isSecure(req) { return req.secure || req.headers['x-forwarded-proto'] =
 function cookieFlags(req) {
   return `HttpOnly; SameSite=Strict; Path=/${isSecure(req) ? '; Secure' : ''}`;
 }
+// Constant-time compare for two strings via HMAC fingerprint. Returns false
+// when either is empty so the empty/unset state doesn't accidentally validate.
+function tokenMatches(presented, expected) {
+  if (!presented || !expected) return false;
+  const key = SESSION_SECRET || expected; // any non-empty key — only the digest matters
+  const a = crypto.createHmac('sha256', key).update(presented).digest();
+  const b = crypto.createHmac('sha256', key).update(expected).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 function authMiddleware(req, res, next) {
   if (!APP_PASSWORD) return next();         // Auth disabled when no password configured
   if (PUBLIC_PATHS.has(req.path)) return next();
+  // Bearer token path — for service-to-service callers like the MCP server.
+  // Checked before cookies so a valid token works even without a session.
+  if (API_TOKEN) {
+    const h = req.headers.authorization || '';
+    if (h.startsWith('Bearer ') && tokenMatches(h.slice(7).trim(), API_TOKEN)) return next();
+  }
+  // Cookie session path — for the browser/PWA user.
   const cookies = parseCookies(req);
   if (verifyCookie(cookies[COOKIE_NAME])) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'unauthorized' });
