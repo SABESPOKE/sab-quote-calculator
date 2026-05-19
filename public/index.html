@@ -800,6 +800,13 @@ const DB = {
     "SHAKER_VEN":    { name: "Shaker – Veneered",      baseCostPerM2: 26, finishCostPerM2: 30, extraLabourPerM2: 0.70, baseLabourHrs: 0.60, hasQuirk: true,  shakerStileWidthMm: 70,  finishType: "lacquer" },
     "J_GROOVE":      { name: "Slab – J-Groove Handle", baseCostPerM2: 22, finishCostPerM2:  0, extraLabourPerM2: 0.50, baseLabourHrs: 0.35, hasQuirk: false, shakerStileWidthMm: 0,   finishType: "paint"   },
     "FRAMED_INSET":  { name: "Framed – Inset",         baseCostPerM2: 40, finishCostPerM2:  0, extraLabourPerM2: 1.00, baseLabourHrs: 1.00, hasQuirk: true,  shakerStileWidthMm: 80,  finishType: "paint"   },
+    // Solid timber shaker: solid timber frame (cope-and-stick) + finish-matching MDF panel.
+    // Pricing is volume-based on the frame + area-based on the panel, not the existing m² baseCost.
+    // baseCostPerM2/finishCostPerM2 are kept here as ignored fields so the spec UI / spray fn
+    // can still read shakerStileWidthMm and hasQuirk.
+    "SHAKER_TIM_PNT":{ name: "Shaker – Solid Timber, Painted",   baseCostPerM2: 0,  finishCostPerM2: 0, extraLabourPerM2: 0.70, baseLabourHrs: 1.50, hasQuirk: true, shakerStileWidthMm: 70, finishType: "paint",   pricingMode: "timber_frame_mdf_panel" },
+    "SHAKER_TIM_LAC":{ name: "Shaker – Solid Timber, Lacquered", baseCostPerM2: 0,  finishCostPerM2: 0, extraLabourPerM2: 0.70, baseLabourHrs: 1.50, hasQuirk: true, shakerStileWidthMm: 70, finishType: "lacquer", pricingMode: "timber_frame_mdf_panel" },
+    "SHAKER_TIM_OIL":{ name: "Shaker – Solid Timber, Oiled",     baseCostPerM2: 0,  finishCostPerM2: 0, extraLabourPerM2: 0.70, baseLabourHrs: 1.50, hasQuirk: true, shakerStileWidthMm: 70, finishType: "oil",     pricingMode: "timber_frame_mdf_panel" },
   },
   solidTimber: {
     "TIM_OAK":   { name: "European Oak",        effectivePerM3: 3220 },
@@ -858,68 +865,85 @@ const DB = {
   // Standard UK bespoke cabinet types with default dimensions.
   // All dimensions are fully adjustable — these are SAB starting points.
   cabinetTypes: {
-    // ── BASE CABINETS (carcass H=720, D=560 unless noted) ─────────────────────
-    "B_STD_1D":     { name:"Base – 1 Door",               w:400,  h:720,  d:560, doors:1, drawers:0, shelves:1, group:"Base" },
-    "B_STD_2D":     { name:"Base – 2 Door",               w:600,  h:720,  d:560, doors:2, drawers:0, shelves:1, group:"Base" },
-    "B_DRW_DOOR":   { name:"Base – Door & Drawer",        w:600,  h:720,  d:560, doors:2, drawers:1, shelves:0, group:"Base" },
-    "B_DRAWER3":    { name:"3-Drawer Stack",              w:500,  h:720,  d:560, doors:0, drawers:3, shelves:0, group:"Base" },
-    "B_DRAWER4":    { name:"4-Drawer Stack",              w:600,  h:720,  d:560, doors:0, drawers:4, shelves:0, group:"Base" },
-    "B_SINK":       { name:"Sink Base",                   w:1000, h:720,  d:560, doors:2, drawers:0, shelves:0, group:"Base" },
-    "B_CORNER_BL":  { name:"Corner Base – Blind",         w:900,  h:720,  d:560, doors:1, drawers:0, shelves:1, group:"Base" },
-    "B_CORNER_CAR": { name:"Corner Base – Carousel",      w:900,  h:720,  d:560, doors:2, drawers:0, shelves:2, group:"Base" },
+    // ── BASE CABINETS (carcass H=770, D=560 unless noted) ─────────────────────
+    "B_STD_1D":     { name:"Base – 1 Door",               w:400,  h:770,  d:560, doors:1, drawers:0, shelves:1, group:"Base" },
+    "B_STD_2D":     { name:"Base – 2 Door",               w:600,  h:770,  d:560, doors:2, drawers:0, shelves:1, group:"Base" },
+    "B_DRW_DOOR":   { name:"Base – Door & Drawer",        w:600,  h:770,  d:560, doors:2, drawers:1, shelves:0, group:"Base" },
+    "B_DRAWER3":    { name:"3-Drawer Stack",              w:500,  h:770,  d:560, doors:0, drawers:3, shelves:0, group:"Base" },
+    "B_DRAWER4":    { name:"4-Drawer Stack",              w:600,  h:770,  d:560, doors:0, drawers:4, shelves:0, group:"Base" },
+    "B_SINK":       { name:"Sink Base",                   w:1000, h:770,  d:560, doors:2, drawers:0, shelves:0, group:"Base" },
+    "B_CORNER_BL":  { name:"Corner Base – Blind",         w:900,  h:770,  d:560, doors:1, drawers:0, shelves:1, group:"Base" },
+    "B_CORNER_CAR": { name:"Corner Base – Carousel",      w:900,  h:770,  d:560, doors:2, drawers:0, shelves:2, group:"Base" },
     "B_DW_HSG":     { name:"Dishwasher Housing",          w:600,  h:820,  d:560, doors:0, drawers:0, shelves:0, group:"Base" },
     "B_DW_DOOR":    { name:"Dishwasher – Door Only",      w:600,  h:820,  d:560, doors:1, drawers:0, shelves:0, group:"Base" },
     "B_WM_HSG":     { name:"Washing Machine Housing",     w:600,  h:820,  d:600, doors:0, drawers:0, shelves:0, group:"Base" },
-    "B_BIN":        { name:"Bin Pull-Out Cabinet",        w:600,  h:720,  d:560, doors:2, drawers:0, shelves:0, group:"Base" },
-    "B_PULLOUT":    { name:"Pull-Out Base Larder",        w:300,  h:720,  d:560, doors:1, drawers:0, shelves:5, group:"Base" },
-    "B_WINE":       { name:"Wine Rack Base",              w:300,  h:720,  d:560, doors:0, drawers:0, shelves:0, group:"Base" },
-    "B_OPEN":       { name:"Open Base Shelf Unit",        w:600,  h:720,  d:560, doors:0, drawers:0, shelves:2, group:"Base" },
-    "B_WIDE":       { name:"Wide Base Cabinet",           w:900,  h:720,  d:560, doors:2, drawers:1, shelves:1, group:"Base" },
-    // ── TALL CABINETS (carcass H=2100, D=560 unless noted) ────────────────────
-    "T_LARDER":     { name:"Tall Larder Cabinet",         w:600,  h:2100, d:560, doors:2, drawers:0, shelves:5, group:"Tall" },
-    "T_LARDER_PO":  { name:"Tall Pull-Out Larder",        w:300,  h:2100, d:560, doors:1, drawers:0, shelves:6, group:"Tall" },
-    "T_OVEN_S":     { name:"Single Oven Housing",         w:600,  h:2100, d:560, doors:2, drawers:1, shelves:0, group:"Tall" },
-    "T_OVEN_D":     { name:"Double Oven Housing",         w:600,  h:2100, d:560, doors:2, drawers:0, shelves:0, group:"Tall" },
-    "T_OVEN_MW":    { name:"Oven & Microwave Tower",      w:600,  h:2100, d:560, doors:3, drawers:1, shelves:0, group:"Tall" },
-    "T_FRIDGE":     { name:"Fridge Housing",              w:600,  h:2100, d:580, doors:1, drawers:0, shelves:0, group:"Tall" },
-    "T_FF":         { name:"Fridge-Freezer Housing",      w:700,  h:2100, d:580, doors:2, drawers:0, shelves:0, group:"Tall" },
-    "T_BROOM":      { name:"Broom / Utility Cupboard",   w:300,  h:2100, d:560, doors:1, drawers:0, shelves:2, group:"Tall" },
-    "T_OPEN":       { name:"Open Tall Shelf Unit",        w:600,  h:2100, d:560, doors:0, drawers:0, shelves:5, group:"Tall" },
-    "T_DRESSER":    { name:"Dresser Cabinet",             w:1200, h:2100, d:560, doors:4, drawers:3, shelves:4, group:"Tall" },
-    "T_CORNER":     { name:"Tall Corner Cabinet",         w:600,  h:2100, d:560, doors:2, drawers:0, shelves:4, group:"Tall" },
-    "T_STORE":      { name:"Tall Storage Cabinet",        w:600,  h:2100, d:560, doors:2, drawers:2, shelves:4, group:"Tall" },
-    // ── WALL CABINETS (carcass H=720, D=300 unless noted) ─────────────────────
-    "W_STD_1D":     { name:"Wall – 1 Door",               w:400,  h:720,  d:300, doors:1, drawers:0, shelves:1, group:"Wall" },
-    "W_STD_2D":     { name:"Wall – 2 Door",               w:600,  h:720,  d:300, doors:2, drawers:0, shelves:1, group:"Wall" },
+    "B_BIN":        { name:"Bin Pull-Out Cabinet",        w:600,  h:770,  d:560, doors:2, drawers:0, shelves:0, group:"Base" },
+    "B_PULLOUT":    { name:"Pull-Out Base Larder",        w:300,  h:770,  d:560, doors:1, drawers:0, shelves:5, group:"Base" },
+    "B_WINE":       { name:"Wine Rack Base",              w:300,  h:770,  d:560, doors:0, drawers:0, shelves:0, group:"Base" },
+    "B_OPEN":       { name:"Open Base Shelf Unit",        w:600,  h:770,  d:560, doors:0, drawers:0, shelves:2, group:"Base" },
+    "B_WIDE":       { name:"Wide Base Cabinet",           w:900,  h:770,  d:560, doors:2, drawers:1, shelves:1, group:"Base" },
+    // ── TALL CABINETS (carcass H=2400, D=560 unless noted) ────────────────────
+    "T_LARDER":     { name:"Tall Larder Cabinet",         w:600,  h:2400, d:560, doors:2, drawers:0, shelves:5, group:"Tall" },
+    "T_LARDER_PO":  { name:"Tall Pull-Out Larder",        w:300,  h:2400, d:560, doors:1, drawers:0, shelves:6, group:"Tall" },
+    "T_OVEN_S":     { name:"Single Oven Housing",         w:600,  h:2400, d:560, doors:2, drawers:1, shelves:0, group:"Tall" },
+    "T_OVEN_D":     { name:"Double Oven Housing",         w:600,  h:2400, d:560, doors:2, drawers:0, shelves:0, group:"Tall" },
+    "T_OVEN_MW":    { name:"Oven & Microwave Tower",      w:600,  h:2400, d:560, doors:3, drawers:1, shelves:0, group:"Tall" },
+    "T_FRIDGE":     { name:"Fridge Housing",              w:600,  h:2400, d:580, doors:1, drawers:0, shelves:0, group:"Tall" },
+    "T_FF":         { name:"Fridge-Freezer Housing",      w:700,  h:2400, d:580, doors:2, drawers:0, shelves:0, group:"Tall" },
+    "T_BROOM":      { name:"Broom / Utility Cupboard",   w:300,  h:2400, d:560, doors:1, drawers:0, shelves:2, group:"Tall" },
+    "T_OPEN":       { name:"Open Tall Shelf Unit",        w:600,  h:2400, d:560, doors:0, drawers:0, shelves:5, group:"Tall" },
+    "T_DRESSER":    { name:"Dresser Cabinet",             w:1200, h:2400, d:560, doors:4, drawers:3, shelves:4, group:"Tall" },
+    "T_CORNER":     { name:"Tall Corner Cabinet",         w:600,  h:2400, d:560, doors:2, drawers:0, shelves:4, group:"Tall" },
+    "T_STORE":      { name:"Tall Storage Cabinet",        w:600,  h:2400, d:560, doors:2, drawers:2, shelves:4, group:"Tall" },
+    // ── WALL CABINETS (carcass H=1000, D=300 unless noted) ────────────────────
+    "W_STD_1D":     { name:"Wall – 1 Door",               w:400,  h:1000, d:300, doors:1, drawers:0, shelves:1, group:"Wall" },
+    "W_STD_2D":     { name:"Wall – 2 Door",               w:600,  h:1000, d:300, doors:2, drawers:0, shelves:1, group:"Wall" },
     "W_TALL_1D":    { name:"Wall – 1 Door (900h)",        w:400,  h:900,  d:300, doors:1, drawers:0, shelves:2, group:"Wall" },
     "W_TALL_2D":    { name:"Wall – 2 Door (900h)",        w:600,  h:900,  d:300, doors:2, drawers:0, shelves:2, group:"Wall" },
-    "W_CORNER":     { name:"Corner Wall Cabinet",         w:600,  h:720,  d:600, doors:1, drawers:0, shelves:1, group:"Wall" },
-    "W_GLASS":      { name:"Wall – Glass Door",           w:600,  h:720,  d:300, doors:2, drawers:0, shelves:1, group:"Wall" },
-    "W_OPEN":       { name:"Open Shelf Wall Unit",        w:600,  h:720,  d:300, doors:0, drawers:0, shelves:3, group:"Wall" },
+    "W_CORNER":     { name:"Corner Wall Cabinet",         w:600,  h:1000, d:600, doors:1, drawers:0, shelves:1, group:"Wall" },
+    "W_GLASS":      { name:"Wall – Glass Door",           w:600,  h:1000, d:300, doors:2, drawers:0, shelves:1, group:"Wall" },
+    "W_OPEN":       { name:"Open Shelf Wall Unit",        w:600,  h:1000, d:300, doors:0, drawers:0, shelves:3, group:"Wall" },
     "W_MW":         { name:"Microwave Housing",           w:600,  h:500,  d:350, doors:0, drawers:0, shelves:0, group:"Wall" },
     "W_ABOVE_FF":   { name:"Above-Fridge Wall Unit",      w:600,  h:400,  d:300, doors:1, drawers:0, shelves:0, group:"Wall" },
     "W_XTALL":      { name:"Wall – Extra Tall (1060h)",   w:600,  h:1060, d:300, doors:2, drawers:0, shelves:3, group:"Wall" },
-    // ── WARDROBES (carcass H=2200, D=580 unless noted) ────────────────────────
-    "WRDB_SINGLE":    { name:"Single Wardrobe – 1 Door, Hanging",   w:500,  h:2200, d:580, doors:1, drawers:0, shelves:1, group:"Wardrobe" },
-    "WRDB_DOUBLE":    { name:"Double Wardrobe – 2 Door, Hanging",   w:1000, h:2200, d:580, doors:2, drawers:0, shelves:1, group:"Wardrobe" },
-    "WRDB_DBL_SHELF": { name:"Double – Half Hang / Half Shelf",     w:1000, h:2200, d:580, doors:2, drawers:0, shelves:4, group:"Wardrobe" },
-    "WRDB_DBL_DRW":   { name:"Double – Hanging + Drawers",          w:1000, h:2200, d:580, doors:2, drawers:3, shelves:1, group:"Wardrobe" },
-    "WRDB_TRIPLE":    { name:"Triple Wardrobe – 3 Door",            w:1500, h:2200, d:580, doors:3, drawers:0, shelves:2, group:"Wardrobe" },
-    "WRDB_QUAD":      { name:"Quad Wardrobe – 4 Door",              w:2000, h:2200, d:580, doors:4, drawers:0, shelves:2, group:"Wardrobe" },
-    "WRDB_CORNER":    { name:"Corner Wardrobe – L-shape",           w:1200, h:2200, d:580, doors:2, drawers:0, shelves:2, group:"Wardrobe" },
+    // ── WARDROBES (carcass H=2400, D=580 unless noted) ────────────────────────
+    "WRDB_SINGLE":    { name:"Single Wardrobe – 1 Door, Hanging",   w:500,  h:2400, d:580, doors:1, drawers:0, shelves:1, group:"Wardrobe" },
+    "WRDB_DOUBLE":    { name:"Double Wardrobe – 2 Door, Hanging",   w:1000, h:2400, d:580, doors:2, drawers:0, shelves:1, group:"Wardrobe" },
+    "WRDB_DBL_SHELF": { name:"Double – Half Hang / Half Shelf",     w:1000, h:2400, d:580, doors:2, drawers:0, shelves:4, group:"Wardrobe" },
+    "WRDB_DBL_DRW":   { name:"Double – Hanging + Drawers",          w:1000, h:2400, d:580, doors:2, drawers:3, shelves:1, group:"Wardrobe" },
+    "WRDB_TRIPLE":    { name:"Triple Wardrobe – 3 Door",            w:1500, h:2400, d:580, doors:3, drawers:0, shelves:2, group:"Wardrobe" },
+    "WRDB_QUAD":      { name:"Quad Wardrobe – 4 Door",              w:2000, h:2400, d:580, doors:4, drawers:0, shelves:2, group:"Wardrobe" },
+    "WRDB_CORNER":    { name:"Corner Wardrobe – L-shape",           w:1200, h:2400, d:580, doors:2, drawers:0, shelves:2, group:"Wardrobe" },
     "WRDB_DRW_STACK": { name:"Wardrobe Drawer Stack (internal)",    w:500,  h:800,  d:550, doors:0, drawers:4, shelves:0, group:"Wardrobe" },
-    "WRDB_LINEN":     { name:"Linen / Airing Cupboard",             w:600,  h:2200, d:450, doors:2, drawers:0, shelves:6, group:"Wardrobe" },
+    "WRDB_LINEN":     { name:"Linen / Airing Cupboard",             w:600,  h:2400, d:450, doors:2, drawers:0, shelves:6, group:"Wardrobe" },
   },
 };
 
 // ─── FACE FRAME MATERIALS ─────────────────────────────────────────────────────
+// pricingMode:
+//   "linear" → cost = perimeter(m) × costPerM   (sheet MDF — same regardless of stile width)
+//   "volume" → cost = perimeter(m) × memberWidth(m) × thickness(m) × speciesPerM3
+//              memberWidth + thickness come from room defaults (overrideable per item).
+//              speciesKey points to DB.solidTimber for the £/m³ rate.
+// labourHrsPerM applies the same way in both modes.
 const FRAME_MATERIALS = {
-  "FRAME_NONE":       { name: "No Frame",                costPerM: 0,    labourHrsPerM: 0    },
-  "FRAME_MDF_18":     { name: "MDF Frame 18mm",          costPerM: 1.80, labourHrsPerM: 0.15 },
-  "FRAME_MDF_PAINT":  { name: "MDF Painted Frame 18mm",  costPerM: 1.80, labourHrsPerM: 0.18 },
-  "FRAME_OAK_18":     { name: "Solid Oak Frame 18mm",    costPerM: 8.50, labourHrsPerM: 0.22 },
-  "FRAME_ASH_18":     { name: "Solid Ash Frame 18mm",    costPerM: 7.00, labourHrsPerM: 0.22 },
-  "FRAME_PINE_18":    { name: "Solid Pine Frame 18mm",   costPerM: 4.50, labourHrsPerM: 0.20 },
+  "FRAME_NONE":         { name: "No Frame",                  pricingMode: "linear", costPerM: 0,    labourHrsPerM: 0    },
+  "FRAME_MDF_18":       { name: "MDF Frame 18mm",            pricingMode: "linear", costPerM: 1.80, labourHrsPerM: 0.15 },
+  "FRAME_MDF_22":       { name: "MDF Frame 22mm",            pricingMode: "linear", costPerM: 2.20, labourHrsPerM: 0.15 },
+  "FRAME_MDF_PAINT":    { name: "MDF Painted Frame 18mm",    pricingMode: "linear", costPerM: 1.80, labourHrsPerM: 0.18 },
+  "FRAME_TIM_OAK":      { name: "Solid Oak Frame",           pricingMode: "volume", speciesKey: "TIM_OAK",   labourHrsPerM: 0.22 },
+  "FRAME_TIM_ASH":      { name: "Solid Ash Frame",           pricingMode: "volume", speciesKey: "TIM_ASH",   labourHrsPerM: 0.22 },
+  "FRAME_TIM_TUL":      { name: "Tulipwood Frame (paint)",   pricingMode: "volume", speciesKey: "TIM_TUL",   labourHrsPerM: 0.20 },
+  "FRAME_TIM_WAL":      { name: "Solid Walnut Frame",        pricingMode: "volume", speciesKey: "TIM_WAL",   labourHrsPerM: 0.24 },
+  "FRAME_TIM_MAPLE":    { name: "Hard Maple Frame",          pricingMode: "volume", speciesKey: "TIM_MAPLE", labourHrsPerM: 0.22 },
+  "FRAME_TIM_CUSTOM":   { name: "Custom Timber Frame…",      pricingMode: "volume", speciesKey: null,        labourHrsPerM: 0.22 },
+  // Legacy linear-priced entries — kept for backwards compatibility with old
+  // quotes saved before March 2026's switch to volume pricing. Not shown in
+  // the dropdown (hidden by legacy:true). When you re-pick a frame on an old
+  // quote, you'll land on the new FRAME_TIM_* equivalent.
+  "FRAME_OAK_18":   { name: "Solid Oak Frame 18mm (legacy)",   pricingMode: "linear", costPerM: 8.50, labourHrsPerM: 0.22, legacy: true },
+  "FRAME_ASH_18":   { name: "Solid Ash Frame 18mm (legacy)",   pricingMode: "linear", costPerM: 7.00, labourHrsPerM: 0.22, legacy: true },
+  "FRAME_PINE_18":  { name: "Solid Pine Frame 18mm (legacy)",  pricingMode: "linear", costPerM: 4.50, labourHrsPerM: 0.20, legacy: true },
 };
 
 // ─── EDGEBAND TYPES ───────────────────────────────────────────────────────────
@@ -1134,7 +1158,9 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
   };
 }
 
-function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, handleCost = 0, sprayFinish = true, hasStain = false, sprayFinishOverride = "" }) {
+function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, handleCost = 0, sprayFinish = true, hasStain = false, sprayFinishOverride = "",
+  // Solid timber shaker doors only — frame + matching MDF panel.
+  timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey, frameStileWidthMm, frameThicknessMm }) {
   const dt = DB.doorTypes[doorType];
   if (!dt) return null;
   const area = (widthMm / 1000) * (heightMm / 1000);
@@ -1143,14 +1169,49 @@ function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, han
   // overlay or paint-grade prep). Drop it when the spray application is suppressed.
   const skipMaterialFinish = sprayFinishOverride === "none" || sprayFinishOverride === "edge_polish";
   const materialFinishPerM2 = skipMaterialFinish ? 0 : dt.finishCostPerM2;
-  const materialCost = area * (dt.baseCostPerM2 + materialFinishPerM2);
+  let materialCost;
+  if (dt.pricingMode === "timber_frame_mdf_panel") {
+    // ─── SOLID TIMBER SHAKER ────────────────────────────────────────────────
+    // Frame (solid timber, cope-and-stick): perimeter × stile width × thickness × £/m³
+    // Panel (MDF, finish-matched): inner-of-frame area × £/m²
+    const stileW = (frameStileWidthMm ?? 70) / 1000;       // 70mm default
+    const thickM = (frameThicknessMm ?? 22) / 1000;         // 22mm default
+    const perimM = 2 * (widthMm + heightMm) / 1000;
+    // For panel area we subtract the visible stile/rail (frame member width) on all 4 sides.
+    const innerW = Math.max(0, (widthMm / 1000) - 2 * stileW);
+    const innerH = Math.max(0, (heightMm / 1000) - 2 * stileW);
+    const panelAreaM2 = innerW * innerH;
+    // Frame volume — perimeter × member width × thickness × waste
+    const frameVolM3 = perimM * stileW * thickM * 1.20;
+    const timberSpec = DB.solidTimber[timberSpeciesKey];
+    const pricePerM3 = timberSpeciesKey === "TIM_CUSTOM"
+      ? (+timberCustomPricePerM3 || 0)
+      : (timberSpec?.effectivePerM3 || 0);
+    const frameCost = frameVolM3 * pricePerM3;
+    // Panel: pick a sensible default if not supplied — paint-grade MDF for paint finish,
+    // oak veneered MDF for lacquered/oiled if species is oak, walnut veneered MDF if walnut, etc.
+    const inferredPanel = (() => {
+      if (dt.finishType === "paint") return "MAT_MDF_FH_18";
+      if (timberSpeciesKey === "TIM_OAK") return "MAT_OAK_MDF_UNF_19";
+      if (timberSpeciesKey === "TIM_WAL") return "MAT_WAL_MDF_UNF_19";
+      return "MAT_MDF_FH_18";
+    })();
+    const panelMat = DB.materials[panelMaterialKey || inferredPanel] || DB.materials.MAT_MDF_FH_18;
+    const panelCost = panelAreaM2 * (panelMat?.costPerM2 || 16.80) * 1.12; // 12% waste on panel
+    materialCost = frameCost + panelCost;
+  } else {
+    materialCost = area * (dt.baseCostPerM2 + materialFinishPerM2);
+  }
   const labourHours = (area * dt.extraLabourPerM2) + (dt.baseLabourHrs || 0.75);
   const labourCost = labourHours * er();
   // Area-based spray finish: faces + edges + quirks (shaker profile), primer + topcoats separately
   // sprayFinishOverride lets the caller force "none" or "edge_polish" regardless of doorType default.
   const baseFinishType   = DB.doorTypes[doorType]?.finishType || "paint";
   const finishType       = sprayFinishOverride || baseFinishType;
-  const sprayResult      = sprayFinish ? calcSprayFinishCost({ doorType, widthMm, heightMm, qty: 1, finishType, hasStain }) : null;
+  // Oil (hardwax / Osmo) is hand-applied but takes similar labour + material as 2-coat
+  // lacquer. Reuse the lacquer cost path until a dedicated branch is added.
+  const sprayFinishType  = finishType === "oil" ? "lacquer" : finishType;
+  const sprayResult      = sprayFinish ? calcSprayFinishCost({ doorType, widthMm, heightMm, qty: 1, finishType: sprayFinishType, hasStain }) : null;
   const sprayFinishCost  = sprayResult ? sprayResult.costPerDoor : 0;
   const totalCostPerDoor = materialCost + labourCost + hingeCost + handleCost + sprayFinishCost;
   const sellExVAT = totalCostPerDoor * DB.settings.margin;
@@ -1230,6 +1291,10 @@ function calcCabinetCost({
   handleKey = "HW_HDL_BAR128",
   shelfCount = 1,
   frameKey = "FRAME_NONE",
+  frameThicknessMm, frameMemberWidthMm,                       // timber face frame dims
+  frameCustomSpeciesName, frameCustomPricePerM3,              // FRAME_TIM_CUSTOM only
+  // Solid timber shaker door (SHAKER_TIM_*) — passed through to calcDoorCost
+  timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey, frameStileWidthMm, doorFrameThicknessMm,
   edgebandKey = "EDGE_OAK_05",
   hasStain = false,
   sprayFinishOverride = "",
@@ -1266,7 +1331,9 @@ function calcCabinetCost({
     const hinge = DB.hardware.hinges[hingeKey] || DB.hardware.hinges["HW_HINGE_SM"];
     const handle = DB.hardware.handles[handleKey] || DB.hardware.handles["HW_HDL_BAR128"];
     const hingeCostPerDoor = hingeCount(doorH) * hinge.costEach;
-    const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: doorCount, hingeCost: hingeCostPerDoor, handleCost: handle.costEach, hasStain, sprayFinishOverride });
+    const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: doorCount, hingeCost: hingeCostPerDoor, handleCost: handle.costEach, hasStain, sprayFinishOverride,
+      timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey,
+      frameStileWidthMm, frameThicknessMm: doorFrameThicknessMm });
     doorsCost = dp ? dp.totalCost : 0;
   }
 
@@ -1291,7 +1358,9 @@ function calcCabinetCost({
     for (let i = 0; i < drawerCount; i++) drawerFrontHeights.push(defaultFrontH);
     const frontW = widthMm - 4; // drawer fronts span full cabinet width
     for (const fh of drawerFrontHeights) {
-      const dfp = calcDoorCost({ doorType, widthMm: frontW > 0 ? frontW : widthMm - 4, heightMm: fh, qty: 1, hingeCost: 0, handleCost: 0, sprayFinish: true, hasStain, sprayFinishOverride });
+      const dfp = calcDoorCost({ doorType, widthMm: frontW > 0 ? frontW : widthMm - 4, heightMm: fh, qty: 1, hingeCost: 0, handleCost: 0, sprayFinish: true, hasStain, sprayFinishOverride,
+        timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey,
+        frameStileWidthMm, frameThicknessMm: doorFrameThicknessMm });
       if (dfp) drawerFrontsCost += dfp.totalCost;
     }
   }
@@ -1299,7 +1368,9 @@ function calcCabinetCost({
   // ── Face frame ──────────────────────────────────────────────────────────
   const frameResult = calcCabinetFaceFrameCost({
     frameKey: frameKey || "FRAME_NONE",
-    widthMm: widthMm, heightMm: heightMm, qty: 1
+    widthMm: widthMm, heightMm: heightMm, qty: 1,
+    frameThicknessMm, frameMemberWidthMm,
+    frameCustomSpeciesName, frameCustomPricePerM3,
   });
   // If frame fitted, override hinge to butt hinge (similar cost bracket to Blum SM)
   const effectiveHingeKey = (frameKey && frameKey !== "FRAME_NONE")
@@ -1404,18 +1475,32 @@ function calcEndPanelCost({ materialKey, widthMm, heightMm, thicknessMm = 18, fa
   };
 }
 
-function calcFloatingShelfCost({ materialKey, lengthMm, depthMm, thicknessMm = 18, visibleThicknessMm = 18, faces = 1, finishType = "lacquer", hasStain = false, qty = 1 }) {
-  const mat = DB.materials[materialKey];
-  if (!mat) return null;
+function calcFloatingShelfCost({ materialKey, lengthMm, depthMm, thicknessMm = 18, visibleThicknessMm = 18, faces = 1, finishType = "lacquer", hasStain = false, qty = 1, customSpeciesName = "", customPricePerM3 = 0 }) {
+  // Timber path: materialKey is a DB.solidTimber species (or TIM_CUSTOM).
+  // Volume-based pricing replaces area-based sheet pricing.
+  const timberSpec = DB.solidTimber[materialKey];
+  const isCustomTimber = materialKey === "TIM_CUSTOM";
+  const isTimber = !!timberSpec || isCustomTimber;
+  const mat = isTimber ? null : DB.materials[materialKey];
+  if (!isTimber && !mat) return null;
   const topAreaM2   = (lengthMm / 1000) * (depthMm / 1000);
   const isBoxShelf  = visibleThicknessMm > thicknessMm + 4;  // box shelf if apparent thickness significantly greater
   // Box shelf = top face + front return panel (mitred 45°) + optional bottom face
   const frontReturnAreaM2 = isBoxShelf ? (lengthMm / 1000) * (visibleThicknessMm / 1000) : 0;
   const bottomAreaM2      = isBoxShelf ? topAreaM2 : 0;  // hollow box needs bottom too
-  const totalAreaM2 = (topAreaM2 + frontReturnAreaM2 + bottomAreaM2) * (mat.wasteFactor || 1.12);
-  const matCost     = totalAreaM2 * mat.costPerM2;
-  // Labour: cut + sand + assembly (extra for mitre)
-  const labourHrs   = 0.5 + (isBoxShelf ? 0.75 : 0);  // 45-min mitre cutting & assembly per box shelf
+  let matCost, totalAreaM2;
+  if (isTimber) {
+    const pricePerM3 = isCustomTimber ? (+customPricePerM3 || 0) : timberSpec.effectivePerM3;
+    const wasteFactor = 1.20; // higher waste on solid timber than sheet
+    const totalVolM3 = (topAreaM2 + frontReturnAreaM2 + bottomAreaM2) * (thicknessMm / 1000) * wasteFactor;
+    matCost = totalVolM3 * pricePerM3;
+    totalAreaM2 = topAreaM2 + frontReturnAreaM2 + bottomAreaM2; // kept for any downstream display
+  } else {
+    totalAreaM2 = (topAreaM2 + frontReturnAreaM2 + bottomAreaM2) * (mat.wasteFactor || 1.12);
+    matCost     = totalAreaM2 * mat.costPerM2;
+  }
+  // Labour: cut + sand + assembly (extra for mitre, extra for solid timber prep)
+  const labourHrs   = 0.5 + (isBoxShelf ? 0.75 : 0) + (isTimber ? 0.3 : 0);
   const labourCost  = labourHrs * er();
   // Spray finish: 1 or 2 faces — top face always, bottom face if box shelf
   const sprayFaces  = faces >= 2 || isBoxShelf ? "door" : "panel";
@@ -1511,16 +1596,30 @@ function calcWRPMouldingCost({
 }
 
 // ─── FACE FRAME COST (CABINET) ─────────────────────────────────────────────────
-// Frame runs around the cabinet opening perimeter (2×W + 2×H), 30mm wide.
-// Corner joints (pocket screw): add 0.1 hrs per corner (4 corners).
+// Frame runs around the cabinet opening perimeter (2×W + 2×H).
+// Linear-priced (MDF): cost = perimeter × costPerM.
+// Volume-priced (solid timber): cost = perimeter × memberWidth × thickness × £/m³.
+// Corner joints (pocket screw / cope-and-stick): 0.1 hrs per corner (4 corners).
 // Changes hinge from Blum cup to butt hinge — handled in priceItem hinge override.
-function calcCabinetFaceFrameCost({ frameKey, widthMm, heightMm, qty = 1 }) {
+function calcCabinetFaceFrameCost({ frameKey, widthMm, heightMm, qty = 1, frameThicknessMm, frameMemberWidthMm, frameCustomSpeciesName, frameCustomPricePerM3 }) {
   const fm = FRAME_MATERIALS[frameKey];
-  if (!fm || fm.costPerM === 0) return { costPerUnit: 0, total: 0, perimM: 0 };
+  if (!fm) return { costPerUnit: 0, total: 0, perimM: 0 };
   const perimM = 2 * (widthMm + heightMm) / 1000;
   const cornerHrs = 4 * 0.10; // 4 corner joints
-  const labourHrs = perimM * fm.labourHrsPerM + cornerHrs;
-  const matCost   = perimM * fm.costPerM;
+  const labourHrs = perimM * (fm.labourHrsPerM || 0) + cornerHrs;
+  let matCost = 0;
+  if (fm.pricingMode === "volume") {
+    const memberM = (frameMemberWidthMm ?? 30) / 1000;
+    const thickM  = (frameThicknessMm ?? 22) / 1000;
+    const speciesPerM3 = fm.speciesKey
+      ? (DB.solidTimber[fm.speciesKey]?.effectivePerM3 || 0)
+      : (+frameCustomPricePerM3 || 0); // FRAME_TIM_CUSTOM
+    const wasteFactor = 1.20;
+    matCost = perimM * memberM * thickM * speciesPerM3 * wasteFactor;
+  } else {
+    if (!fm.costPerM) return { costPerUnit: 0, total: 0, perimM: 0 };
+    matCost = perimM * fm.costPerM;
+  }
   const labourCost = labourHrs * er();
   const costPerUnit = matCost + labourCost;
   return { costPerUnit: +costPerUnit.toFixed(2), total: +(costPerUnit * qty).toFixed(2), perimM: +perimM.toFixed(3), labourHrs: +labourHrs.toFixed(3) };
@@ -1576,6 +1675,24 @@ function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720,
 }
 
 function priceItem(item) {
+  // Fixed-price short-circuit: bypass the type-specific pricer entirely. Sell = cost ×
+  // (1 + markup/100). Margin / overhead / consumables share are all excluded
+  // downstream in distributeProjectCosts + quoteTotals — this item is a pure
+  // pass-through (e.g. trade-priced worktop).
+  if (item.fixedPrice) {
+    const qty = item.qty || 1;
+    const costPerUnit = +item.fixedCostExVAT || 0;
+    const markup = (+item.fixedMarkupPct || 0) / 100;
+    const sellPerUnit = costPerUnit * (1 + markup);
+    return {
+      costPerUnit, sellPerUnit,
+      totalCost: costPerUnit * qty,
+      totalSellExVAT: sellPerUnit * qty,
+      totalSellIncVAT: sellPerUnit * qty * (1 + DB.settings.vat),
+      breakdown: { fixedCost: costPerUnit, markupPct: +item.fixedMarkupPct || 0 },
+      isFixedPrice: true,
+    };
+  }
   if (item.type === "cabinet")  return calcCabinetCost({ ...item.params, qty: item.qty });
   if (item.type === "door")     return calcDoorCost({ ...item.params, qty: item.qty });
   if (item.type === "frame")    return calcFrameCost({ ...item.params, qty: item.qty });
@@ -1861,10 +1978,15 @@ function migrateInstallDays(quote) {
 // ─── QUOTE TOTALS ─────────────────────────────────────────────────────────────
 function quoteTotals(quote) {
   let mfgCost = 0, mfgSellExVAT = 0, designFee = 0;
+  // nonFixed* track items that participate in margin/overhead allocation
+  // (i.e. exclude fixed-price pass-through items). PM% is applied against the
+  // non-fixed manufacturing sell value so fixed items don't inflate the PM fee.
+  let nonFixedSellExVAT = 0;
   Object.values(quote.rooms || {}).forEach(room => {
     room.items.forEach(item => {
       mfgCost += item.pricing?.totalCost || 0;
       mfgSellExVAT += item.pricing?.totalSellExVAT || 0;
+      if (!item.fixedPrice) nonFixedSellExVAT += item.pricing?.totalSellExVAT || 0;
     });
     if (room.includeDesignTime !== false) designFee += calcDesignTimePerRoom(room);
   });
@@ -1872,12 +1994,13 @@ function quoteTotals(quote) {
   // Project-level costs
   const pc = quote.projectCosts || getDefaultProjectCosts();
   const s  = DB.settings;
-  const totalItems = Object.values(quote.rooms || {}).reduce((sum, r) => sum + r.items.length, 0);
+  // Fixed-price items don't consume a consumables-per-item slot.
+  const totalItems = Object.values(quote.rooms || {}).reduce((sum, r) => sum + r.items.filter(i => !i.fixedPrice).length, 0);
 
   const survey      = pc.includeSurvey       ? (pc.surveyFee          ?? s.surveyFee)          * s.margin : 0;
   const install     = pc.includeInstall      ? totalInstallDays(pc) * (pc.installDayRate ?? s.installDayRate) * s.margin : 0;
   const delivery    = pc.includeDelivery     ? (pc.deliveryFee        ?? s.deliveryFee)         * s.margin : 0;
-  const pm          = pc.includePM           ? mfgSellExVAT * ((pc.pmPercent         ?? s.pmPercent)        / 100) : 0;
+  const pm          = pc.includePM           ? nonFixedSellExVAT * ((pc.pmPercent         ?? s.pmPercent)        / 100) : 0;
   const consumables = pc.includeConsumables  ? totalItems   * (pc.consumablesPerItem ?? s.consumablesPerItem) : 0;
 
   const subtotalBeforeContingency = mfgSellExVAT + designFee + survey + install + delivery + pm + consumables;
@@ -1925,22 +2048,24 @@ function estimatedDaysByRoom(quote) {
 function roomTotals(quote, roomName, daysOverride) {
   const room = (quote.rooms || {})[roomName];
   if (!room) return null;
-  let mfgCost = 0, mfgSellExVAT = 0;
+  let mfgCost = 0, mfgSellExVAT = 0, nonFixedSellExVAT = 0;
   (room.items || []).forEach(item => {
     mfgCost      += item.pricing?.totalCost        || 0;
     mfgSellExVAT += item.pricing?.totalSellExVAT   || 0;
+    if (!item.fixedPrice) nonFixedSellExVAT += item.pricing?.totalSellExVAT || 0;
   });
   const designFee = room.includeDesignTime !== false ? calcDesignTimePerRoom(room) : 0;
   const pc = quote.projectCosts || getDefaultProjectCosts();
   const s  = DB.settings;
-  const itemCount = (room.items || []).length;
+  // Fixed-price items skip the consumables-per-item slot.
+  const itemCount = (room.items || []).filter(i => !i.fixedPrice).length;
   const explicitDays = pc.installDaysByRoom?.[roomName];
   const roomDays = explicitDays != null ? Number(explicitDays) : (Number(daysOverride) || 0);
 
   const survey      = pc.includeSurvey      ? (pc.surveyFee     ?? s.surveyFee)     * s.margin : 0;
   const install     = pc.includeInstall     ? roomDays * (pc.installDayRate ?? s.installDayRate) * s.margin : 0;
   const delivery    = pc.includeDelivery    ? (pc.deliveryFee   ?? s.deliveryFee)    * s.margin : 0;
-  const pm          = pc.includePM          ? mfgSellExVAT * ((pc.pmPercent          ?? s.pmPercent)         / 100) : 0;
+  const pm          = pc.includePM          ? nonFixedSellExVAT * ((pc.pmPercent     ?? s.pmPercent)         / 100) : 0;
   const consumables = pc.includeConsumables ? itemCount    * (pc.consumablesPerItem  ?? s.consumablesPerItem) : 0;
 
   const subtotalBeforeContingency = mfgSellExVAT + designFee + survey + install + delivery + pm + consumables;
@@ -1966,17 +2091,24 @@ function roomTotals(quote, roomName, daysOverride) {
 function distributeProjectCosts(quote) {
   const t = quoteTotals(quote);
   const overhead = t.designFee + t.survey + t.install + t.delivery + t.pm + t.consumables + t.contingency + t.warranty;
+  // Fixed-price items don't receive a share of overhead. The share denominator
+  // uses only non-fixed sell value so all overhead lands on the rest of the items.
+  let nonFixedSell = 0;
+  Object.values(quote.rooms || {}).forEach(room => room.items.forEach(item => {
+    if (!item.fixedPrice) nonFixedSell += item.pricing?.totalSellExVAT || 0;
+  }));
   const rooms = [];
   Object.entries(quote.rooms || {}).forEach(([roomName, room]) => {
-    const rDT = room.includeDesignTime !== false ? calcDesignTimePerRoom(room) : 0;
     const bakedItems = room.items.map(item => {
       const itemSell = item.pricing?.totalSellExVAT || 0;
-      const share = t.mfgSellExVAT > 0 ? itemSell / t.mfgSellExVAT : 0;
-      const itemOverhead = overhead * share;
-      // But design fee needs special handling: distribute room design to room items only
+      if (item.fixedPrice) {
+        // Pure pass-through — no overhead share.
+        return { ...item, bakedSellExVAT: itemSell };
+      }
+      const share = nonFixedSell > 0 ? itemSell / nonFixedSell : 0;
       return {
         ...item,
-        bakedSellExVAT: itemSell + overhead * share
+        bakedSellExVAT: itemSell + overhead * share,
       };
     });
     rooms.push({ roomName, items: bakedItems });
@@ -1991,6 +2123,27 @@ function distributeProjectCosts(quote) {
   if (t.consumables > 0) services.push("Consumables & Fixings");
   if (t.warranty > 0) services.push("Warranty & Aftercare");
   return { rooms, services, totals: t };
+}
+
+// ─── ITEM NUMBERING ───────────────────────────────────────────────────────────
+// Computes the displayed item number for every item in the quote.
+// Returns: { [roomName]: { [itemIdx]: number | null } }
+//   number === null  → item is excluded (filler etc.) — no number shown, doesn't consume a slot
+//   continuousNumbering on the quote → counter carries across rooms; off → resets per room.
+function computeItemNumbers(quote) {
+  const continuous = !!quote?.continuousNumbering;
+  const out = {};
+  let counter = 0;
+  Object.entries(quote?.rooms || {}).forEach(([roomName, room]) => {
+    if (!continuous) counter = 0;
+    out[roomName] = {};
+    (room.items || []).forEach((item, idx) => {
+      if (item.excludeFromNumbering) { out[roomName][idx] = null; return; }
+      counter += 1;
+      out[roomName][idx] = counter;
+    });
+  });
+  return out;
 }
 
 // ─── DERIVE SPEC ─────────────────────────────────────────────────────────────
@@ -2147,7 +2300,9 @@ function printQuote(quote, viewMode, roomFilter) {
   const mode = viewMode || "itemised";
   const altMode = !!quote.alternativesMode;
   const dist = distributeProjectCosts(quote);
-  const filteredRooms = dist.rooms.filter(({ roomName }) => roomFilter == null || roomFilter === roomName);
+  const itemNumbers = computeItemNumbers(quote);
+  const numPrefix = (roomName, idx) => itemNumbers[roomName]?.[idx] != null ? `${itemNumbers[roomName][idx]}. ` : "";
+  const filteredRooms = dist.rooms.filter(({ roomName }) => roomFilter == null || roomFilter.has?.(roomName) || roomFilter === roomName);
   const filteredSubtotal = filteredRooms.reduce((s, r) => s + r.items.reduce((rs, i) => rs + (i.bakedSellExVAT || 0), 0), 0);
   const vatRate = DB.settings.vat || 0.2;
   const filteredVAT = filteredSubtotal * vatRate;
@@ -2168,13 +2323,13 @@ function printQuote(quote, viewMode, roomFilter) {
   };
   const roomSections = altMode ? "" : filteredRooms.map(({ roomName, items }) => {
     const roomTotal = items.reduce((s, i) => s + (i.bakedSellExVAT || 0), 0);
-    const itemRows = items.map(i => {
+    const itemRows = items.map((i, idx) => {
       const isWRP = i.type === "wrp_moulding" && i.params;
       const wrpThumbSrc = isWRP && i.params.image_url ? (i.params.image_url.match(/\/uploads\/(.+)$/) ? `/api/wrp-image/${i.params.image_url.match(/\/uploads\/(.+)$/)[1]}` : i.params.image_url) : "";
       const wrpThumb = isWRP && i.params.image_url ? `<img src="${wrpThumbSrc}" referrerpolicy="no-referrer" style="width:32px;height:32px;object-fit:contain;vertical-align:middle;margin-right:8px;border-radius:2px;" />` : "";
       const wrpFinishLabel = isWRP && i.params.finishType && i.params.finishType !== "none" ? `${({paint:"painted",lacquer:"lacquered",stain_lacquer:"stained & lacquered"})[i.params.finishType] || i.params.finishType} · ` : "";
       const wrpMeta = isWRP ? `<div style="font-size:8pt;color:#888;margin-top:2px">${i.params.material||"Tulip"} · ${wrpFinishLabel}${i.params.linear_metres||0}m · £${(i.bakedSellExVAT/(i.params.linear_metres||1)).toFixed(2)}/m</div>` : "";
-      return `<tr><td class="td-desc">${wrpThumb}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}${isWRP ? "" : dimsHtml(i)}${wrpMeta}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.bakedSellExVAT)}</td>` : ""}</tr>`;
+      return `<tr><td class="td-desc">${wrpThumb}${numPrefix(roomName, idx)}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}${isWRP ? "" : dimsHtml(i)}${wrpMeta}</td>${mode === "itemised" ? `<td class="td-price">${fmt(i.bakedSellExVAT)}</td>` : ""}</tr>`;
     }).join("");
     const roomSubRow = mode === "itemised"
       ? `<tr class="room-sub"><td>Room subtotal</td><td class="td-price">${fmt(roomTotal)}</td></tr>`
@@ -2191,14 +2346,15 @@ function printQuote(quote, viewMode, roomFilter) {
     // their share of fitting, survey, delivery, PM, consumables, contingency,
     // warranty + design. Items sum to rt.totalExVAT.
     const overhead = rt.designFee + rt.survey + rt.install + rt.delivery + rt.pm + rt.consumables + rt.contingency + rt.warranty;
-    const itemRows = items.map(i => {
+    const altNonFixedSell = items.reduce((s, x) => s + (x.fixedPrice ? 0 : (x.pricing?.totalSellExVAT || 0)), 0);
+    const itemRows = items.map((i, idx) => {
       const itemSell = i.pricing?.totalSellExVAT || 0;
-      const share = rt.mfgSellExVAT > 0 ? itemSell / rt.mfgSellExVAT : 0;
+      const share = (!i.fixedPrice && altNonFixedSell > 0) ? itemSell / altNonFixedSell : 0;
       const bakedSell = itemSell + overhead * share;
       const isWRP = i.type === "wrp_moulding" && i.params;
       const wrpThumbSrc = isWRP && i.params.image_url ? (i.params.image_url.match(/\/uploads\/(.+)$/) ? `/api/wrp-image/${i.params.image_url.match(/\/uploads\/(.+)$/)[1]}` : i.params.image_url) : "";
       const wrpThumb = isWRP && i.params.image_url ? `<img src="${wrpThumbSrc}" referrerpolicy="no-referrer" style="width:32px;height:32px;object-fit:contain;vertical-align:middle;margin-right:8px;border-radius:2px;" />` : "";
-      return `<tr><td class="td-desc">${wrpThumb}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}${isWRP ? "" : dimsHtml(i)}</td>${mode === "itemised" ? `<td class="td-price">${fmt(bakedSell)}</td>` : ""}</tr>`;
+      return `<tr><td class="td-desc">${wrpThumb}${numPrefix(roomName, idx)}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}${isWRP ? "" : dimsHtml(i)}</td>${mode === "itemised" ? `<td class="td-price">${fmt(bakedSell)}</td>` : ""}</tr>`;
     }).join("");
     return `<div class="room-block" style="page-break-inside:avoid;margin-bottom:30px;padding:14px 18px;background:#fbfaf8;border:0.5pt solid #d8d3cc;border-radius:4px">
       <div style="font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:3px">Option</div>
@@ -2304,12 +2460,12 @@ function printQuote(quote, viewMode, roomFilter) {
 
 // ─── ADD ITEM FORM DEFAULTS ───────────────────────────────────────────────────
 const ITEM_DEFAULTS = {
-  cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:720, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", carcassFinish:"none", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, drawerCount:0, drawerType:"DRW_SHEET", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", edgebandKey:"EDGE_OAK_05", qty:1, description:"" },
+  cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:770, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", carcassFinish:"none", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, drawerCount:0, drawerType:"DRW_SHEET", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", frameThicknessMm:22, frameMemberWidthMm:30, frameCustomSpeciesName:"", frameCustomPricePerM3:0, timberSpeciesKey:"TIM_OAK", timberCustomSpeciesName:"", timberCustomPricePerM3:0, panelMaterialKey:"", frameStileWidthMm:70, doorFrameThicknessMm:22, edgebandKey:"EDGE_OAK_05", qty:1, description:"" },
   door:    { type:"door", widthMm:726, heightMm:2040, doorType:"SLAB_PNT", doorProfile:"slab", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", qty:1, description:"" },
   frame:    { type:"frame", species:"TIM_OAK", widthMm:826, heightMm:2040, labourHrs:3, qty:1, description:"" },
   drawer:  { type:"drawer", drawerType:"DRW_SHEET", carcassMaterialKey:"MAT_BIRCH_UNF_18", widthMm:500, heightMm:200, depthMm:500, runnerKey:"HW_RUN_BLUM_SM", qty:1, description:"" },
   endpanel: { type:"endpanel", materialKey:"MAT_BIRCH_UNF_18", widthMm:560, heightMm:720, thicknessMm:18, faces:1, exposedEdgeCount:2, finishType:"paint", hasStain:false, qty:1, description:"" },
-  shelf:    { type:"shelf", materialKey:"MAT_BIRCH_PREF_18", lengthMm:600, depthMm:300, thicknessMm:18, visibleThicknessMm:18, faces:1, finishType:"lacquer", hasStain:false, qty:1, description:"" },
+  shelf:    { type:"shelf", materialKey:"MAT_BIRCH_PREF_18", lengthMm:600, depthMm:300, thicknessMm:18, visibleThicknessMm:18, faces:1, finishType:"lacquer", hasStain:false, customSpeciesName:"", customPricePerM3:0, qty:1, description:"" },
   moulding: { type:"moulding", mouldingKey:"MLD_SKR_MDF_95", metres:3, qty:1, description:"" },
   wrp_moulding: { type:"wrp_moulding", profile_sku:"", profile_id:null, wrp_category:"", wrp_description:"", material:"Tulip Wood For Interior", linear_metres:3, wrp_price_per_metre:0, markup_pct:35, image_url:null, product_url:"", notes:"", qty:1, description:"", dimensions:"", finishType:"paint", hasStain:false, girth_mm_override:null, paint_rate_per_m_override:"" },
   filler:  { type:"filler", widthMm:50, heightMm:720, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, qty:1, description:"" },
@@ -2321,15 +2477,17 @@ const ITEM_DEFAULTS = {
 // "primed"    reuses the painted doorTypes — the form auto-sets sprayFinishOverride="primed".
 // "edge_polish" / "none" — reuse the painted doorTypes; form auto-sets matching override.
 const DOOR_PROFILES = {
-  slab:     { label: "Slab",            finishes: ["painted","lacquer","primed","custom_ven","edge_polish","none"] },
-  shaker:   { label: "Shaker",          finishes: ["painted","lacquer","primed","edge_polish","none"] },
-  j_groove: { label: "Slab – J-Groove", finishes: ["painted","primed","edge_polish","none"] },
-  framed:   { label: "Framed Inset",    finishes: ["painted","primed","edge_polish","none"] },
+  slab:           { label: "Slab",                  finishes: ["painted","lacquer","primed","custom_ven","edge_polish","none"] },
+  shaker:         { label: "Shaker",                finishes: ["painted","lacquer","primed","edge_polish","none"] },
+  shaker_timber:  { label: "Shaker – Solid Timber", finishes: ["painted","lacquer","oiled"] },
+  j_groove:       { label: "Slab – J-Groove",       finishes: ["painted","primed","edge_polish","none"] },
+  framed:         { label: "Framed Inset",          finishes: ["painted","primed","edge_polish","none"] },
 };
-const DOOR_FINISHES = { painted: "Painted", lacquer: "Lacquer", primed: "Primed only", custom_ven: "Custom Veneer", edge_polish: "Edge polish only", none: "No finish required", veneered: "Veneered (legacy)" };
+const DOOR_FINISHES = { painted: "Painted", lacquer: "Lacquer", oiled: "Oiled", primed: "Primed only", custom_ven: "Custom Veneer", edge_polish: "Edge polish only", none: "No finish required", veneered: "Veneered (legacy)" };
 const PROFILE_FINISH_TO_TYPE = {
   "slab+painted": "SLAB_PNT", "slab+lacquer": "SLAB_VEN", "slab+primed": "SLAB_PNT", "slab+edge_polish": "SLAB_PNT", "slab+none": "SLAB_PNT", "slab+veneered": "SLAB_VEN", "slab+custom_ven": "SLAB_CUST_VEN",
   "shaker+painted": "SHAKER_PNT", "shaker+lacquer": "SHAKER_VEN", "shaker+primed": "SHAKER_PNT", "shaker+edge_polish": "SHAKER_PNT", "shaker+none": "SHAKER_PNT", "shaker+veneered": "SHAKER_VEN",
+  "shaker_timber+painted": "SHAKER_TIM_PNT", "shaker_timber+lacquer": "SHAKER_TIM_LAC", "shaker_timber+oiled": "SHAKER_TIM_OIL",
   "j_groove+painted": "J_GROOVE", "j_groove+primed": "J_GROOVE", "j_groove+edge_polish": "J_GROOVE", "j_groove+none": "J_GROOVE",
   "framed+painted": "FRAMED_INSET", "framed+primed": "FRAMED_INSET", "framed+edge_polish": "FRAMED_INSET", "framed+none": "FRAMED_INSET",
 };
@@ -2358,6 +2516,19 @@ const DEFAULT_ROOM_SETTINGS = {
   runnerKey: "HW_RUN_BLUM_SM",
   frameKey: "FRAME_NONE",
   edgebandKey: "EDGE_OAK_05",
+  plinthMm: 100,              // plinth height — applies to base/tall/wardrobe cabinets, not wall
+  worktopMm: 30,              // worktop thickness — applies to base cabinets only
+  frameThicknessMm: 22,       // timber face frame thickness — only used when frameKey is a volume-priced timber
+  frameMemberWidthMm: 30,     // timber face frame member width (stile/rail face) — only used in volume mode
+  frameCustomSpeciesName: "", // free-text label for FRAME_TIM_CUSTOM
+  frameCustomPricePerM3: 0,   // £/m³ for FRAME_TIM_CUSTOM
+  // Solid timber shaker doors (only used when doorProfile === "shaker_timber")
+  timberSpeciesKey: "TIM_OAK",       // species for the door's solid timber frame
+  timberCustomSpeciesName: "",       // free-text label when timberSpeciesKey === "TIM_CUSTOM"
+  timberCustomPricePerM3: 0,         // £/m³ when timberSpeciesKey === "TIM_CUSTOM"
+  panelMaterialKey: "",              // optional panel material override; blank → inferred from species+finish
+  frameStileWidthMm: 70,             // door frame stile/rail width
+  doorFrameThicknessMm: 22,          // door frame thickness
 };
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
@@ -2475,7 +2646,7 @@ function SABQuoteTool() {
   const [showRoomSetup, setShowRoomSetup] = useState(null); // room name being configured
   const [mobilePanel, setMobilePanel] = useState("items");
   const [clientViewMode, setClientViewMode] = useState("itemised");
-  const [clientViewRoomFilter, setClientViewRoomFilter] = useState(null); // null = all rooms, or room name string
+  const [clientViewRoomFilter, setClientViewRoomFilter] = useState(null); // null = all rooms included; otherwise Set<roomName> of INCLUDED rooms
   const [editingRoomName, setEditingRoomName] = useState(null); // { original, current } or null
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [quoteStatusTab, setQuoteStatusTab] = useState("active");
@@ -2743,6 +2914,21 @@ function SABQuoteTool() {
     saveQuotes(updated);
   }
 
+  // Swap an item with its previous (dir=-1) or next (dir=+1) neighbour.
+  // Boundary checks are belt-and-braces — buttons are also disabled at the ends.
+  function moveItem(room, idx, dir) {
+    const items = quotes[activeQuoteId]?.rooms?.[room]?.items;
+    if (!items) return;
+    const target = idx + dir;
+    if (target < 0 || target >= items.length) return;
+    const updated = { ...quotes };
+    const arr = updated[activeQuoteId].rooms[room].items;
+    [arr[idx], arr[target]] = [arr[target], arr[idx]];
+    saveQuotes(updated);
+    // Keep the expanded breakdown attached to the moved item, not the slot.
+    setExpandedItem(prev => prev === idx ? target : prev === target ? idx : prev);
+  }
+
   // Clone a whole quote so the user can try a different material / finish
   // without losing the original. New id + auto-incremented ref. Lands on the
   // Build view ready to edit.
@@ -2858,6 +3044,16 @@ function SABQuoteTool() {
     if (directMappings[field]) propagateToItems(directMappings[field], val);
     if (field === "edgebandKey") propagateToAllCabinets("edgebandKey", val);
     if (field === "frameKey")    propagateToAllCabinets("frameKey", val);
+    if (field === "frameThicknessMm")       propagateToAllCabinets("frameThicknessMm", val);
+    if (field === "frameMemberWidthMm")     propagateToAllCabinets("frameMemberWidthMm", val);
+    if (field === "frameCustomSpeciesName") propagateToAllCabinets("frameCustomSpeciesName", val);
+    if (field === "frameCustomPricePerM3")  propagateToAllCabinets("frameCustomPricePerM3", val);
+    if (field === "timberSpeciesKey")        propagateToAllCabinets("timberSpeciesKey", val);
+    if (field === "timberCustomSpeciesName") propagateToAllCabinets("timberCustomSpeciesName", val);
+    if (field === "timberCustomPricePerM3")  propagateToAllCabinets("timberCustomPricePerM3", val);
+    if (field === "panelMaterialKey")        propagateToAllCabinets("panelMaterialKey", val);
+    if (field === "frameStileWidthMm")       propagateToAllCabinets("frameStileWidthMm", val);
+    if (field === "doorFrameThicknessMm")    propagateToAllCabinets("doorFrameThicknessMm", val);
     if (field === "hingeKey")    propagateToAllCabinets("hingeKey",  val, hasDoors);
     if (field === "handleKey")   propagateToAllCabinets("handleKey", val, hasDoors);
     if (field === "carcassFinish") propagateToAllCabinets("carcassFinish", val);
@@ -3010,13 +3206,13 @@ function SABQuoteTool() {
   function updateForm(field, val) {
     setAddItemForm(f => {
       let updated = { ...f, [field]: val };
-      // When a cabinet type is selected: fill door/drawer/shelf config only — NOT dimensions (bespoke sizes entered manually)
+      // When a cabinet type is selected: fill door/drawer/shelf config AND pre-populate
+      // standard dimensions from DB.cabinetTypes. User overrides as needed.
       if (field === "cabinetTypeKey") {
         const ct = DB.cabinetTypes[val];
         if (ct) {
           updated = { ...updated, doorCount: ct.doors, drawerCount: ct.drawers, shelfCount: ct.shelves };
-          // Reset dimensions to 0 so user must enter the actual bespoke size
-          updated.widthMm = 0; updated.heightMm = 0; updated.depthMm = 0;
+          updated.widthMm = ct.w; updated.heightMm = ct.h; updated.depthMm = ct.d;
         }
       }
       // When the carcass material changes, snap carcassFinish to the material's natural
@@ -3065,7 +3261,7 @@ function SABQuoteTool() {
         : addItemForm.type === "endpanel"
         ? { type:"endpanel", qty: addItemForm.qty, params: { materialKey: addItemForm.materialKey || "MAT_BIRCH_UNF_18", widthMm: +addItemForm.widthMm, heightMm: +addItemForm.heightMm, thicknessMm: +addItemForm.thicknessMm || 18, faces: +addItemForm.faces || 1, exposedEdgeCount: +addItemForm.exposedEdgeCount || 2, finishType: addItemForm.finishType || "paint", hasStain: !!addItemForm.hasStain } }
         : addItemForm.type === "shelf"
-        ? { type:"shelf", qty: addItemForm.qty, params: { materialKey: addItemForm.materialKey || "MAT_BIRCH_PREF_18", lengthMm: +addItemForm.lengthMm || 600, depthMm: +addItemForm.depthMm || 300, thicknessMm: +addItemForm.thicknessMm || 18, visibleThicknessMm: +addItemForm.visibleThicknessMm || 18, faces: +addItemForm.faces || 1, finishType: addItemForm.finishType || "lacquer", hasStain: !!addItemForm.hasStain } }
+        ? { type:"shelf", qty: addItemForm.qty, params: { materialKey: addItemForm.materialKey || "MAT_BIRCH_PREF_18", lengthMm: +addItemForm.lengthMm || 600, depthMm: +addItemForm.depthMm || 300, thicknessMm: +addItemForm.thicknessMm || 18, visibleThicknessMm: +addItemForm.visibleThicknessMm || 18, faces: +addItemForm.faces || 1, finishType: addItemForm.finishType || "lacquer", hasStain: !!addItemForm.hasStain, customSpeciesName: addItemForm.customSpeciesName || "", customPricePerM3: +addItemForm.customPricePerM3 || 0 } }
         : addItemForm.type === "moulding"
         ? { type:"moulding", qty: addItemForm.qty, params: { mouldingKey: addItemForm.mouldingKey || "MLD_SKR_MDF_95", metres: +addItemForm.metres || 3 } }
         : addItemForm.type === "wrp_moulding"
@@ -3090,7 +3286,7 @@ function SABQuoteTool() {
       : addItemForm.type === "endpanel"
       ? { type:"endpanel", description: addItemForm.description || `End Panel ${addItemForm.widthMm}×${addItemForm.heightMm}×${addItemForm.thicknessMm}mm — ${addItemForm.finishType}`, qty: Number(addItemForm.qty), params: { materialKey:addItemForm.materialKey||"MAT_BIRCH_UNF_18", widthMm:+addItemForm.widthMm, heightMm:+addItemForm.heightMm, thicknessMm:+addItemForm.thicknessMm||18, faces:+addItemForm.faces||1, exposedEdgeCount:+addItemForm.exposedEdgeCount||2, finishType:addItemForm.finishType||"paint", hasStain:!!addItemForm.hasStain } }
       : addItemForm.type === "shelf"
-      ? { type:"shelf", description: addItemForm.description || `Floating Shelf ${addItemForm.lengthMm}×${addItemForm.depthMm}${(addItemForm.visibleThicknessMm||18)>(addItemForm.thicknessMm||18)+4?" Box":""}mm`, qty: Number(addItemForm.qty), params: { materialKey:addItemForm.materialKey||"MAT_BIRCH_PREF_18", lengthMm:+addItemForm.lengthMm||600, depthMm:+addItemForm.depthMm||300, thicknessMm:+addItemForm.thicknessMm||18, visibleThicknessMm:+addItemForm.visibleThicknessMm||18, faces:+addItemForm.faces||1, finishType:addItemForm.finishType||"lacquer", hasStain:!!addItemForm.hasStain } }
+      ? { type:"shelf", description: addItemForm.description || `${addItemForm.materialKey === "TIM_CUSTOM" ? (addItemForm.customSpeciesName || "Custom Timber") : (DB.solidTimber[addItemForm.materialKey]?.name || "")} Floating Shelf ${addItemForm.lengthMm}×${addItemForm.depthMm}${(addItemForm.visibleThicknessMm||18)>(addItemForm.thicknessMm||18)+4?" Box":""}mm`.replace(/^\s+/, ""), qty: Number(addItemForm.qty), params: { materialKey:addItemForm.materialKey||"MAT_BIRCH_PREF_18", lengthMm:+addItemForm.lengthMm||600, depthMm:+addItemForm.depthMm||300, thicknessMm:+addItemForm.thicknessMm||18, visibleThicknessMm:+addItemForm.visibleThicknessMm||18, faces:+addItemForm.faces||1, finishType:addItemForm.finishType||"lacquer", hasStain:!!addItemForm.hasStain, customSpeciesName:addItemForm.customSpeciesName||"", customPricePerM3:+addItemForm.customPricePerM3||0 } }
       : addItemForm.type === "moulding"
       ? { type:"moulding", description: addItemForm.description || `${DB.mouldings[addItemForm.mouldingKey]?.name||"Moulding"} — ${addItemForm.metres}m`, qty: Number(addItemForm.qty), params: { mouldingKey:addItemForm.mouldingKey||"MLD_SKR_MDF_95", metres:+addItemForm.metres||3 } }
       : addItemForm.type === "wrp_moulding"
@@ -3158,7 +3354,7 @@ function SABQuoteTool() {
               setRecalcFlash(count);
               setTimeout(() => setRecalcFlash(null), 2000);
             }} title="Re-run priceItem on every item in this quote — forces a refresh of cached prices used by Client View / PDF" style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background: recalcFlash != null ? "#6a8a4a" : "transparent", color: recalcFlash != null ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>{recalcFlash != null ? `✓ ${recalcFlash} repriced` : "↻ Recalc"}</button>
-            <button onClick={() => printQuote(activeQuote, clientViewMode, clientViewRoomFilter)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>↓ PDF {clientViewRoomFilter ? `(${clientViewRoomFilter})` : ""}</button>
+            <button onClick={() => printQuote(activeQuote, clientViewMode, clientViewRoomFilter)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>↓ PDF {clientViewRoomFilter ? `(${clientViewRoomFilter.size === 1 ? [...clientViewRoomFilter][0] : clientViewRoomFilter.size + " rooms"})` : ""}</button>
             <button onClick={() => { setView("quotes"); setActiveQuoteId(null); }} style={{ padding:"6px 14px", fontSize:11, background:"transparent", color:"#777777", border:"none", cursor:"pointer", fontFamily:"inherit" }}>← All</button>
             <div style={{ width:1, height:20, background:"#d8d3cc", margin:"0 4px" }} />
           </>)}
@@ -3267,6 +3463,11 @@ function SABQuoteTool() {
               <div onClick={toggleAlternativesMode} title="When ON, each room is treated as an alternative quote option — no grand total. Each room gets its own full project costs (survey, delivery, fitting, etc.)." style={{ marginTop:10, padding:"6px 8px", background: activeQuote.alternativesMode ? "rgba(200,169,110,0.12)" : "transparent", border:`1px solid ${activeQuote.alternativesMode ? "#c8a96e" : "#d8d3cc"}`, borderRadius:4, cursor:"pointer", display:"flex", alignItems:"center", gap:7 }}>
                 <div style={{ width:14, height:14, borderRadius:3, border:`1.5px solid ${activeQuote.alternativesMode ? "#c8a96e" : "#c8c3bc"}`, background: activeQuote.alternativesMode ? "#c8a96e" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, lineHeight:1, flexShrink:0 }}>{activeQuote.alternativesMode ? "✓" : ""}</div>
                 <div style={{ fontSize:9, color: activeQuote.alternativesMode ? "#c8a96e" : "#999", letterSpacing:"0.04em", lineHeight:1.3 }}>Rooms are alternatives<br/><span style={{ fontSize:8, color:"#999" }}>(don't total)</span></div>
+              </div>
+              {/* Continuous numbering — when ON, item numbers run 1,2,3… across all rooms; OFF restarts per room. */}
+              <div onClick={() => { const u = { ...quotes }; u[activeQuoteId].continuousNumbering = !u[activeQuoteId].continuousNumbering; saveQuotes(u); }} title="When ON, item numbers run continuously across all rooms. OFF: numbering restarts at 1 in each room." style={{ marginTop:6, padding:"6px 8px", background: activeQuote.continuousNumbering ? "rgba(200,169,110,0.12)" : "transparent", border:`1px solid ${activeQuote.continuousNumbering ? "#c8a96e" : "#d8d3cc"}`, borderRadius:4, cursor:"pointer", display:"flex", alignItems:"center", gap:7 }}>
+                <div style={{ width:14, height:14, borderRadius:3, border:`1.5px solid ${activeQuote.continuousNumbering ? "#c8a96e" : "#c8c3bc"}`, background: activeQuote.continuousNumbering ? "#c8a96e" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, lineHeight:1, flexShrink:0 }}>{activeQuote.continuousNumbering ? "✓" : ""}</div>
+                <div style={{ fontSize:9, color: activeQuote.continuousNumbering ? "#c8a96e" : "#999", letterSpacing:"0.04em", lineHeight:1.3 }}>Continuous numbering<br/><span style={{ fontSize:8, color:"#999" }}>(across rooms)</span></div>
               </div>
             </div>
             <div style={{ padding:"14px 15px 6px", fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase" }}>Rooms</div>
@@ -3405,6 +3606,33 @@ function SABQuoteTool() {
                             {(DOOR_PROFILES[rd.doorProfile]?.finishes||["painted"]).map(f=><option key={f} value={f}>{DOOR_FINISHES[f]}</option>)}
                           </select>
                         </div>
+                        {rd.doorProfile === "shaker_timber" && (
+                          <div style={{ gridColumn:"1 / -1", padding:"6px 8px", background:"#fbfaf8", border:"1px solid #e0d8cc", borderRadius:4 }}>
+                            <div style={{ fontSize:8, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:4 }}>Solid Timber Door</div>
+                            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:6 }}>
+                              <div><label style={miniLbl}>Species</label>
+                                <select value={rd.timberSpeciesKey || "TIM_OAK"} onChange={e => upd("timberSpeciesKey", e.target.value)} style={miniSel}>
+                                  {Object.entries(DB.solidTimber).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
+                                  <option value="TIM_CUSTOM">Custom…</option>
+                                </select>
+                              </div>
+                              <div><label style={miniLbl}>Stile (mm)</label><input type="number" min="40" step="5" value={rd.frameStileWidthMm ?? 70} onChange={e => upd("frameStileWidthMm", e.target.value === "" ? 0 : +e.target.value)} style={miniSel} /></div>
+                              <div><label style={miniLbl}>Thickness (mm)</label><input type="number" min="15" step="2" value={rd.doorFrameThicknessMm ?? 22} onChange={e => upd("doorFrameThicknessMm", e.target.value === "" ? 0 : +e.target.value)} style={miniSel} /></div>
+                              <div><label style={miniLbl}>Panel mat (opt)</label>
+                                <select value={rd.panelMaterialKey || ""} onChange={e => upd("panelMaterialKey", e.target.value)} style={miniSel}>
+                                  <option value="">Auto</option>
+                                  {Object.entries(DB.materials).filter(([k])=>!k.startsWith("MAT_BACK")).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
+                                </select>
+                              </div>
+                            </div>
+                            {rd.timberSpeciesKey === "TIM_CUSTOM" && (
+                              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginTop:4 }}>
+                                <input type="text" placeholder="Species name" value={rd.timberCustomSpeciesName || ""} onChange={e => upd("timberCustomSpeciesName", e.target.value)} style={miniSel} />
+                                <input type="number" min="0" step="50" placeholder="£/m³" value={rd.timberCustomPricePerM3 || ""} onChange={e => upd("timberCustomPricePerM3", e.target.value === "" ? 0 : +e.target.value)} style={miniSel} />
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <div>
                           <label style={miniLbl}>Hinge</label>
                           <select value={rd.hingeKey} onChange={e => upd("hingeKey", e.target.value)} style={miniSel}>
@@ -3441,14 +3669,34 @@ function SABQuoteTool() {
                         <div>
                           <label style={miniLbl}>Face Frame</label>
                           <select value={rd.frameKey||"FRAME_NONE"} onChange={e => upd("frameKey", e.target.value)} style={miniSel}>
-                            {Object.entries(FRAME_MATERIALS).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
+                            {Object.entries(FRAME_MATERIALS).filter(([,v])=>!v.legacy || v.legacy && rd.frameKey === Object.entries(FRAME_MATERIALS).find(([k])=>k===rd.frameKey)?.[0]).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
                           </select>
+                          {FRAME_MATERIALS[rd.frameKey]?.pricingMode === "volume" && (
+                            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginTop:4 }}>
+                              <input type="number" min="10" step="2" placeholder="Thickness mm" title="Frame thickness (mm)" value={rd.frameThicknessMm ?? DEFAULT_ROOM_SETTINGS.frameThicknessMm} onChange={e => upd("frameThicknessMm", e.target.value === "" ? 0 : Math.max(0, +e.target.value))} style={{ ...miniSel, padding:"3px 4px" }} />
+                              <input type="number" min="10" step="2" placeholder="Member w mm" title="Stile/rail width (mm)" value={rd.frameMemberWidthMm ?? DEFAULT_ROOM_SETTINGS.frameMemberWidthMm} onChange={e => upd("frameMemberWidthMm", e.target.value === "" ? 0 : Math.max(0, +e.target.value))} style={{ ...miniSel, padding:"3px 4px" }} />
+                            </div>
+                          )}
+                          {rd.frameKey === "FRAME_TIM_CUSTOM" && (
+                            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginTop:4 }}>
+                              <input type="text" placeholder="Species" value={rd.frameCustomSpeciesName || ""} onChange={e => upd("frameCustomSpeciesName", e.target.value)} style={{ ...miniSel, padding:"3px 4px" }} />
+                              <input type="number" min="0" step="50" placeholder="£/m³" value={rd.frameCustomPricePerM3 || ""} onChange={e => upd("frameCustomPricePerM3", e.target.value === "" ? 0 : +e.target.value)} style={{ ...miniSel, padding:"3px 4px" }} />
+                            </div>
+                          )}
                         </div>
                         <div>
                           <label style={miniLbl}>Edgebanding</label>
                           <select value={rd.edgebandKey||"EDGE_OAK_05"} onChange={e => upd("edgebandKey", e.target.value)} style={miniSel}>
                             {Object.entries(EDGEBAND_TYPES).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
                           </select>
+                        </div>
+                        <div>
+                          <label style={miniLbl}>Plinth (mm)</label>
+                          <input type="number" min="0" step="5" value={rd.plinthMm ?? DEFAULT_ROOM_SETTINGS.plinthMm} onChange={e => upd("plinthMm", e.target.value === "" ? 0 : Math.max(0, +e.target.value))} style={miniSel} />
+                        </div>
+                        <div>
+                          <label style={miniLbl}>Worktop (mm)</label>
+                          <input type="number" min="0" step="5" value={rd.worktopMm ?? DEFAULT_ROOM_SETTINGS.worktopMm} onChange={e => upd("worktopMm", e.target.value === "" ? 0 : Math.max(0, +e.target.value))} style={miniSel} />
                         </div>
                       </div>
                       <div style={{ marginTop:10, fontSize:9, color:"#999999" }}>
@@ -3466,11 +3714,12 @@ function SABQuoteTool() {
 
                 {(activeQuote.rooms[activeRoom]?.items || []).length === 0 ? (
                   <div style={{ padding:"40px 0", color:"#d8d3cc", fontSize:12, textAlign:"center" }}>No items yet</div>
-                ) : (
+                ) : (() => { const itemNumbers = computeItemNumbers(activeQuote)[activeRoom] || {}; return (
                 <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
                   <table className="sab-items-table" style={{ width:"100%", borderCollapse:"collapse" }}>
                     <thead>
                       <tr style={{ borderBottom:"1px solid #d8d3cc" }}>
+                        <th style={{ padding:"7px 6px", textAlign:"center", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, whiteSpace:"nowrap" }}>#</th>
                         <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, width:"100%" }}>Item</th>
                         <th style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, whiteSpace:"nowrap" }}>Qty</th>
                         <th className="sab-col-whd" style={{ padding:"7px 10px", textAlign:"left", fontSize:9, letterSpacing:"0.1em", color:"#999999", textTransform:"uppercase", fontWeight:400, whiteSpace:"nowrap" }}>W</th>
@@ -3485,6 +3734,9 @@ function SABQuoteTool() {
                       {activeQuote.rooms[activeRoom].items.map((item, idx) => (
                         <>
                           <tr key={idx} onClick={() => setExpandedItem(expandedItem===idx?null:idx)} style={{ borderBottom:"1px solid #d8d3cc", cursor:"pointer" }} onMouseEnter={e => e.currentTarget.style.background="#f0eeeb"} onMouseLeave={e => e.currentTarget.style.background="transparent"}>
+                            <td style={{ padding:"7px 6px", textAlign:"center", whiteSpace:"nowrap" }}>
+                              <button onClick={e => { e.stopPropagation(); const u = { ...quotes }; const it = u[activeQuoteId].rooms[activeRoom].items[idx]; it.excludeFromNumbering = !it.excludeFromNumbering; saveQuotes(u); }} title={itemNumbers[idx] === null ? "Excluded — click to include in numbering" : "Click to exclude from numbering"} style={{ background: itemNumbers[idx] === null ? "transparent" : "#f0eeeb", border:"1px solid #d8d3cc", borderRadius:3, color: itemNumbers[idx] === null ? "#c8c3bc" : "#777777", cursor:"pointer", fontSize:11, padding:"2px 6px", minWidth:24, fontFamily:"inherit", lineHeight:1 }}>{itemNumbers[idx] === null ? "—" : itemNumbers[idx]}</button>
+                            </td>
                             <td style={{ padding:"10px", fontSize:12, color:"#1a1a1a" }}>
                               <input value={item.description} onClick={e => e.stopPropagation()} onChange={e => {
                                 const updated = { ...quotes };
@@ -3499,6 +3751,10 @@ function SABQuoteTool() {
                             <td className="sab-col-cost" style={{ padding:"10px", fontSize:11, color:"#999999" }}>{fmt(item.pricing?.totalCost)}</td>
                             <td style={{ padding:"10px", fontSize:13, color:"#c8a96e", fontWeight:500 }}>{fmt(item.pricing?.totalSellExVAT)}</td>
                             <td style={{ padding:"10px", whiteSpace:"nowrap" }}>
+                              {(() => { const total = activeQuote.rooms[activeRoom].items.length; const atTop = idx === 0; const atBottom = idx === total - 1; const arrowStyle = (disabled) => ({ background:"transparent", border:"1px solid #d8d3cc", borderRadius:3, color: disabled ? "#d8d3cc" : "#777777", cursor: disabled ? "not-allowed" : "pointer", fontSize:11, padding:"2px 6px", fontFamily:"inherit", marginRight:3, lineHeight:1 }); return (<>
+                                <button onClick={e => { e.stopPropagation(); moveItem(activeRoom, idx, -1); }} disabled={atTop} style={arrowStyle(atTop)} title="Move up">↑</button>
+                                <button onClick={e => { e.stopPropagation(); moveItem(activeRoom, idx, 1); }} disabled={atBottom} style={arrowStyle(atBottom)} title="Move down">↓</button>
+                              </>); })()}
                               <button onClick={e => { e.stopPropagation(); editItem(activeRoom, idx); }} style={{ background:"transparent", border:"1px solid #d8d3cc", borderRadius:3, color:"#777777", cursor:"pointer", fontSize:9, padding:"3px 7px", fontFamily:"inherit", letterSpacing:"0.06em", marginRight:5 }}>Edit</button>
                               <button onClick={e => { e.stopPropagation(); duplicateItem(activeRoom, idx); }} style={{ background:"transparent", border:"1px solid #d8d3cc", borderRadius:3, color:"#777777", cursor:"pointer", fontSize:9, padding:"3px 7px", fontFamily:"inherit", letterSpacing:"0.06em", marginRight:5 }} title="Duplicate item">Dup</button>
                               <button onClick={e => { e.stopPropagation(); removeItem(activeRoom, idx); }} style={{ background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:15 }}>×</button>
@@ -3506,7 +3762,7 @@ function SABQuoteTool() {
                           </tr>
                           {expandedItem === idx && item.type === "wrp_moulding" && (
                             <tr key={`${idx}-wrp-detail`}>
-                              <td colSpan={8} style={{ padding:"12px 14px 14px", background:"#f0eeeb" }}>
+                              <td colSpan={9} style={{ padding:"12px 14px 14px", background:"#f0eeeb" }}>
                                 <div style={{ display:"flex", gap:14, alignItems:"flex-start" }}>
                                   {item.params?.image_url && (
                                     <a href={item.params.product_url} target="_blank" rel="noopener noreferrer" style={{ flexShrink:0 }}>
@@ -3569,7 +3825,7 @@ function SABQuoteTool() {
                           )}
                           {expandedItem === idx && item.type !== "wrp_moulding" && item.pricing?.breakdown && (
                             <tr key={`${idx}-detail`}>
-                              <td colSpan={8} style={{ padding:"10px 14px 14px", background:"#f0eeeb" }}>
+                              <td colSpan={9} style={{ padding:"10px 14px 14px", background:"#f0eeeb" }}>
                                 <div style={{ fontSize:9, letterSpacing:"0.12em", color:"#c8a96e", textTransform:"uppercase", marginBottom:8 }}>Cost Breakdown</div>
                                 <div style={{ display:"flex", gap:24, flexWrap:"wrap" }}>
                                   {Object.entries(item.pricing.breakdown).filter(([k,v]) => typeof v === 'number' && v > 0).map(([k,v]) => (
@@ -3583,6 +3839,28 @@ function SABQuoteTool() {
                                     <div style={{ fontSize:11, color:"#c8a96e" }}>{fmt(item.pricing.sellPerUnit)}</div>
                                   </div>
                                 </div>
+                                {/* Fixed-price toggle — when on, the type-specific pricer is skipped and
+                                    the item's sell is just cost × (1 + markup/100). Also excludes the item
+                                    from project-overhead allocation and consumables-per-item count. */}
+                                <div style={{ marginTop:14, paddingTop:12, borderTop:"1px dashed #d8d3cc" }}>
+                                  <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:11, color: item.fixedPrice ? "#c8a96e" : "#777777" }}>
+                                    <input type="checkbox" checked={!!item.fixedPrice} onChange={e => { const u = { ...quotes }; const it = u[activeQuoteId].rooms[activeRoom].items[idx]; it.fixedPrice = e.target.checked; if (it.fixedPrice && !it.fixedCostExVAT && it.pricing?.totalCost) { it.fixedCostExVAT = +(it.pricing.totalCost / (it.qty || 1)).toFixed(2); } it.pricing = priceItem(it); saveQuotes(u); }} style={{ accentColor:"#c8a96e" }} />
+                                    Fixed price — exclude from margin & shared costs
+                                  </label>
+                                  {item.fixedPrice && (
+                                    <div style={{ display:"flex", gap:14, marginTop:8, alignItems:"flex-end" }}>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:3 }}>Cost ex VAT (each)</div>
+                                        <input type="number" min="0" step="1" value={item.fixedCostExVAT || ""} onChange={e => { const u = { ...quotes }; const it = u[activeQuoteId].rooms[activeRoom].items[idx]; it.fixedCostExVAT = e.target.value === "" ? 0 : +e.target.value; it.pricing = priceItem(it); saveQuotes(u); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:13, fontFamily:"inherit", width:100, padding:"2px 0", outline:"none" }} />
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize:9, color:"#999999", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:3 }}>Markup %</div>
+                                        <input type="number" min="0" step="1" value={item.fixedMarkupPct ?? ""} onChange={e => { const u = { ...quotes }; const it = u[activeQuoteId].rooms[activeRoom].items[idx]; it.fixedMarkupPct = e.target.value === "" ? 0 : +e.target.value; it.pricing = priceItem(it); saveQuotes(u); }} placeholder="0" style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:13, fontFamily:"inherit", width:60, padding:"2px 0", outline:"none" }} />
+                                      </div>
+                                      <div style={{ fontSize:10, color:"#777777" }}>→ Sell each <span style={{ color:"#c8a96e", fontSize:12 }}>{fmt(item.pricing?.sellPerUnit || 0)}</span> · VAT still applies</div>
+                                    </div>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           )}
@@ -3591,7 +3869,7 @@ function SABQuoteTool() {
                     </tbody>
                     <tfoot>
                       <tr style={{ borderTop:"1px solid #d8d3cc" }}>
-                        <td colSpan={5} style={{ padding:"10px", fontSize:9, color:"#999999", letterSpacing:"0.08em" }}>MANUFACTURING SUBTOTAL</td>
+                        <td colSpan={6} style={{ padding:"10px", fontSize:9, color:"#999999", letterSpacing:"0.08em" }}>MANUFACTURING SUBTOTAL</td>
                         <td style={{ padding:"10px", fontSize:11, color:"#777777" }}>{fmt(activeQuote.rooms[activeRoom].items.reduce((s,i) => s+(i.pricing?.totalCost||0), 0))}</td>
                         <td style={{ padding:"10px", fontSize:15, color:"#c8a96e", fontWeight:600 }}>{fmt(activeQuote.rooms[activeRoom].items.reduce((s,i) => s+(i.pricing?.totalSellExVAT||0), 0))}</td>
                         <td />
@@ -3599,7 +3877,7 @@ function SABQuoteTool() {
                     </tfoot>
                   </table>
                 </div>
-                )}
+                ); })()}
 
                 {/* Design time row */}
                 <div style={{ marginTop:16, padding:"12px 14px", background:"#f5f5f5", borderRadius:6, border:"1px solid #d8d3cc" }}>
@@ -3781,7 +4059,7 @@ function SABQuoteTool() {
                 { key:"doorFinish",        label:"Door Finish",
                   options: Object.entries(DOOR_FINISHES).map(([k,v]) => [k, v]) },
                 { key:"frameKey",          label:"Face Frame",
-                  options: Object.entries(FRAME_MATERIALS).map(([k,v]) => [k, v.name]) },
+                  options: Object.entries(FRAME_MATERIALS).filter(([,v])=>!v.legacy).map(([k,v]) => [k, v.name]) },
                 { key:"hingeKey",          label:"Hinge",
                   options: Object.entries(DB.hardware.hinges).map(([k,v]) => [k, v.name]) },
                 { key:"handleKey",         label:"Handle",
@@ -4020,10 +4298,22 @@ function SABQuoteTool() {
                     <label style={{ fontSize:11, color:"#555555", display:"block", marginBottom:3 }}>Face Frame</label>
                     <select value={addItemForm.frameKey||"FRAME_NONE"} onChange={e=>updateForm("frameKey",e.target.value)}
                       style={{ ...sel, width:"100%" }}>
-                      {Object.entries(FRAME_MATERIALS).map(([k,v])=>(
+                      {Object.entries(FRAME_MATERIALS).filter(([k,v])=>!v.legacy || k === addItemForm.frameKey).map(([k,v])=>(
                         <option key={k} value={k}>{v.name}</option>
                       ))}
                     </select>
+                    {FRAME_MATERIALS[addItemForm.frameKey]?.pricingMode === "volume" && (
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginTop:6 }}>
+                        <div><label style={lbl}>Thickness (mm)</label><input type="number" min="10" step="2" value={addItemForm.frameThicknessMm ?? 22} onChange={e=>updateForm("frameThicknessMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                        <div><label style={lbl}>Member width (mm)</label><input type="number" min="10" step="2" value={addItemForm.frameMemberWidthMm ?? 30} onChange={e=>updateForm("frameMemberWidthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      </div>
+                    )}
+                    {addItemForm.frameKey === "FRAME_TIM_CUSTOM" && (
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginTop:6, padding:"8px 10px", background:"#fbfaf8", border:"1px solid #e0d8cc", borderRadius:4 }}>
+                        <div><label style={lbl}>Species name</label><input type="text" value={addItemForm.frameCustomSpeciesName || ""} onChange={e=>updateForm("frameCustomSpeciesName", e.target.value)} placeholder="e.g. Cherry" style={inp} /></div>
+                        <div><label style={lbl}>£ per m³</label><input type="number" min="0" step="50" value={addItemForm.frameCustomPricePerM3 || ""} onChange={e=>updateForm("frameCustomPricePerM3", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      </div>
+                    )}
                     {addItemForm.frameKey && addItemForm.frameKey!=="FRAME_NONE" && (
                       <div style={{fontSize:10,color:"#c8a96e",marginTop:2}}>Butt hinges used · frame covers front edges</div>
                     )}
@@ -4077,6 +4367,38 @@ function SABQuoteTool() {
                         </select>
                       </div>
                     </div>
+                    {/* Solid timber shaker controls — only shown when shaker_timber profile is picked */}
+                    {addItemForm.doorProfile === "shaker_timber" && (
+                      <div style={{ padding:"10px 12px", background:"#fbfaf8", border:"1px solid #e0d8cc", borderRadius:4, marginBottom:8 }}>
+                        <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Solid Timber Frame</div>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:6 }}>
+                          <div>
+                            <label style={lbl}>Species</label>
+                            <select value={addItemForm.timberSpeciesKey || "TIM_OAK"} onChange={e => updateForm("timberSpeciesKey", e.target.value)} style={{ ...sel, width:"100%" }}>
+                              {Object.entries(DB.solidTimber).map(([k,v]) => <option key={k} value={k}>{v.name} — £{v.effectivePerM3}/m³</option>)}
+                              <option value="TIM_CUSTOM">Custom species (specify…)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={lbl}>Panel material (optional)</label>
+                            <select value={addItemForm.panelMaterialKey || ""} onChange={e => updateForm("panelMaterialKey", e.target.value)} style={{ ...sel, width:"100%" }}>
+                              <option value="">Auto (match finish + species)</option>
+                              {Object.entries(DB.materials).filter(([k])=>!k.startsWith("MAT_BACK")).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        {addItemForm.timberSpeciesKey === "TIM_CUSTOM" && (
+                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:6 }}>
+                            <div><label style={lbl}>Species name</label><input type="text" value={addItemForm.timberCustomSpeciesName || ""} onChange={e => updateForm("timberCustomSpeciesName", e.target.value)} placeholder="e.g. Cherry" style={inp} /></div>
+                            <div><label style={lbl}>£ per m³</label><input type="number" min="0" step="50" value={addItemForm.timberCustomPricePerM3 || ""} onChange={e => updateForm("timberCustomPricePerM3", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                          </div>
+                        )}
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                          <div><label style={lbl}>Stile/rail width (mm)</label><input type="number" min="40" step="5" value={addItemForm.frameStileWidthMm ?? 70} onChange={e => updateForm("frameStileWidthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                          <div><label style={lbl}>Frame thickness (mm)</label><input type="number" min="15" step="2" value={addItemForm.doorFrameThicknessMm ?? 22} onChange={e => updateForm("doorFrameThicknessMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                        </div>
+                      </div>
+                    )}
                     {/* Stain option — only available with lacquer finish */}
                     {(addItemForm.doorFinish === "veneered" || addItemForm.doorFinish === "custom_ven") && (
                       <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:11, color: addItemForm.hasStain ? "#c8a96e" : "#777777", padding:"6px 10px", background: addItemForm.hasStain ? "#f0eeeb" : "transparent", border:`1px solid ${addItemForm.hasStain?"#c8a96e":"#d8d3cc"}`, borderRadius:4 }}>
@@ -4085,7 +4407,7 @@ function SABQuoteTool() {
                       </label>
                     )}
                     <div style={{ fontSize:9, color:"#999999", marginTop:4 }}>
-                      {DB.doorTypes[addItemForm.doorType] ? `→ ${DB.doorTypes[addItemForm.doorType].name} · ${DB.doorTypes[addItemForm.doorType].finishType === "paint" ? "Primer + topcoats" : "Clear lacquer"} finish` : ""}
+                      {DB.doorTypes[addItemForm.doorType] ? `→ ${DB.doorTypes[addItemForm.doorType].name} · ${DB.doorTypes[addItemForm.doorType].finishType === "paint" ? "Primer + topcoats" : DB.doorTypes[addItemForm.doorType].finishType === "oil" ? "Hardwax oil" : "Clear lacquer"} finish` : ""}
                       {DB.doorTypes[addItemForm.doorType]?.hasQuirk ? " · Quirk caulking included" : ""}
                     </div>
                   </div>
@@ -4397,11 +4719,23 @@ function SABQuoteTool() {
                   <div style={{ marginBottom:14 }}>
                     <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Material &amp; Dimensions</div>
                     <div style={{ marginBottom:8 }}>
-                      <label style={lbl}>Sheet Material</label>
+                      <label style={lbl}>Material</label>
                       <select value={addItemForm.materialKey||"MAT_BIRCH_PREF_18"} onChange={e=>updateForm("materialKey",e.target.value)} style={{ ...sel, width:"100%" }}>
-                        {Object.entries(DB.materials).filter(([k])=>!k.startsWith("MAT_BACK")).map(([k,v])=><option key={k} value={k}>{v.name} — {fmt(v.costPerM2)}/m²</option>)}
+                        <optgroup label="Sheet Material">
+                          {Object.entries(DB.materials).filter(([k])=>!k.startsWith("MAT_BACK")).map(([k,v])=><option key={k} value={k}>{v.name} — {fmt(v.costPerM2)}/m²</option>)}
+                        </optgroup>
+                        <optgroup label="Solid Timber (volume-priced)">
+                          {Object.entries(DB.solidTimber).map(([k,v])=><option key={k} value={k}>{v.name} — £{v.effectivePerM3}/m³</option>)}
+                          <option value="TIM_CUSTOM">Custom species (specify…)</option>
+                        </optgroup>
                       </select>
                     </div>
+                    {addItemForm.materialKey === "TIM_CUSTOM" && (
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8, padding:"8px 10px", background:"#fbfaf8", border:"1px solid #e0d8cc", borderRadius:4 }}>
+                        <div><label style={lbl}>Species name</label><input type="text" value={addItemForm.customSpeciesName || ""} onChange={e => updateForm("customSpeciesName", e.target.value)} placeholder="e.g. Cherry" style={inp} /></div>
+                        <div><label style={lbl}>£ per m³</label><input type="number" min="0" step="50" value={addItemForm.customPricePerM3 || ""} onChange={e => updateForm("customPricePerM3", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                      </div>
+                    )}
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
                       <div><label style={lbl}>Length (mm)</label><input type="number" value={addItemForm.lengthMm || ""} onChange={e => updateForm("lengthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
                       <div><label style={lbl}>Depth (mm)</label><input type="number" value={addItemForm.depthMm || ""} onChange={e => updateForm("depthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
@@ -4884,7 +5218,9 @@ function SABQuoteTool() {
         const altMode = !!activeQuote.alternativesMode;
         const dist = distributeProjectCosts(activeQuote);
         const t = dist.totals;
-        const filteredRooms = dist.rooms.filter(({ roomName }) => clientViewRoomFilter === null || clientViewRoomFilter === roomName);
+        const itemNumbers = computeItemNumbers(activeQuote);
+        const numPrefix = (roomName, idx) => itemNumbers[roomName]?.[idx] != null ? `${itemNumbers[roomName][idx]}. ` : "";
+        const filteredRooms = dist.rooms.filter(({ roomName }) => clientViewRoomFilter === null || clientViewRoomFilter.has(roomName));
         const filteredSubtotal = filteredRooms.reduce((s, r) => s + r.items.reduce((rs, i) => rs + (i.bakedSellExVAT || 0), 0), 0);
         const filteredVAT = filteredSubtotal * (DB.settings.vat || 0.2);
         const filteredTotal = filteredSubtotal + filteredVAT;
@@ -4906,43 +5242,93 @@ function SABQuoteTool() {
               </div>
             </div>
 
-            {/* Cabinetry Specification */}
+            {/* Cabinetry Specification — values are editable inline in client view.
+                Edits persist as quote.spec[<key>] and override the auto-derived value
+                in both the on-screen view and the PDF. A row whose override matches
+                the derived value (or is empty) falls back to derived. The reset link
+                clears the override and reverts to the derived value. */}
             {(() => {
               const derived = deriveSpec(activeQuote);
               const spec = activeQuote.spec || {};
-              const rows = [
-                ["Cabinet Material", spec.carcassMaterial || derived.carcassMaterial],
-                ["Frame", spec.frame || derived.frame],
-                ["Door Style", spec.doorStyle || derived.doorStyle],
-                ["Door Finish", spec.doorFinish || derived.doorFinish],
-                ["Drawer System", spec.drawerSystem || derived.drawerSystem],
-                ["Hinge", spec.hinge || derived.hinge],
-                ["Hardware", spec.hardware || derived.hardware],
+              const fields = [
+                ["Cabinet Material", "carcassMaterial"],
+                ["Frame",            "frame"],
+                ["Door Style",       "doorStyle"],
+                ["Door Finish",      "doorFinish"],
+                ["Drawer System",    "drawerSystem"],
+                ["Hinge",            "hinge"],
+                ["Hardware",         "hardware"],
               ];
+              const setSpec = (key, val) => {
+                const u = { ...quotes };
+                const q = u[activeQuoteId];
+                const newSpec = { ...(q.spec || {}) };
+                if (val === "" || val === derived[key]) delete newSpec[key];
+                else newSpec[key] = val;
+                q.spec = newSpec;
+                saveQuotes(u);
+              };
+              const resetAll = () => {
+                const u = { ...quotes };
+                delete u[activeQuoteId].spec;
+                saveQuotes(u);
+              };
+              const anyOverride = fields.some(([,k]) => spec[k] != null);
               return (
                 <div className="sab-spec-block" style={{ marginBottom:28, padding:"18px 22px", background:"#f9f8f6", borderRadius:6, border:"1px solid #d8d3cc" }}>
-                  <div style={{ fontSize:9, letterSpacing:"0.2em", color:"#c8a96e", textTransform:"uppercase", marginBottom:12, paddingBottom:6, borderBottom:"1px solid #e0d8cc" }}>Cabinetry Specification</div>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, paddingBottom:6, borderBottom:"1px solid #e0d8cc" }}>
+                    <div style={{ fontSize:9, letterSpacing:"0.2em", color:"#c8a96e", textTransform:"uppercase" }}>Cabinetry Specification</div>
+                    {anyOverride && (
+                      <button onClick={resetAll} style={{ background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", fontFamily:"inherit" }} title="Revert every row to the auto-derived value">↺ Reset all</button>
+                    )}
+                  </div>
                   <div style={{ display:"grid", gridTemplateColumns:"140px 1fr", gap:"6px 16px" }}>
-                    {rows.map(([label, value]) => (
-                      <React.Fragment key={label}>
-                        <div style={{ fontSize:10, color:"#c8a96e", letterSpacing:"0.06em" }}>{label}</div>
-                        <div style={{ fontSize:11, color:"#1a1a1a" }}>{value}</div>
-                      </React.Fragment>
-                    ))}
+                    {fields.map(([label, key]) => {
+                      const isOverride = spec[key] != null;
+                      const value = isOverride ? spec[key] : derived[key];
+                      return (
+                        <React.Fragment key={key}>
+                          <div style={{ fontSize:10, color:"#c8a96e", letterSpacing:"0.06em", paddingTop:3 }}>{label}</div>
+                          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                            <input type="text" value={value || ""} onChange={e => setSpec(key, e.target.value)} style={{ flex:1, background:"transparent", border:"none", borderBottom:`1px solid ${isOverride ? "#c8a96e" : "transparent"}`, color:"#1a1a1a", fontSize:11, fontFamily:"inherit", padding:"2px 0", outline:"none" }} onFocus={e=>{ if(!isOverride) e.target.style.borderBottomColor="#d8d3cc"; }} onBlur={e=>{ if(!isOverride) e.target.style.borderBottomColor="transparent"; }} />
+                            {isOverride && (
+                              <button onClick={() => setSpec(key, "")} title="Revert to auto-derived value" style={{ background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:11, fontFamily:"inherit", padding:"2px 4px" }}>↺</button>
+                            )}
+                          </div>
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
                 </div>
               );
             })()}
 
-            {/* Room filter + View toggle */}
-            {dist.rooms.length > 1 && (
-              <div style={{ display:"flex", gap:4, marginBottom:12, flexWrap:"wrap" }}>
-                <button onClick={() => setClientViewRoomFilter(null)} style={{ padding:"4px 12px", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", background: clientViewRoomFilter===null ? "#1a1a1a" : "transparent", color: clientViewRoomFilter===null ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>All Rooms</button>
-                {dist.rooms.map(({ roomName }) => (
-                  <button key={roomName} onClick={() => setClientViewRoomFilter(roomName)} style={{ padding:"4px 12px", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", background: clientViewRoomFilter===roomName ? "#1a1a1a" : "transparent", color: clientViewRoomFilter===roomName ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{roomName}</button>
-                ))}
-              </div>
-            )}
+            {/* Room filter — multi-select chips. Hidden in alt mode since each room
+                is its own self-contained option there. Click a chip to toggle the
+                room in/out. "Select all" / "Clear" reset the selection. */}
+            {!altMode && dist.rooms.length > 1 && (() => {
+              const allNames = dist.rooms.map(r => r.roomName);
+              const isIncluded = (rn) => clientViewRoomFilter === null || clientViewRoomFilter.has(rn);
+              const toggleRoom = (rn) => {
+                const current = clientViewRoomFilter === null ? new Set(allNames) : new Set(clientViewRoomFilter);
+                if (current.has(rn)) current.delete(rn); else current.add(rn);
+                // If equal to "all rooms", collapse back to null for the canonical state.
+                if (current.size === allNames.length && allNames.every(n => current.has(n))) setClientViewRoomFilter(null);
+                else setClientViewRoomFilter(current);
+              };
+              return (
+                <div style={{ display:"flex", gap:4, marginBottom:12, flexWrap:"wrap", alignItems:"center" }}>
+                  {dist.rooms.map(({ roomName }) => {
+                    const on = isIncluded(roomName);
+                    return (
+                      <button key={roomName} onClick={() => toggleRoom(roomName)} style={{ padding:"4px 12px", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", background: on ? "#1a1a1a" : "transparent", color: on ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{roomName}</button>
+                    );
+                  })}
+                  <button onClick={() => setClientViewRoomFilter(null)} style={{ padding:"4px 10px", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", background:"transparent", color:"#c8a96e", border:"1px dashed #c8a96e", borderRadius:3, cursor:"pointer", fontFamily:"inherit", marginLeft:8 }} title="Include every room">Select all</button>
+                  <button onClick={() => setClientViewRoomFilter(new Set())} style={{ padding:"4px 10px", fontSize:9, letterSpacing:"0.08em", textTransform:"uppercase", background:"transparent", color:"#999", border:"1px dashed #c8c3bc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }} title="Clear all rooms">Clear</button>
+                </div>
+              );
+            })()}
             <div style={{ display:"flex", gap:2, marginBottom:28 }}>
               {[["itemised","Itemised"],["total","Total Only"]].map(([k,l]) => (
                 <button key={k} onClick={() => setClientViewMode(k)} style={{ padding:"6px 16px", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", background: clientViewMode===k ? "#c8a96e" : "transparent", color: clientViewMode===k ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
@@ -4965,9 +5351,11 @@ function SABQuoteTool() {
                 // delivery, PM, consumables, contingency, warranty + design.
                 // Items then sum exactly to rt.totalExVAT.
                 const overhead = rt.designFee + rt.survey + rt.install + rt.delivery + rt.pm + rt.consumables + rt.contingency + rt.warranty;
+                const altNonFixedSell = items.reduce((s, x) => s + (x.fixedPrice ? 0 : (x.pricing?.totalSellExVAT || 0)), 0);
                 const bakedItems = items.map(item => {
                   const itemSell = item.pricing?.totalSellExVAT || 0;
-                  const share = rt.mfgSellExVAT > 0 ? itemSell / rt.mfgSellExVAT : 0;
+                  if (item.fixedPrice) return { ...item, bakedSellExVAT: itemSell };
+                  const share = altNonFixedSell > 0 ? itemSell / altNonFixedSell : 0;
                   return { ...item, bakedSellExVAT: itemSell + overhead * share };
                 });
                 return (
@@ -4977,7 +5365,7 @@ function SABQuoteTool() {
                   {bakedItems.map((item, i) => (
                     <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"8px 0", borderBottom:"1px solid #e8e3dc", fontSize:12 }}>
                       <div>
-                        <span style={{ color:"#333333" }}>{item.qty > 1 ? item.qty + "× " : ""}{item.description}</span>
+                        <span style={{ color:"#333333" }}>{numPrefix(roomName, i)}{item.qty > 1 ? item.qty + "× " : ""}{item.description}</span>
                         {item.params?.widthMm && <span style={{ fontSize:10, color:"#999999", marginLeft:10 }}>{item.params.widthMm}×{item.params.heightMm}{item.params.depthMm ? "×" + item.params.depthMm : ""} mm</span>}
                       </div>
                       {clientViewMode === "itemised" && <span className="sab-item-price" style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.bakedSellExVAT)}</span>}
@@ -5000,7 +5388,7 @@ function SABQuoteTool() {
                 {items.map((item, i) => (
                   <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"9px 0", borderBottom:"1px solid #d8d3cc", fontSize:12 }}>
                     <div>
-                      <span style={{ color:"#333333" }}>{item.qty > 1 ? item.qty + "× " : ""}{item.description}</span>
+                      <span style={{ color:"#333333" }}>{numPrefix(roomName, i)}{item.qty > 1 ? item.qty + "× " : ""}{item.description}</span>
                       {item.params?.widthMm && <span style={{ fontSize:10, color:"#999999", marginLeft:10 }}>{item.params.widthMm}×{item.params.heightMm}{item.params.depthMm ? "×" + item.params.depthMm : ""} mm</span>}
                     </div>
                     {clientViewMode === "itemised" && <span className="sab-item-price" style={{ color:"#1a1a1a", marginLeft:20 }}>{fmt(item.bakedSellExVAT)}</span>}
