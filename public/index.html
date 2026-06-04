@@ -880,6 +880,7 @@ function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, han
   const finishType       = DB.doorTypes[doorType]?.finishType || "paint";
   const sprayResult      = sprayFinish ? calcSprayFinishCost({ doorType, widthMm, heightMm, qty: 1, finishType, hasStain }) : null;
   const sprayFinishCost  = sprayResult ? sprayResult.costPerDoor : 0;
+  const finishHrs        = sprayResult ? sprayResult.breakdown.totalHrs : 0; // spray finishing labour, per door
   const totalCostPerDoor = materialCost + labourCost + hingeCost + handleCost + sprayFinishCost;
   const sellExVAT = totalCostPerDoor * DB.settings.margin;
   return {
@@ -890,6 +891,10 @@ function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, han
     totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
     breakdown: {
       materialCost, labourCost, hingeCost, handleCost, area, labourHours,
+      // Labour hours, person-hours per door (additive, for production scheduling)
+      doorHrs: labourHours,        // door-making labour
+      finishHrs,                   // spray finishing labour
+      totalHrs: +(labourHours + finishHrs).toFixed(3),
       sprayFinish: sprayFinishCost,
       sprayDetail: sprayResult ? sprayResult.breakdown : null,
     },
@@ -912,7 +917,9 @@ function calcFrameCost({ species, heightMm, widthMm, labourHrs = 3, hardwareCost
     totalCost: totalCost * qty,
     totalSellExVAT: sellExVAT * qty,
     totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
-    breakdown: { materialCost, labourCost, hardwareCost, volumeM3, runningM },
+    breakdown: { materialCost, labourCost, hardwareCost, volumeM3, runningM,
+      frameHrs: labourHrs,                  // frame-making labour, person-hours per unit
+      totalHrs: +(+labourHrs).toFixed(3) },
   };
 }
 
@@ -941,7 +948,9 @@ function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 5
     totalCost: totalCostPerDrawer * qty,
     totalSellExVAT: sellExVAT * qty,
     totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
-    breakdown: { materialCost, labourCost, runnerCost },
+    breakdown: { materialCost, labourCost, runnerCost,
+      drawerHrs: dt.labourHrs,              // drawer-box-making labour, person-hours per unit
+      totalHrs: +(+dt.labourHrs).toFixed(3) },
   };
 }
 
@@ -983,6 +992,8 @@ function calcCabinetCost({
 
   // Doors (cost only, margin applied to cabinet total)
   let doorsCost = 0;
+  let doorHrs = 0;       // door-making labour, person-hours per cabinet (all doors)
+  let doorFinishHrs = 0; // spray finishing labour on doors, person-hours per cabinet
   if (doorCount > 0 && doorType && DB.doorTypes[doorType]) {
     const doorW = Math.floor(widthMm / doorCount) - 2;
     const doorH = heightMm - 6;
@@ -991,18 +1002,24 @@ function calcCabinetCost({
     const hingeCostPerDoor = hingeCount(doorH) * hinge.costEach;
     const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: doorCount, hingeCost: hingeCostPerDoor, handleCost: handle.costEach, hasStain });
     doorsCost = dp ? dp.totalCost : 0;
+    doorHrs = dp ? dp.breakdown.doorHrs * doorCount : 0;
+    doorFinishHrs = dp ? dp.breakdown.finishHrs * doorCount : 0;
   }
 
   // Drawers (cost only)
   let drawersCost = 0;
+  let drawerHrs = 0; // drawer-box-making labour, person-hours per cabinet (all drawers)
   if (drawerCount > 0 && drawerType && DB.drawerTypes[drawerType]) {
     const runner = DB.hardware.runners[runnerKey] || DB.hardware.runners["HW_RUN_BLUM_SM"];
     const dp = calcDrawerCost({ drawerType, widthMm: widthMm - 26, heightMm: 180, depthMm: depthMm - 50, qty: drawerCount, runnerCostOverride: runner.costPair, carcassMaterialKey });
     drawersCost = dp ? dp.totalCost : 0;
+    drawerHrs = dp ? dp.breakdown.drawerHrs * drawerCount : 0;
   }
 
   // ── Drawer fronts (priced like doors when drawers have a painted/finished door type) ──
   let drawerFrontsCost = 0;
+  let drawerFrontHrs = 0;       // drawer-front-making labour (made like doors), per cabinet
+  let drawerFrontFinishHrs = 0; // spray finishing labour on drawer fronts, per cabinet
   const drawerFrontHeights = [];
   if (drawerCount > 0 && doorType && DB.doorTypes[doorType]) {
     const topRailMm = 32;
@@ -1015,7 +1032,11 @@ function calcCabinetCost({
     const frontW = widthMm - 4; // drawer fronts span full cabinet width
     for (const fh of drawerFrontHeights) {
       const dfp = calcDoorCost({ doorType, widthMm: frontW > 0 ? frontW : widthMm - 4, heightMm: fh, qty: 1, hingeCost: 0, handleCost: 0, sprayFinish: true, hasStain });
-      if (dfp) drawerFrontsCost += dfp.totalCost;
+      if (dfp) {
+        drawerFrontsCost += dfp.totalCost;
+        drawerFrontHrs += dfp.breakdown.doorHrs;
+        drawerFrontFinishHrs += dfp.breakdown.finishHrs;
+      }
     }
   }
 
@@ -1038,11 +1059,17 @@ function calcCabinetCost({
     widthMm: widthMm, heightMm: heightMm,
     shelfCount: shelfCount || 0, drawerCount: drawerCount || 0,
     qty: 1
-  }) : { costPerUnit: 0, total: 0, totalM: 0 };
+  }) : { costPerUnit: 0, total: 0, totalM: 0, labourHrs: 0 };
 
   const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total;
   const totalCost = totalCostPerUnit * qty;
   const sellExVAT = totalCost * DB.settings.margin;
+
+  // ── Labour hours roll-up, person-hours per cabinet (additive, for production scheduling) ──
+  const frameHrs    = frameResult.labourHrs || 0;     // face-frame-making labour
+  const edgebandHrs = edgebandResult.labourHrs || 0;  // edgebanding labour
+  const finishHrs   = doorFinishHrs + drawerFrontFinishHrs; // total spray finishing labour
+  const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs).toFixed(3);
 
   return {
     costPerUnit: totalCostPerUnit,
@@ -1050,7 +1077,8 @@ function calcCabinetCost({
     totalCost,
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
-    breakdown: { carcassMaterial: carcassMaterialCost, carcassLabour: carcassLabourCost, carcassHardware, doors: doorsCost, drawers: drawersCost, drawerFronts: drawerFrontsCost, frame: frameResult.total, edgeband: edgebandResult.total, assemblyHrs },
+    breakdown: { carcassMaterial: carcassMaterialCost, carcassLabour: carcassLabourCost, carcassHardware, doors: doorsCost, drawers: drawersCost, drawerFronts: drawerFrontsCost, frame: frameResult.total, edgeband: edgebandResult.total,
+      assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, finishHrs, totalHrs },
   };
 }
 
@@ -1068,13 +1096,17 @@ function calcEndPanelCost({ materialKey, widthMm, heightMm, thicknessMm = 18, fa
   const spray = calcSprayFinishCost({ doorType: finishType === "lacquer" ? "SLAB_VEN" : "SLAB_PNT",
     widthMm, heightMm, qty: 1, finishType, hasStain, surfaceType: faces >= 2 ? "door" : "panel" });
   const sprayC = spray.costPerDoor;
+  const finishHrs = spray.breakdown ? spray.breakdown.totalHrs : 0; // spray finishing labour, per panel
   const totalCostPerUnit = matCost + labourCost + sprayC;
   const sellExVAT = totalCostPerUnit * DB.settings.margin;
   return {
     costPerUnit: totalCostPerUnit, sellPerUnit: sellExVAT,
     totalCost: totalCostPerUnit * qty, totalSellExVAT: sellExVAT * qty,
     totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
-    breakdown: { material: matCost, labour: labourCost, spray: sprayC },
+    breakdown: { material: matCost, labour: labourCost, spray: sprayC,
+      panelHrs: +labourHrs.toFixed(3),      // end-panel build labour, person-hours per unit
+      finishHrs,                            // spray finishing labour
+      totalHrs: +(labourHrs + finishHrs).toFixed(3) },
   };
 }
 
@@ -1096,13 +1128,17 @@ function calcFloatingShelfCost({ materialKey, lengthMm, depthMm, thicknessMm = 1
   const spray       = calcSprayFinishCost({ doorType: finishType === "paint" ? "SLAB_PNT" : "SLAB_VEN",
     widthMm: depthMm, heightMm: lengthMm, qty: 1, finishType, hasStain, surfaceType: sprayFaces });
   const sprayC = spray.costPerDoor;
+  const finishHrs = spray.breakdown ? spray.breakdown.totalHrs : 0; // spray finishing labour, per shelf
   const totalCostPerUnit = matCost + labourCost + sprayC;
   const sellExVAT = totalCostPerUnit * DB.settings.margin;
   return {
     costPerUnit: totalCostPerUnit, sellPerUnit: sellExVAT,
     totalCost: totalCostPerUnit * qty, totalSellExVAT: sellExVAT * qty,
     totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
-    breakdown: { material: matCost, labour: labourCost, spray: sprayC, isBoxShelf },
+    breakdown: { material: matCost, labour: labourCost, spray: sprayC, isBoxShelf,
+      shelfHrs: +labourHrs.toFixed(3),      // floating-shelf build labour, person-hours per unit
+      finishHrs,                            // spray finishing labour
+      totalHrs: +(labourHrs + finishHrs).toFixed(3) },
   };
 }
 
@@ -1111,14 +1147,17 @@ function calcMouldingCost({ mouldingKey, metres, qty = 1 }) {
   if (!mld) return null;
   const wastedM    = metres * 1.10;  // 10% cutting waste
   const matCost    = wastedM * mld.costPerM;
-  const labourCost = metres * mld.labourHrsPerM * er();
+  const labourHrs  = metres * mld.labourHrsPerM; // moulding cut & fit labour, per unit run
+  const labourCost = labourHrs * er();
   const totalCostPerUnit = matCost + labourCost;
   const sellExVAT  = totalCostPerUnit * DB.settings.margin;
   return {
     costPerUnit: totalCostPerUnit, sellPerUnit: sellExVAT,
     totalCost: totalCostPerUnit * qty, totalSellExVAT: sellExVAT * qty,
     totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
-    breakdown: { material: matCost, labour: labourCost },
+    breakdown: { material: matCost, labour: labourCost,
+      mouldingHrs: +labourHrs.toFixed(3),   // moulding cut & fit labour, person-hours per unit
+      totalHrs: +labourHrs.toFixed(3) },
   };
 }
 
@@ -1143,7 +1182,7 @@ function calcCabinetFaceFrameCost({ frameKey, widthMm, heightMm, qty = 1 }) {
 // Edges: 2×height (sides) + 2×width (top+bottom) + width per shelf + width per drawer box.
 function calcCabinetEdgebandCost({ edgebandKey, widthMm, heightMm, shelfCount = 0, drawerCount = 0, qty = 1 }) {
   const eb = EDGEBAND_TYPES[edgebandKey];
-  if (!eb || eb.costPerM === 0) return { costPerUnit: 0, total: 0, totalM: 0 };
+  if (!eb || eb.costPerM === 0) return { costPerUnit: 0, total: 0, totalM: 0, labourHrs: 0 };
   // Carcass front perimeter + shelves + drawer box front edges
   const carcassM = 2 * (widthMm + heightMm) / 1000;
   const shelvesM = shelfCount * (widthMm / 1000);
@@ -1153,7 +1192,7 @@ function calcCabinetEdgebandCost({ edgebandKey, widthMm, heightMm, shelfCount = 
   const matCost    = totalM * eb.costPerM;
   const labourCost = labourHrs * er();
   const costPerUnit = matCost + labourCost;
-  return { costPerUnit: +costPerUnit.toFixed(2), total: +(costPerUnit * qty).toFixed(2), totalM: +totalM.toFixed(3) };
+  return { costPerUnit: +costPerUnit.toFixed(2), total: +(costPerUnit * qty).toFixed(2), totalM: +totalM.toFixed(3), labourHrs: +labourHrs.toFixed(3) };
 }
 
 function priceItem(item) {
