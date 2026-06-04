@@ -1,7 +1,8 @@
-const CACHE_NAME = 'sab-v4';
+const CACHE_NAME = 'sab-v46';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
+  '/fitting-estimate.js',
   '/icons/icon-192.png',
   '/icons/icon-512.png'
 ];
@@ -39,6 +40,24 @@ self.addEventListener('fetch', event => {
       fetch(event.request).catch(() => new Response(JSON.stringify({ error: 'offline' }), {
         headers: { 'Content-Type': 'application/json' }
       }))
+    );
+    return;
+  }
+
+  // HTML / navigation — network first, cache fallback. Ensures every deploy
+  // is visible on the next page load instead of requiring two reloads for
+  // the SW + cached HTML to swap over. Static assets stay cache-first below
+  // so offline + fast-load still work.
+  const isNavigation = event.request.mode === 'navigate' || event.request.destination === 'document';
+  if (isNavigation) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => caches.match(event.request).then(c => c || caches.match('/')))
     );
     return;
   }
