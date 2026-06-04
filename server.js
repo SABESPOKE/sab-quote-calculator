@@ -4,6 +4,32 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { pool, initDB } = require('./db');
 
+// Single source of truth for pricing — the same engine the browser loads from
+// public/pricing.js. Used to recompute each item's pricing on read (GET /api/quotes)
+// so figures added after a quote was saved (e.g. labour hours) appear without
+// anyone re-opening and re-saving the quote.
+let priceItem = null;
+try { ({ priceItem } = require('./public/pricing.js')); }
+catch (err) { console.error('pricing engine load failed (GET /api/quotes will return stored pricing as-is):', err.message); }
+
+// Recompute every item's `pricing` from its stored params using the canonical engine.
+// Purely additive/non-destructive: structure is preserved, and if the engine is
+// unavailable or an item throws/returns null, that item's stored pricing is kept.
+function recomputeQuotePricing(quote) {
+  if (!priceItem || !quote || !quote.rooms) return quote;
+  const rooms = {};
+  for (const [roomName, room] of Object.entries(quote.rooms)) {
+    rooms[roomName] = {
+      ...room,
+      items: (room.items || []).map(item => {
+        try { const pricing = priceItem(item); return pricing ? { ...item, pricing } : item; }
+        catch { return item; }
+      }),
+    };
+  }
+  return { ...quote, rooms };
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -179,7 +205,7 @@ app.get('/api/quotes', async (req, res) => {
     const { rows } = await pool.query('SELECT id, data, updated_at FROM quotes ORDER BY updated_at DESC');
     const quotes = {};
     for (const row of rows) {
-      quotes[row.id] = { ...row.data, _serverUpdatedAt: row.updated_at };
+      quotes[row.id] = recomputeQuotePricing({ ...row.data, _serverUpdatedAt: row.updated_at });
     }
     res.json(quotes);
   } catch (err) {
