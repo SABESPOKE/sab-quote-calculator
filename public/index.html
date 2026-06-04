@@ -1578,6 +1578,9 @@ function calcWRPMouldingCost({
     paintBreakdown = res.breakdown;
   }
   const finishCost = paintRatePerM * metres;
+  // Finishing labour, person-hours per unit run. paintBreakdown.totalHrs is per linear metre
+  // (a 1m × girth panel); null when a manual paint-rate override is used, so hours are unknown → 0.
+  const finishHrs = paintBreakdown ? +(paintBreakdown.totalHrs * metres).toFixed(3) : 0;
   const totalCost = materialCost + finishCost;
   const sellExVAT = totalCost * (1 + markup / 100);
   return {
@@ -1590,6 +1593,8 @@ function calcWRPMouldingCost({
       paint_rate_per_m: +paintRatePerM.toFixed(2),
       finish_type: finishType || "none",
       markup_pct: markup,
+      finishHrs,                            // spray finishing labour, person-hours per unit
+      totalHrs: finishHrs,
       ...(paintBreakdown ? { spray: paintBreakdown } : {}),
     },
   };
