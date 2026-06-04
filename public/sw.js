@@ -1,7 +1,8 @@
-const CACHE_NAME = 'sab-v46';
+const CACHE_NAME = 'sab-v47';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
+  '/pricing.js',
   '/fitting-estimate.js',
   '/icons/icon-192.png',
   '/icons/icon-512.png'

@@ -3,6 +3,7 @@ node_modules/
 .DS_Store
 *.log
 .claude/
+.playwright-mcp/
 
 # WRP scrape outputs — only the canonical catalogue under data/ is tracked
 /wrp_catalogue.json
