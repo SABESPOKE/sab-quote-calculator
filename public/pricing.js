@@ -122,6 +122,10 @@ const DB = {
     "MAT_MAPLE_MDF_UNF_19": { name: "Maple Veneered MDF Unfinished 19mm", costPerM2: 30.23, thicknessMm: 19, wasteFactor: 1.12, naturalFinish: "lacquer" },
     "MAT_MDF_FH_18":        { name: "Finsa Hydrofuga MDF 18mm",            costPerM2: 16.80, thicknessMm: 18, wasteFactor: 1.12, naturalFinish: "paint" },
     "MAT_MDF_FH_22":        { name: "Finsa Hydrofuga MDF 22mm",            costPerM2: 20.16, thicknessMm: 22, wasteFactor: 1.12, naturalFinish: "paint" },
+    "MAT_MDF_FH_6":  { name: "Finsa Hydrofuga MDF 6mm",  costPerM2:  5.60, thicknessMm:  6, wasteFactor: 1.12, naturalFinish: "paint" },
+    "MAT_MDF_FH_9":  { name: "Finsa Hydrofuga MDF 9mm",  costPerM2:  8.40, thicknessMm:  9, wasteFactor: 1.12, naturalFinish: "paint" },
+    "MAT_MDF_FH_12": { name: "Finsa Hydrofuga MDF 12mm", costPerM2: 11.20, thicknessMm: 12, wasteFactor: 1.12, naturalFinish: "paint" },
+    "MAT_MDF_FH_15": { name: "Finsa Hydrofuga MDF 15mm", costPerM2: 14.00, thicknessMm: 15, wasteFactor: 1.12, naturalFinish: "paint" },
     "MAT_BACK_HDF_6":       { name: "HDF Back Panel 6mm",                  costPerM2:  8.50, thicknessMm:  6, wasteFactor: 1.10, naturalFinish: "none" },
     "MAT_MEL_EGGER_18":     { name: "Melamine - Egger 18mm",               costPerM2: 22.00, thicknessMm: 18, wasteFactor: 1.12, naturalFinish: "none" },
     "MAT_MEL_EGGER_25":     { name: "Melamine - Egger 25mm",               costPerM2: 28.00, thicknessMm: 25, wasteFactor: 1.12, naturalFinish: "none" },
@@ -164,6 +168,7 @@ const DB = {
   },
   hardware: {
     hinges: {
+      "HW_HINGE_NONE":  { name: "No Hinge",                     costEach: 0 },
       "HW_HINGE_STD":   { name: "Blum Clip-top standard",       costEach: 6.50 },
       "HW_HINGE_SM":    { name: "Blum Clip-top soft-close",     costEach: 9.50 },
       "HW_HINGE_INTEG": { name: "Blum Clip-top Blumotion",      costEach: 12.00 },
@@ -500,7 +505,8 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
 
 function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, handleCost = 0, sprayFinish = true, hasStain = false, sprayFinishOverride = "",
   // Solid timber shaker doors only — frame + matching MDF panel.
-  timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey, frameStileWidthMm, frameThicknessMm }) {
+  timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey, frameStileWidthMm, frameThicknessMm,
+  margin = DB.settings.margin }) {
   const dt = DB.doorTypes[doorType];
   if (!dt) return null;
   const area = (widthMm / 1000) * (heightMm / 1000);
@@ -555,7 +561,7 @@ function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, han
   const sprayFinishCost  = sprayResult ? sprayResult.costPerDoor : 0;
   const finishHrs        = sprayResult ? sprayResult.breakdown.totalHrs : 0; // spray finishing labour, per door
   const totalCostPerDoor = materialCost + labourCost + hingeCost + handleCost + sprayFinishCost;
-  const sellExVAT = totalCostPerDoor * DB.settings.margin;
+  const sellExVAT = totalCostPerDoor * margin;
   return {
     costPerUnit: totalCostPerDoor,
     sellPerUnit: sellExVAT,
@@ -574,7 +580,7 @@ function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, han
   };
 }
 
-function calcFrameCost({ species, heightMm, widthMm, labourHrs = 3, hardwareCost = 15, qty = 1 }) {
+function calcFrameCost({ species, heightMm, widthMm, labourHrs = 3, hardwareCost = 15, qty = 1, margin = DB.settings.margin }) {
   const sp = DB.solidTimber[species];
   if (!sp) return null;
   const runningM = ((2 * heightMm + widthMm) / 1000) * 1.1;
@@ -583,7 +589,7 @@ function calcFrameCost({ species, heightMm, widthMm, labourHrs = 3, hardwareCost
   const materialCost = volumeM3 * sp.effectivePerM3;
   const labourCost = labourHrs * er();
   const totalCost = materialCost + labourCost + hardwareCost;
-  const sellExVAT = totalCost * DB.settings.margin;
+  const sellExVAT = totalCost * margin;
   return {
     costPerUnit: totalCost,
     sellPerUnit: sellExVAT,
@@ -596,7 +602,7 @@ function calcFrameCost({ species, heightMm, widthMm, labourHrs = 3, hardwareCost
   };
 }
 
-function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 500, qty = 1, runnerCostOverride = null, carcassMaterialKey = null }) {
+function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 500, qty = 1, runnerCostOverride = null, carcassMaterialKey = null, margin = DB.settings.margin }) {
   const dt = DB.drawerTypes[drawerType];
   if (!dt) return null;
   let materialCost;
@@ -614,7 +620,7 @@ function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 5
   const labourCost = dt.labourHrs * er();
   const runnerCost = runnerCostOverride !== null ? runnerCostOverride : 40;
   const totalCostPerDrawer = materialCost + labourCost + runnerCost;
-  const sellExVAT = totalCostPerDrawer * DB.settings.margin;
+  const sellExVAT = totalCostPerDrawer * margin;
   return {
     costPerUnit: totalCostPerDrawer,
     sellPerUnit: sellExVAT,
@@ -648,6 +654,7 @@ function calcCabinetCost({
   hasStain = false,
   sprayFinishOverride = "",
   qty = 1,
+  margin = DB.settings.margin,
 }) {
   const mat = DB.materials[carcassMaterialKey];
   // Back panels match the carcass material by default. Caller can still pass an
@@ -800,7 +807,7 @@ function calcCabinetCost({
 
   const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total;
   const totalCost = totalCostPerUnit * qty;
-  const sellExVAT = totalCost * DB.settings.margin;
+  const sellExVAT = totalCost * margin;
 
   // ── Labour hours roll-up, person-hours per cabinet (additive, for production scheduling) ──
   const frameHrs    = frameResult.labourHrs || 0;     // face-frame-making labour
@@ -810,7 +817,7 @@ function calcCabinetCost({
 
   return {
     costPerUnit: totalCostPerUnit,
-    sellPerUnit: totalCostPerUnit * DB.settings.margin,
+    sellPerUnit: totalCostPerUnit * margin,
     totalCost,
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
@@ -819,7 +826,7 @@ function calcCabinetCost({
   };
 }
 
-function calcEndPanelCost({ materialKey, widthMm, heightMm, thicknessMm = 18, faces = 1, exposedEdgeCount = 2, finishType = "paint", hasStain = false, qty = 1 }) {
+function calcEndPanelCost({ materialKey, widthMm, heightMm, thicknessMm = 18, faces = 1, exposedEdgeCount = 2, finishType = "paint", hasStain = false, qty = 1, margin = DB.settings.margin }) {
   const mat = DB.materials[materialKey];
   if (!mat) return null;
   const areaM2  = (widthMm / 1000) * (heightMm / 1000);
@@ -835,7 +842,7 @@ function calcEndPanelCost({ materialKey, widthMm, heightMm, thicknessMm = 18, fa
   const sprayC = spray.costPerDoor;
   const finishHrs = spray.breakdown ? spray.breakdown.totalHrs : 0; // spray finishing labour, per panel
   const totalCostPerUnit = matCost + labourCost + sprayC;
-  const sellExVAT = totalCostPerUnit * DB.settings.margin;
+  const sellExVAT = totalCostPerUnit * margin;
   return {
     costPerUnit: totalCostPerUnit, sellPerUnit: sellExVAT,
     totalCost: totalCostPerUnit * qty, totalSellExVAT: sellExVAT * qty,
@@ -847,7 +854,7 @@ function calcEndPanelCost({ materialKey, widthMm, heightMm, thicknessMm = 18, fa
   };
 }
 
-function calcFloatingShelfCost({ materialKey, lengthMm, depthMm, thicknessMm = 18, visibleThicknessMm = 18, faces = 1, finishType = "lacquer", hasStain = false, qty = 1, customSpeciesName = "", customPricePerM3 = 0 }) {
+function calcFloatingShelfCost({ materialKey, lengthMm, depthMm, thicknessMm = 18, visibleThicknessMm = 18, faces = 1, finishType = "lacquer", hasStain = false, qty = 1, customSpeciesName = "", customPricePerM3 = 0, margin = DB.settings.margin }) {
   // Timber path: materialKey is a DB.solidTimber species (or TIM_CUSTOM).
   // Volume-based pricing replaces area-based sheet pricing.
   const timberSpec = DB.solidTimber[materialKey];
@@ -881,7 +888,7 @@ function calcFloatingShelfCost({ materialKey, lengthMm, depthMm, thicknessMm = 1
   const sprayC = spray.costPerDoor;
   const finishHrs = spray.breakdown ? spray.breakdown.totalHrs : 0; // spray finishing labour, per shelf
   const totalCostPerUnit = matCost + labourCost + sprayC;
-  const sellExVAT = totalCostPerUnit * DB.settings.margin;
+  const sellExVAT = totalCostPerUnit * margin;
   return {
     costPerUnit: totalCostPerUnit, sellPerUnit: sellExVAT,
     totalCost: totalCostPerUnit * qty, totalSellExVAT: sellExVAT * qty,
@@ -893,7 +900,7 @@ function calcFloatingShelfCost({ materialKey, lengthMm, depthMm, thicknessMm = 1
   };
 }
 
-function calcMouldingCost({ mouldingKey, metres, qty = 1 }) {
+function calcMouldingCost({ mouldingKey, metres, qty = 1, margin = DB.settings.margin }) {
   const mld = DB.mouldings[mouldingKey];
   if (!mld) return null;
   const wastedM    = metres * 1.10;  // 10% cutting waste
@@ -901,7 +908,7 @@ function calcMouldingCost({ mouldingKey, metres, qty = 1 }) {
   const labourHrs  = metres * mld.labourHrsPerM; // moulding cut & fit labour, per unit run
   const labourCost = labourHrs * er();
   const totalCostPerUnit = matCost + labourCost;
-  const sellExVAT  = totalCostPerUnit * DB.settings.margin;
+  const sellExVAT  = totalCostPerUnit * margin;
   return {
     costPerUnit: totalCostPerUnit, sellPerUnit: sellExVAT,
     totalCost: totalCostPerUnit * qty, totalSellExVAT: sellExVAT * qty,
@@ -1031,7 +1038,7 @@ function calcCabinetEdgebandCost({ edgebandKey, widthMm, heightMm, shelfCount = 
 // Scribed strip in matching door finish. Self-contained line item (not bundled
 // inside a cabinet). Pricing scales with strip size — bench labour is flat per
 // filler since cut/sand/drill prep is constant regardless of length.
-function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720, qty = 1, hasStain = false, sprayFinishOverride = "" }) {
+function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720, qty = 1, hasStain = false, sprayFinishOverride = "", margin = DB.settings.margin }) {
   const dt = DB.doorTypes[doorType];
   if (!dt) return null;
   const FILLER_BENCH_LABOUR_HRS = 0.20;  // 12 min — cut, sand, edge ease, drill for fixings
@@ -1047,10 +1054,10 @@ function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720,
   const sprayCost = spray ? spray.costPerDoor : 0;
   const costPerUnit = materialCost + labourCost + sprayCost;
   const totalCost = costPerUnit * qty;
-  const sellExVAT = totalCost * DB.settings.margin;
+  const sellExVAT = totalCost * margin;
   return {
     costPerUnit,
-    sellPerUnit: costPerUnit * DB.settings.margin,
+    sellPerUnit: costPerUnit * margin,
     totalCost,
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
@@ -1058,11 +1065,15 @@ function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720,
   };
 }
 
-function priceItem(item) {
+function priceItem(item, effectiveMargin) {
+  // effectiveMargin lets a quote override the global margin (quote.marginOverride).
+  // When undefined/null it falls back to DB.settings.margin, so callers that pass
+  // nothing price exactly as before.
+  const margin = (effectiveMargin ?? DB.settings.margin);
   // Fixed-price short-circuit: bypass the type-specific pricer entirely. Sell = cost ×
   // (1 + markup/100). Margin / overhead / consumables share are all excluded
   // downstream in distributeProjectCosts + quoteTotals — this item is a pure
-  // pass-through (e.g. trade-priced worktop).
+  // pass-through (e.g. trade-priced worktop). Margin override does not apply here.
   if (item.fixedPrice) {
     const qty = item.qty || 1;
     const costPerUnit = +item.fixedCostExVAT || 0;
@@ -1077,19 +1088,19 @@ function priceItem(item) {
       isFixedPrice: true,
     };
   }
-  if (item.type === "cabinet")  return calcCabinetCost({ ...item.params, qty: item.qty });
-  if (item.type === "door")     return calcDoorCost({ ...item.params, qty: item.qty });
-  if (item.type === "frame")    return calcFrameCost({ ...item.params, qty: item.qty });
-  if (item.type === "drawer")   return calcDrawerCost({ ...item.params, qty: item.qty });
-  if (item.type === "endpanel") return calcEndPanelCost({ ...item.params, qty: item.qty });
-  if (item.type === "shelf")    return calcFloatingShelfCost({ ...item.params, qty: item.qty });
-  if (item.type === "moulding") return calcMouldingCost({ ...item.params, qty: item.qty });
-  if (item.type === "wrp_moulding") return calcWRPMouldingCost({ ...item.params, qty: item.qty });
-  if (item.type === "filler")   return calcFillerCost({ ...item.params, qty: item.qty });
+  if (item.type === "cabinet")  return calcCabinetCost({ ...item.params, qty: item.qty, margin });
+  if (item.type === "door")     return calcDoorCost({ ...item.params, qty: item.qty, margin });
+  if (item.type === "frame")    return calcFrameCost({ ...item.params, qty: item.qty, margin });
+  if (item.type === "drawer")   return calcDrawerCost({ ...item.params, qty: item.qty, margin });
+  if (item.type === "endpanel") return calcEndPanelCost({ ...item.params, qty: item.qty, margin });
+  if (item.type === "shelf")    return calcFloatingShelfCost({ ...item.params, qty: item.qty, margin });
+  if (item.type === "moulding") return calcMouldingCost({ ...item.params, qty: item.qty, margin });
+  if (item.type === "wrp_moulding") return calcWRPMouldingCost({ ...item.params, qty: item.qty }); // WRP uses its own markup_pct, not margin
+  if (item.type === "filler")   return calcFillerCost({ ...item.params, qty: item.qty, margin });
   if (item.type === "custom") {
     const cost = (item.params.unitCostExVAT || 0) * item.qty;
-    const sell = cost * DB.settings.margin;
-    return { costPerUnit: item.params.unitCostExVAT, sellPerUnit: item.params.unitCostExVAT * DB.settings.margin, totalCost: cost, totalSellExVAT: sell, totalSellIncVAT: sell * (1 + DB.settings.vat), breakdown: {} };
+    const sell = cost * margin;
+    return { costPerUnit: item.params.unitCostExVAT, sellPerUnit: item.params.unitCostExVAT * margin, totalCost: cost, totalSellExVAT: sell, totalSellIncVAT: sell * (1 + DB.settings.vat), breakdown: {} };
   }
   return null;
 }

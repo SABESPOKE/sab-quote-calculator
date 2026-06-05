@@ -704,7 +704,7 @@ function migrateLegacyFillers(quote) {
             sprayFinishOverride: item.params.sprayFinishOverride || "",
           },
         };
-        try { fillerItem.pricing = priceItem(fillerItem); } catch (e) {}
+        try { fillerItem.pricing = priceItem(fillerItem, quote.marginOverride); } catch (e) {}
         newItems.push(fillerItem);
         // Zero out the cabinet's fillerCount so re-loads don't re-migrate. Replace
         // the just-pushed cabinet entry with the cleared version (mutate the last
@@ -714,7 +714,7 @@ function migrateLegacyFillers(quote) {
           ...item,
           params: { ...item.params, fillerCount: 0 },
         };
-        try { newItems[idx].pricing = priceItem(newItems[idx]); } catch (e) {}
+        try { newItems[idx].pricing = priceItem(newItems[idx], quote.marginOverride); } catch (e) {}
         migratedCount++;
       }
     }
@@ -738,7 +738,7 @@ function ensurePricing(quotesObj) {
         items: (room.items || []).map(item => {
           // Always recompute on read so refreshed figures (e.g. labour hours) appear
           // without re-saving. Falls back to the stored pricing if recompute throws.
-          try { const pricing = priceItem(item); return pricing ? { ...item, pricing } : item; }
+          try { const pricing = priceItem(item, q.marginOverride); return pricing ? { ...item, pricing } : item; }
           catch { return item; }
         }),
       };
@@ -1176,7 +1176,7 @@ function applySpecToAllItems(quote, field, name) {
         const m = mutator(item);
         if (!m) return item;
         const upd = { ...item, params: { ...item.params, ...m } };
-        upd.pricing = priceItem(upd);
+        upd.pricing = priceItem(upd, quote.marginOverride);
         return upd;
       });
       rooms[roomName] = room;
@@ -2024,7 +2024,7 @@ function SABQuoteTool() {
     Object.entries(currentQuotes).forEach(([qid, quote]) => {
       const updatedRooms = {};
       Object.entries(quote.rooms || {}).forEach(([rname, room]) => {
-        updatedRooms[rname] = { ...room, items: room.items.map(item => ({ ...item, pricing: priceItem(item) })) };
+        updatedRooms[rname] = { ...room, items: room.items.map(item => ({ ...item, pricing: priceItem(item, quote.marginOverride) })) };
       });
       updated[qid] = { ...quote, rooms: updatedRooms };
     });
@@ -2055,7 +2055,7 @@ function SABQuoteTool() {
       room.items = room.items.map(item => {
         if (item.params && item.params[paramKey] !== undefined) {
           const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
-          upd.pricing = priceItem(upd);
+          upd.pricing = priceItem(upd, q.marginOverride);
           return upd;
         }
         return item;
@@ -2066,7 +2066,7 @@ function SABQuoteTool() {
         if (item.type !== "cabinet" || !item.params) return item;
         if (filter && !filter(item)) return item;
         const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
-        upd.pricing = priceItem(upd);
+        upd.pricing = priceItem(upd, q.marginOverride);
         return upd;
       });
     };
@@ -2108,7 +2108,7 @@ function SABQuoteTool() {
         if (item.params && (item.type === "cabinet" || item.type === "drawer")) {
           const newDT = defs.useSolidDrawers ? (defs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET";
           const upd = { ...item, params: { ...item.params, drawerType: newDT } };
-          upd.pricing = priceItem(upd);
+          upd.pricing = priceItem(upd, q.marginOverride);
           return upd;
         }
         return item;
@@ -2129,6 +2129,20 @@ function SABQuoteTool() {
       newQ = applyRoomDefaultPure(newQ, rn, field, val);
     });
     saveQuotes({ ...quotes, [activeQuoteId]: newQ });
+  }
+
+  // Per-quote margin override. Setting it reprices every item in the quote with the new
+  // effective margin (quote.marginOverride ?? DB.settings.margin). Clearing it (empty
+  // input) drops the field and reverts the quote to the global default margin.
+  function setQuoteMarginOverride(val) {
+    const q = quotes[activeQuoteId];
+    if (!q) return;
+    const marginOverride = (val === "" || val == null || isNaN(+val)) ? undefined : +val;
+    const newRooms = {};
+    for (const [rn, room] of Object.entries(q.rooms || {})) {
+      newRooms[rn] = { ...room, items: (room.items || []).map(it => ({ ...it, pricing: priceItem(it, marginOverride) })) };
+    }
+    saveQuotes({ ...quotes, [activeQuoteId]: { ...q, marginOverride, rooms: newRooms } });
   }
 
   function updateRoomDefault(roomName, field, val) {
@@ -2159,8 +2173,36 @@ function SABQuoteTool() {
     const params = item.params || {};
     const pf = params.doorType ? (TYPE_TO_PROFILE_FINISH[params.doorType] || { profile:"slab", finish:"painted" }) : {};
     const restored = { ...ITEM_DEFAULTS[item.type] || ITEM_DEFAULTS.cabinet, ...base, ...params, doorProfile: pf.profile || "slab", doorFinish: pf.finish || "painted" };
+    // Treat the saved description as manually-set only if it differs from what we'd
+    // auto-generate; otherwise keep it auto so editing dimensions refreshes it.
+    restored.descriptionTouched = !!(item.description && item.description !== generateItemDescription(restored));
     setAddItemForm(restored);
     setEditingItem({ room, idx });
+    setShowAddItem(true);
+  }
+
+  // Open the Add Item modal pre-filled from the active room's defaults. Shared by the
+  // top and bottom "+ Add Item" buttons in Build view.
+  function openAddItemForm() {
+    const roomDefs = (activeQuote?.rooms?.[activeRoom]?.defaults) || {};
+    setEditingItem(null);
+    setAddItemForm({
+      ...ITEM_DEFAULTS.cabinet,
+      descriptionTouched: false,
+      carcassMaterialKey: roomDefs.carcassMaterialKey || ITEM_DEFAULTS.cabinet.carcassMaterialKey,
+      doorProfile: roomDefs.doorProfile || ITEM_DEFAULTS.cabinet.doorProfile,
+      doorFinish:  roomDefs.doorFinish  || ITEM_DEFAULTS.cabinet.doorFinish,
+      hasStain:    roomDefs.hasStain    || false,
+      hingeKey:    roomDefs.hingeKey    || ITEM_DEFAULTS.cabinet.hingeKey,
+      handleKey:   roomDefs.handleKey   || ITEM_DEFAULTS.cabinet.handleKey,
+      drawerType:  roomDefs.useSolidDrawers ? (roomDefs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET",
+      runnerKey:   roomDefs.runnerKey   || ITEM_DEFAULTS.cabinet.runnerKey,
+      carcassFinish: roomDefs.carcassFinish || "none",
+      // Derive sprayFinishOverride from the room-level doorFinish so consolidated finish
+      // picks (edge_polish / primed / none) propagate to new cabinets.
+      sprayFinishOverride: FINISH_TO_SPRAY_OVERRIDE[roomDefs.doorFinish] || "",
+      doorType: PROFILE_FINISH_TO_TYPE[`${roomDefs.doorProfile||"shaker"}+${roomDefs.doorFinish||"painted"}`] || "SHAKER_PNT",
+    });
     setShowAddItem(true);
   }
 
@@ -2237,7 +2279,7 @@ function SABQuoteTool() {
       const updated = { ...quotes };
       const priced = result.items.map(item => {
         const desc = item.description || item.type;
-        const pricing = priceItem(item);
+        const pricing = priceItem(item, activeQuote?.marginOverride);
         return { ...item, description: desc, pricing };
       });
       updated[activeQuoteId].rooms[activeRoom].items.push(...priced);
@@ -2249,9 +2291,44 @@ function SABQuoteTool() {
   }
 
   // Add item form
+  // Auto-description generator, shared by updateForm (live regeneration) and editItem
+  // (to detect whether a saved description was auto vs manually set). Mirrors the
+  // per-type description fallbacks used at submit time.
+  function generateItemDescription(f) {
+    const w = f.widthMm, h = f.heightMm, d = f.depthMm;
+    switch (f.type) {
+      case "cabinet": {
+        const ct = DB.cabinetTypes[f.cabinetTypeKey];
+        const baseName = ct ? ct.name : "Cabinet";
+        const dimStr = (w && h) ? ` ${w}×${h}×${d}mm` : "";
+        return `${baseName}${dimStr} — ${DB.doorTypes[f.doorType]?.name || ""}`;
+      }
+      case "door":
+        return `${DB.doorTypes[f.doorType]?.name} ${w}×${h}${f.hasStain?" + Stain":""}${f.sprayFinishOverride==="none"?" (no spray)":f.sprayFinishOverride==="edge_polish"?" (edge polish)":f.sprayFinishOverride==="primed"?" (primed only)":""}`;
+      case "frame":
+        return `${DB.solidTimber[f.species]?.name} Frame ${w}w`;
+      case "drawer":
+        return `${DB.drawerTypes[f.drawerType]?.name} ${w}w`;
+      case "endpanel":
+        return `End Panel ${w}×${h}×${f.thicknessMm}mm — ${f.finishType}`;
+      case "shelf":
+        return `${f.materialKey === "TIM_CUSTOM" ? (f.customSpeciesName || "Custom Timber") : (DB.solidTimber[f.materialKey]?.name || "")} Floating Shelf ${f.lengthMm}×${f.depthMm}${(f.visibleThicknessMm||18)>(f.thicknessMm||18)+4?" Box":""}mm`.replace(/^\s+/, "");
+      case "moulding":
+        return `${DB.mouldings[f.mouldingKey]?.name||"Moulding"} — ${f.metres}m`;
+      case "wrp_moulding":
+        return `WRP ${f.profile_sku} ${f.wrp_category} — ${f.linear_metres}m`;
+      case "filler":
+        return `Filler ${w}×${h}mm — ${DB.doorTypes[f.doorType]?.name || "Painted"}`;
+      default:
+        return f.description || "";
+    }
+  }
+
   function updateForm(field, val) {
     setAddItemForm(f => {
       let updated = { ...f, [field]: val };
+      // Editing the description field marks it "touched" — stop auto-regenerating it.
+      if (field === "description") updated.descriptionTouched = true;
       // When a cabinet type is selected: fill door/drawer/shelf config AND pre-populate
       // standard dimensions from DB.cabinetTypes. User overrides as needed.
       if (field === "cabinetTypeKey") {
@@ -2282,13 +2359,19 @@ function SABQuoteTool() {
         // (use the doorType's natural finishType).
         updated.sprayFinishOverride = FINISH_TO_SPRAY_OVERRIDE[safeFinish] || "";
       }
-      // Auto-generate description for cabinets
-      if (updated.type === "cabinet") {
-        const ct = DB.cabinetTypes[updated.cabinetTypeKey];
-        const dt = DB.doorTypes[updated.doorType];
-        const baseName = ct ? ct.name : "Cabinet";
-        const dimStr = (updated.widthMm && updated.heightMm) ? ` ${updated.widthMm}×${updated.heightMm}×${updated.depthMm}mm` : "";
-        updated.description = `${baseName}${dimStr} — ${dt?.name || ""}`;
+      // Pure drawer cabinet (no doors) → default hinge to "No Hinge". When doors are
+      // added back to a previously door-less cabinet, restore a real default hinge so
+      // the cabinet isn't left silently hinge-less. Only fires when doorCount changes,
+      // so an explicit hinge choice on a door cabinet is never overridden.
+      if (updated.type === "cabinet" && updated.doorCount !== f.doorCount) {
+        if (updated.doorCount === 0) updated.hingeKey = "HW_HINGE_NONE";
+        else if (f.doorCount === 0 && (!updated.hingeKey || updated.hingeKey === "HW_HINGE_NONE")) updated.hingeKey = "HW_HINGE_SM";
+      }
+      // Keep the auto-description in sync with the current fields for EVERY item type,
+      // unless the user has manually edited it. Fixes stale descriptions when e.g. an
+      // end panel's dimensions change after the description was first generated.
+      if (field !== "description" && !updated.descriptionTouched) {
+        updated.description = generateItemDescription(updated);
       }
       return updated;
     });
@@ -2315,9 +2398,9 @@ function SABQuoteTool() {
         : addItemForm.type === "filler"
         ? { type:"filler", qty: addItemForm.qty, params: { doorType: addItemForm.doorType, doorProfile: addItemForm.doorProfile, doorFinish: addItemForm.doorFinish, widthMm: +addItemForm.widthMm || 50, heightMm: +addItemForm.heightMm || 720, hasStain: !!addItemForm.hasStain, sprayFinishOverride: addItemForm.sprayFinishOverride || "" } }
         : { type:"custom", qty: addItemForm.qty, params: { unitCostExVAT: addItemForm.unitCostExVAT, notes: addItemForm.notes } };
-      return priceItem(item);
+      return priceItem(item, activeQuote?.marginOverride);
     } catch { return null; }
-  }, [addItemForm]);
+  }, [addItemForm, activeQuote?.marginOverride]);
 
   function submitAddItem() {
     if (!activeRoom || !activeQuoteId) return;
@@ -2340,7 +2423,7 @@ function SABQuoteTool() {
       : addItemForm.type === "filler"
       ? { type:"filler", description: addItemForm.description || `Filler ${addItemForm.widthMm}×${addItemForm.heightMm}mm — ${DB.doorTypes[addItemForm.doorType]?.name || "Painted"}`, qty: Number(addItemForm.qty), params: { doorType:addItemForm.doorType, doorProfile:addItemForm.doorProfile, doorFinish:addItemForm.doorFinish, widthMm:+addItemForm.widthMm||50, heightMm:+addItemForm.heightMm||720, hasStain:!!addItemForm.hasStain, sprayFinishOverride:addItemForm.sprayFinishOverride||"" } }
       : { type:"custom", description: addItemForm.description, qty: Number(addItemForm.qty), params: { unitCostExVAT:+addItemForm.unitCostExVAT, notes:addItemForm.notes } };
-    item.pricing = priceItem(item);
+    item.pricing = priceItem(item, activeQuote?.marginOverride);
     const updated = { ...quotes };
     if (editingItem) {
       // Replace existing item
@@ -2390,7 +2473,7 @@ function SABQuoteTool() {
               let count = 0;
               for (const [roomName, room] of Object.entries(q.rooms || {})) {
                 newRooms[roomName] = { ...room, items: (room.items || []).map(item => {
-                  try { const pricing = priceItem(item); count++; return { ...item, pricing }; }
+                  try { const pricing = priceItem(item, q.marginOverride); count++; return { ...item, pricing }; }
                   catch (e) { return item; }
                 })};
               }
@@ -2597,26 +2680,7 @@ function SABQuoteTool() {
               <>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
                   <input value={editingRoomName && editingRoomName.original === activeRoom ? editingRoomName.current : activeRoom} onChange={e => setEditingRoomName({ original: activeRoom, current: e.target.value })} onFocus={e => { setEditingRoomName({ original: activeRoom, current: activeRoom }); e.target.style.borderBottomColor="#c8a96e"; }} onBlur={e => { e.target.style.borderBottomColor="transparent"; if (editingRoomName && editingRoomName.current && editingRoomName.current !== editingRoomName.original) { renameRoom(editingRoomName.original, editingRoomName.current); } setEditingRoomName(null); }} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { setEditingRoomName(null); e.target.blur(); } }} style={{ fontSize:17, color:"#1a1a1a", background:"transparent", border:"none", borderBottom:"1px solid transparent", padding:0, fontFamily:"inherit", fontWeight:400, outline:"none", width:"100%" }} />
-                  <button onClick={() => {
-  const roomDefs = (activeQuote?.rooms?.[activeRoom]?.defaults) || {};
-  setAddItemForm({
-    ...ITEM_DEFAULTS.cabinet,
-    carcassMaterialKey: roomDefs.carcassMaterialKey || ITEM_DEFAULTS.cabinet.carcassMaterialKey,
-    doorProfile: roomDefs.doorProfile || ITEM_DEFAULTS.cabinet.doorProfile,
-    doorFinish:  roomDefs.doorFinish  || ITEM_DEFAULTS.cabinet.doorFinish,
-    hasStain:    roomDefs.hasStain    || false,
-    hingeKey:    roomDefs.hingeKey    || ITEM_DEFAULTS.cabinet.hingeKey,
-    handleKey:   roomDefs.handleKey   || ITEM_DEFAULTS.cabinet.handleKey,
-    drawerType:  roomDefs.useSolidDrawers ? (roomDefs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET",
-    runnerKey:   roomDefs.runnerKey   || ITEM_DEFAULTS.cabinet.runnerKey,
-    carcassFinish: roomDefs.carcassFinish || "none",
-    // Derive sprayFinishOverride from the room-level doorFinish so consolidated finish
-    // picks (edge_polish / primed / none) propagate to new cabinets.
-    sprayFinishOverride: FINISH_TO_SPRAY_OVERRIDE[roomDefs.doorFinish] || "",
-    doorType: PROFILE_FINISH_TO_TYPE[`${roomDefs.doorProfile||"shaker"}+${roomDefs.doorFinish||"painted"}`] || "SHAKER_PNT",
-  });
-  setShowAddItem(true);
-}} style={{ padding:"7px 16px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:3, cursor:"pointer", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>+ Add Item</button>
+                  <button onClick={openAddItemForm} style={{ padding:"7px 16px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:3, cursor:"pointer", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>+ Add Item</button>
                 </div>
 
                 {/* Room Setup panel */}
@@ -2810,9 +2874,9 @@ function SABQuoteTool() {
                                 saveQuotes(updated);
                               }} style={{ background:"transparent", border:"none", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:"100%", padding:0, outline:"none" }} />
                             </td>
-                            <td style={{ padding:"10px" }}><input type="number" value={item.qty || ""} onClick={e => e.stopPropagation()} onChange={e => { const v = e.target.value === "" ? 1 : Math.max(1, +e.target.value); const updated = { ...quotes }; const it = updated[activeQuoteId].rooms[activeRoom].items[idx]; it.qty = v; it.pricing = priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid transparent", color:"#777777", fontSize:11, fontFamily:"inherit", width:36, padding:0, outline:"none", textAlign:"center" }} onFocus={e=>e.target.style.borderBottomColor="#c8a96e"} onBlur={e=>e.target.style.borderBottomColor="transparent"} min={1} /></td>
+                            <td style={{ padding:"10px" }}><input type="number" value={item.qty || ""} onClick={e => e.stopPropagation()} onChange={e => { const v = e.target.value === "" ? 1 : Math.max(1, +e.target.value); const updated = { ...quotes }; const it = updated[activeQuoteId].rooms[activeRoom].items[idx]; it.qty = v; it.pricing = priceItem(it, activeQuote?.marginOverride); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid transparent", color:"#777777", fontSize:11, fontFamily:"inherit", width:36, padding:0, outline:"none", textAlign:"center" }} onFocus={e=>e.target.style.borderBottomColor="#c8a96e"} onBlur={e=>e.target.style.borderBottomColor="transparent"} min={1} /></td>
                             {["widthMm","heightMm","depthMm"].map(dim => (
-                            <td key={dim} className={dim === "depthMm" ? "sab-col-depth" : "sab-col-whd"} style={{ padding:"10px" }}>{item.params?.[dim] ? <input type="number" value={item.params[dim] || ""} onClick={e => e.stopPropagation()} onChange={e => { const v = e.target.value === "" ? 0 : +e.target.value; const updated = { ...quotes }; const it = updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params[dim] = v; it.pricing = priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid transparent", color:"#777777", fontSize:10, fontFamily:"inherit", width:42, padding:0, outline:"none", textAlign:"center" }} onFocus={e=>e.target.style.borderBottomColor="#c8a96e"} onBlur={e=>e.target.style.borderBottomColor="transparent"} /> : <span style={{ fontSize:10, color:"#777777" }}>—</span>}</td>
+                            <td key={dim} className={dim === "depthMm" ? "sab-col-depth" : "sab-col-whd"} style={{ padding:"10px" }}>{item.params?.[dim] ? <input type="number" value={item.params[dim] || ""} onClick={e => e.stopPropagation()} onChange={e => { const v = e.target.value === "" ? 0 : +e.target.value; const updated = { ...quotes }; const it = updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params[dim] = v; it.pricing = priceItem(it, activeQuote?.marginOverride); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid transparent", color:"#777777", fontSize:10, fontFamily:"inherit", width:42, padding:0, outline:"none", textAlign:"center" }} onFocus={e=>e.target.style.borderBottomColor="#c8a96e"} onBlur={e=>e.target.style.borderBottomColor="transparent"} /> : <span style={{ fontSize:10, color:"#777777" }}>—</span>}</td>
                             ))}
                             <td className="sab-col-cost" style={{ padding:"10px", fontSize:11, color:"#999999" }}>{fmt(item.pricing?.totalCost)}</td>
                             <td style={{ padding:"10px", fontSize:13, color:"#c8a96e", fontWeight:500 }}>{fmt(item.pricing?.totalSellExVAT)}</td>
@@ -2839,11 +2903,11 @@ function SABQuoteTool() {
                                     <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:8 }}>
                                       <div>
                                         <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Linear metres</div>
-                                        <input type="number" step="0.25" min="0.25" value={item.params?.linear_metres||""} onClick={e=>e.stopPropagation()} onChange={e => { const v = e.target.value===""?0:+e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.linear_metres=v; it.pricing=priceItem(it); it.description=`WRP ${it.params.profile_sku} ${it.params.wrp_category||""} — ${v}m`.trim(); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:60, padding:"2px 0", outline:"none", textAlign:"center" }} />
+                                        <input type="number" step="0.25" min="0.25" value={item.params?.linear_metres||""} onClick={e=>e.stopPropagation()} onChange={e => { const v = e.target.value===""?0:+e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.linear_metres=v; it.pricing=priceItem(it, activeQuote?.marginOverride); it.description=`WRP ${it.params.profile_sku} ${it.params.wrp_category||""} — ${v}m`.trim(); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:60, padding:"2px 0", outline:"none", textAlign:"center" }} />
                                       </div>
                                       <div>
                                         <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Markup %</div>
-                                        <input type="number" step="1" min="0" value={item.params?.markup_pct||""} onClick={e=>e.stopPropagation()} onChange={e => { const v = e.target.value===""?0:+e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.markup_pct=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:50, padding:"2px 0", outline:"none", textAlign:"center" }} />
+                                        <input type="number" step="1" min="0" value={item.params?.markup_pct||""} onClick={e=>e.stopPropagation()} onChange={e => { const v = e.target.value===""?0:+e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.markup_pct=v; it.pricing=priceItem(it, activeQuote?.marginOverride); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:50, padding:"2px 0", outline:"none", textAlign:"center" }} />
                                       </div>
                                       <div>
                                         <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>WRP £/m</div>
@@ -2858,7 +2922,7 @@ function SABQuoteTool() {
                                     <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginBottom:8, paddingTop:8, borderTop:"1px solid #d8d3cc" }}>
                                       <div>
                                         <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Finish</div>
-                                        <select value={item.params?.finishType||"paint"} onClick={e=>e.stopPropagation()} onChange={e => { const v=e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.finishType=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", padding:"2px 0", outline:"none" }}>
+                                        <select value={item.params?.finishType||"paint"} onClick={e=>e.stopPropagation()} onChange={e => { const v=e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.finishType=v; it.pricing=priceItem(it, activeQuote?.marginOverride); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", padding:"2px 0", outline:"none" }}>
                                           <option value="none">None</option>
                                           <option value="paint">Paint</option>
                                           <option value="lacquer">Lacquer</option>
@@ -2867,11 +2931,11 @@ function SABQuoteTool() {
                                       </div>
                                       <div>
                                         <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Paint £/m (override)</div>
-                                        <input type="number" step="0.01" min="0" placeholder="auto" value={item.params?.paint_rate_per_m_override||""} onClick={e=>e.stopPropagation()} onChange={e => { const v=e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.paint_rate_per_m_override=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:70, padding:"2px 0", outline:"none", textAlign:"center" }} />
+                                        <input type="number" step="0.01" min="0" placeholder="auto" value={item.params?.paint_rate_per_m_override||""} onClick={e=>e.stopPropagation()} onChange={e => { const v=e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.paint_rate_per_m_override=v; it.pricing=priceItem(it, activeQuote?.marginOverride); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:70, padding:"2px 0", outline:"none", textAlign:"center" }} />
                                       </div>
                                       <div>
                                         <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Girth mm (override)</div>
-                                        <input type="number" step="1" min="0" placeholder="auto" value={item.params?.girth_mm_override||""} onClick={e=>e.stopPropagation()} onChange={e => { const v = e.target.value===""?null:+e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.girth_mm_override=v; it.pricing=priceItem(it); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:70, padding:"2px 0", outline:"none", textAlign:"center" }} />
+                                        <input type="number" step="1" min="0" placeholder="auto" value={item.params?.girth_mm_override||""} onClick={e=>e.stopPropagation()} onChange={e => { const v = e.target.value===""?null:+e.target.value; const updated={...quotes}; const it=updated[activeQuoteId].rooms[activeRoom].items[idx]; it.params.girth_mm_override=v; it.pricing=priceItem(it, activeQuote?.marginOverride); saveQuotes(updated); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:12, fontFamily:"inherit", width:70, padding:"2px 0", outline:"none", textAlign:"center" }} />
                                       </div>
                                       <div>
                                         <div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em" }}>Effective paint £/m</div>
@@ -2910,18 +2974,18 @@ function SABQuoteTool() {
                                     from project-overhead allocation and consumables-per-item count. */}
                                 <div style={{ marginTop:14, paddingTop:12, borderTop:"1px dashed #d8d3cc" }}>
                                   <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:11, color: item.fixedPrice ? "#c8a96e" : "#777777" }}>
-                                    <input type="checkbox" checked={!!item.fixedPrice} onChange={e => { const u = { ...quotes }; const it = u[activeQuoteId].rooms[activeRoom].items[idx]; it.fixedPrice = e.target.checked; if (it.fixedPrice && !it.fixedCostExVAT && it.pricing?.totalCost) { it.fixedCostExVAT = +(it.pricing.totalCost / (it.qty || 1)).toFixed(2); } it.pricing = priceItem(it); saveQuotes(u); }} style={{ accentColor:"#c8a96e" }} />
+                                    <input type="checkbox" checked={!!item.fixedPrice} onChange={e => { const u = { ...quotes }; const it = u[activeQuoteId].rooms[activeRoom].items[idx]; it.fixedPrice = e.target.checked; if (it.fixedPrice && !it.fixedCostExVAT && it.pricing?.totalCost) { it.fixedCostExVAT = +(it.pricing.totalCost / (it.qty || 1)).toFixed(2); } it.pricing = priceItem(it, activeQuote?.marginOverride); saveQuotes(u); }} style={{ accentColor:"#c8a96e" }} />
                                     Fixed price — exclude from margin & shared costs
                                   </label>
                                   {item.fixedPrice && (
                                     <div style={{ display:"flex", gap:14, marginTop:8, alignItems:"flex-end" }}>
                                       <div>
                                         <div style={{ fontSize:9, color:"#999999", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:3 }}>Cost ex VAT (each)</div>
-                                        <input type="number" min="0" step="1" value={item.fixedCostExVAT || ""} onChange={e => { const u = { ...quotes }; const it = u[activeQuoteId].rooms[activeRoom].items[idx]; it.fixedCostExVAT = e.target.value === "" ? 0 : +e.target.value; it.pricing = priceItem(it); saveQuotes(u); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:13, fontFamily:"inherit", width:100, padding:"2px 0", outline:"none" }} />
+                                        <input type="number" min="0" step="1" value={item.fixedCostExVAT || ""} onChange={e => { const u = { ...quotes }; const it = u[activeQuoteId].rooms[activeRoom].items[idx]; it.fixedCostExVAT = e.target.value === "" ? 0 : +e.target.value; it.pricing = priceItem(it, activeQuote?.marginOverride); saveQuotes(u); }} style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:13, fontFamily:"inherit", width:100, padding:"2px 0", outline:"none" }} />
                                       </div>
                                       <div>
                                         <div style={{ fontSize:9, color:"#999999", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:3 }}>Markup %</div>
-                                        <input type="number" min="0" step="1" value={item.fixedMarkupPct ?? ""} onChange={e => { const u = { ...quotes }; const it = u[activeQuoteId].rooms[activeRoom].items[idx]; it.fixedMarkupPct = e.target.value === "" ? 0 : +e.target.value; it.pricing = priceItem(it); saveQuotes(u); }} placeholder="0" style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:13, fontFamily:"inherit", width:60, padding:"2px 0", outline:"none" }} />
+                                        <input type="number" min="0" step="1" value={item.fixedMarkupPct ?? ""} onChange={e => { const u = { ...quotes }; const it = u[activeQuoteId].rooms[activeRoom].items[idx]; it.fixedMarkupPct = e.target.value === "" ? 0 : +e.target.value; it.pricing = priceItem(it, activeQuote?.marginOverride); saveQuotes(u); }} placeholder="0" style={{ background:"transparent", border:"none", borderBottom:"1px solid #c8a96e", color:"#1a1a1a", fontSize:13, fontFamily:"inherit", width:60, padding:"2px 0", outline:"none" }} />
                                       </div>
                                       <div style={{ fontSize:10, color:"#777777" }}>→ Sell each <span style={{ color:"#c8a96e", fontSize:12 }}>{fmt(item.pricing?.sellPerUnit || 0)}</span> · VAT still applies</div>
                                     </div>
@@ -2944,6 +3008,11 @@ function SABQuoteTool() {
                   </table>
                 </div>
                 ); })()}
+
+                {/* Bottom "+ Add Item" — mirrors the top button, same handler */}
+                <div style={{ marginTop:12, display:"flex", justifyContent:"center" }}>
+                  <button onClick={openAddItemForm} style={{ padding:"7px 16px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:3, cursor:"pointer", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>+ Add Item</button>
+                </div>
 
                 {/* Design time row */}
                 <div style={{ marginTop:16, padding:"12px 14px", background:"#f5f5f5", borderRadius:6, border:"1px solid #d8d3cc" }}>
@@ -3182,6 +3251,20 @@ function SABQuoteTool() {
                             </select>
                           )}
                           {cur.useSolidDrawers === "__MIXED__" && <span style={{ fontSize:10, color:"#b86a3e" }}>(mixed across rooms)</span>}
+                        </div>
+                      </div>
+                      <div style={{ marginTop:14, paddingTop:10, borderTop:"1px solid #e8e3dc" }}>
+                        <div style={{ fontSize:9, color:"#777777", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:6 }}>Margin Override</div>
+                        <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+                          <input type="number" step="0.05" min="0" placeholder={`Default ${DB.settings.margin}`}
+                            value={activeQuote.marginOverride ?? ""}
+                            onChange={e => setQuoteMarginOverride(e.target.value)}
+                            style={{ background:"#ffffff", border: activeQuote.marginOverride != null ? "1px solid #c8a96e" : "1px solid #d8d3cc", borderRadius:3, padding:"5px 8px", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", width:110 }} />
+                          <span style={{ fontSize:10, color: activeQuote.marginOverride != null ? "#c8a96e" : "#999999" }}>
+                            {activeQuote.marginOverride != null
+                              ? `Overriding the global ${DB.settings.margin}× margin for this quote`
+                              : `Using global default margin (${DB.settings.margin}×) — enter a value to override`}
+                          </span>
                         </div>
                       </div>
                     </div>
