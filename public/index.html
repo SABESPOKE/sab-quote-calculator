@@ -1984,6 +1984,20 @@ function SABQuoteTool() {
     saveQuotes(updated);
   }
 
+  // Delete a whole client folder: soft-delete the given quotes (they move to the
+  // Deleted folder, recoverable). Confirmed first. `ids` are the quotes shown in
+  // that client card (the current status folder).
+  function deleteClientFolder(clientName, ids) {
+    if (!ids || ids.length === 0) return;
+    if (!window.confirm(`Move ${ids.length} quote${ids.length !== 1 ? "s" : ""} for "${clientName}" to the Deleted folder?`)) return;
+    const updated = { ...quotes };
+    const now = new Date().toISOString();
+    for (const id of ids) if (updated[id]) updated[id] = { ...updated[id], deleted: true, deletedAt: now };
+    if (activeQuoteId && ids.includes(activeQuoteId)) { setActiveQuoteId(null); }
+    if (selectedClient === clientName) setSelectedClient(null);
+    saveQuotes(updated);
+  }
+
   // Permanently remove a single quote (hard delete + tombstone so it can't resurrect).
   function permanentlyDeleteQuote(id) {
     if (!window.confirm('Permanently delete this quote? This cannot be undone.')) return;
@@ -2492,6 +2506,9 @@ function SABQuoteTool() {
             <button onClick={() => { setView("quotes"); setActiveQuoteId(null); }} style={{ padding:"6px 14px", fontSize:11, background:"transparent", color:"#777777", border:"none", cursor:"pointer", fontFamily:"inherit" }}>← All</button>
             <div style={{ width:1, height:20, background:"#d8d3cc", margin:"0 4px" }} />
           </>)}
+          {view === "settings" && (
+            <button onClick={() => { setView("quotes"); setActiveQuoteId(null); }} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", background:"transparent", color:"#c8a96e", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>🏠 Home</button>
+          )}
           <button onClick={() => setView("settings")} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", background:view==="settings"?"#c8a96e":"transparent", color:view==="settings"?"#1a1a1a":"#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>⚙ Settings</button>
         </div>
       </div>
@@ -2577,6 +2594,9 @@ function SABQuoteTool() {
                     <div style={{ textAlign:"right" }}>
                       <div style={{ fontSize:19, color:"#c8a96e" }}>{fmt(total)}</div>
                       <div style={{ fontSize:9, color:"#999999", letterSpacing:"0.08em" }}>EX VAT · {qs.length} QUOTE{qs.length !== 1 ? "S" : ""}</div>
+                      {quoteStatusTab !== "deleted" && (
+                        <button onClick={e => { e.stopPropagation(); deleteClientFolder(name, qs.map(q => q.id)); }} style={{ marginTop:6, background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>Delete folder</button>
+                      )}
                     </div>
                   </div>
                 );
