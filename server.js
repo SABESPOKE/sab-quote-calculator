@@ -17,12 +17,14 @@ catch (err) { console.error('pricing engine load failed (GET /api/quotes will re
 // unavailable or an item throws/returns null, that item's stored pricing is kept.
 function recomputeQuotePricing(quote) {
   if (!priceItem || !quote || !quote.rooms) return quote;
+  // Per-quote margin override (falls back to the engine default when unset).
+  const effectiveMargin = quote.marginOverride;
   const rooms = {};
   for (const [roomName, room] of Object.entries(quote.rooms)) {
     rooms[roomName] = {
       ...room,
       items: (room.items || []).map(item => {
-        try { const pricing = priceItem(item); return pricing ? { ...item, pricing } : item; }
+        try { const pricing = priceItem(item, effectiveMargin); return pricing ? { ...item, pricing } : item; }
         catch { return item; }
       }),
     };
@@ -266,11 +268,22 @@ app.delete('/api/quotes/:id', async (req, res) => {
   }
 });
 
-// Bulk sync — client sends all its quotes, server merges and returns result
+// Bulk sync — client sends all its quotes, server merges and returns result.
+// `deleted` is a list of tombstoned IDs (permanent deletes): the server purges
+// them and refuses to re-introduce them, so they can't resurrect on any device.
 app.post('/api/quotes/sync', async (req, res) => {
-  if (!pool) return res.json({ quotes: req.body.quotes || {} });
+  if (!pool) return res.json({ quotes: req.body.quotes || {}, deleted: [] });
   const clientQuotes = req.body.quotes || {};
+  const clientDeleted = Array.isArray(req.body.deleted) ? req.body.deleted : [];
   try {
+    // Honour client tombstones first so the merge below can't re-introduce them.
+    const confirmedDeleted = [];
+    for (const id of clientDeleted) {
+      try { await pool.query('DELETE FROM quotes WHERE id = $1', [id]); confirmedDeleted.push(id); }
+      catch (e) { console.error('sync delete failed for', id, e.message); }
+    }
+    const deletedSet = new Set(clientDeleted);
+
     // Get all server quotes
     const { rows } = await pool.query('SELECT id, data, updated_at FROM quotes');
     const serverMap = {};
@@ -282,6 +295,7 @@ app.post('/api/quotes/sync', async (req, res) => {
 
     // Process client quotes — upsert if newer or missing on server
     for (const [id, quote] of Object.entries(clientQuotes)) {
+      if (deletedSet.has(id)) continue; // tombstoned — never re-add
       const clientTime = quote.updated_at ? new Date(quote.updated_at) : new Date(0);
       const serverEntry = serverMap[id];
 
@@ -301,12 +315,13 @@ app.post('/api/quotes/sync', async (req, res) => {
       delete serverMap[id];
     }
 
-    // Add quotes that only exist on server
+    // Add quotes that only exist on server (skip anything the client tombstoned)
     for (const [id, entry] of Object.entries(serverMap)) {
+      if (deletedSet.has(id)) continue;
       merged[id] = entry.data;
     }
 
-    res.json({ quotes: merged });
+    res.json({ quotes: merged, deleted: confirmedDeleted });
   } catch (err) {
     console.error('POST /api/quotes/sync error:', err.message);
     res.status(500).json({ error: 'Database error' });

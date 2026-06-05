@@ -1523,6 +1523,14 @@ function SABQuoteTool() {
   // resync doesn't replace local state with a stale server view before our
   // debounced PUT lands — the race that resurrects deleted items.
   const dirtyRef = React.useRef(new Set());
+  // Tombstones — IDs that were PERMANENTLY deleted (Empty folder / Delete
+  // permanently). Kept in localStorage so a stale tab or another device can't
+  // resurrect them via sync. Normal "delete" is a soft-delete (deleted:true flag)
+  // and needs no tombstone — the flag itself syncs everywhere.
+  const deletedIdsRef = React.useRef((() => {
+    try { const s = JSON.parse(localStorage.getItem('sab_deleted_ids')); return new Set(Array.isArray(s) ? s : []); } catch { return new Set(); }
+  })());
+  const persistDeletedIds = () => { try { localStorage.setItem('sab_deleted_ids', JSON.stringify([...deletedIdsRef.current])); } catch {} };
   // Per-quote JSON snapshot of the last "known-saved" (or last server-supplied)
   // state. Used by saveQuotes to detect which quotes actually changed, so we
   // don't bulk-stamp updated_at and PUT every quote on every save (which
@@ -1549,7 +1557,9 @@ function SABQuoteTool() {
       return fetch('/api/quotes').then(r => r.json()).then(serverQuotes => {
         setQuotes(prev => {
           const merged = { ...serverQuotes };
+          for (const id of deletedIdsRef.current) delete merged[id]; // never resurrect a tombstoned quote
           for (const [id, q] of Object.entries(prev)) {
+            if (deletedIdsRef.current.has(id)) continue;
             const local = q.updated_at ? new Date(q.updated_at) : new Date(0);
             const server = merged[id] && merged[id].updated_at ? new Date(merged[id].updated_at) : new Date(0);
             if (!merged[id] || local > server) merged[id] = q;
@@ -1573,10 +1583,14 @@ function SABQuoteTool() {
       fetch('/api/quotes/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quotes })
+        body: JSON.stringify({ quotes, deleted: [...deletedIdsRef.current] })
       }).then(r => r.json()).then(res => {
+        // Server confirms which tombstones it has purged — we can forget those.
+        if (Array.isArray(res.deleted)) { for (const id of res.deleted) deletedIdsRef.current.delete(id); persistDeletedIds(); }
         if (res.quotes) {
-          const priced = ensurePricing(res.quotes);
+          const safe = {};
+          for (const [id, q] of Object.entries(res.quotes)) if (!deletedIdsRef.current.has(id)) safe[id] = q;
+          const priced = ensurePricing(safe);
           captureBaseline(priced);
           setQuotes(priced);
         }
@@ -1928,17 +1942,59 @@ function SABQuoteTool() {
     saveQuotes(updated);
   }
 
+  // Soft-delete: flag the quote and move it to the Deleted folder. The flag is part
+  // of the quote data, so it syncs to every session/device — which is what stops a
+  // deleted quote resurrecting (it is never removed, just hidden from normal folders).
   function deleteQuote(id) {
+    const updated = { ...quotes };
+    if (updated[id]) updated[id] = { ...updated[id], deleted: true, deletedAt: new Date().toISOString() };
+    saveQuotes(updated);
+    if (activeQuoteId === id) { setActiveQuoteId(null); setView("quotes"); }
+  }
+
+  // Human-friendly "deleted N days ago" label.
+  function daysAgo(iso) {
+    if (!iso) return "";
+    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    return d <= 0 ? "today" : d === 1 ? "1 day ago" : `${d} days ago`;
+  }
+
+  // Restore a soft-deleted quote back to its original status folder.
+  function restoreQuote(id) {
+    const updated = { ...quotes };
+    if (updated[id]) { const { deleted, deletedAt, ...rest } = updated[id]; updated[id] = rest; }
+    saveQuotes(updated);
+  }
+
+  // Permanently remove a single quote (hard delete + tombstone so it can't resurrect).
+  function permanentlyDeleteQuote(id) {
+    if (!window.confirm('Permanently delete this quote? This cannot be undone.')) return;
     const updated = { ...quotes }; delete updated[id]; saveQuotes(updated);
     if (activeQuoteId === id) { setActiveQuoteId(null); setView("quotes"); }
-    // Also delete from server. Mark dirty so the visibility/online resync
-    // doesn't bring the quote back before the DELETE has landed.
+    deletedIdsRef.current.add(id); persistDeletedIds();
     if (dbReady) {
       dirtyRef.current.add(id);
-      fetch('/api/quotes/' + id, { method: 'DELETE' })
-        .catch(() => {})
-        .finally(() => { dirtyRef.current.delete(id); });
+      fetch('/api/quotes/' + id, { method: 'DELETE' }).catch(() => {}).finally(() => { dirtyRef.current.delete(id); });
     }
+  }
+
+  // Empty the Deleted folder — permanently remove every soft-deleted quote.
+  function emptyDeletedFolder() {
+    const ids = Object.values(quotes).filter(q => q.deleted).map(q => q.id);
+    if (ids.length === 0) return;
+    if (!window.confirm(`Permanently delete ${ids.length} quote${ids.length !== 1 ? 's' : ''} in the Deleted folder? This cannot be undone.`)) return;
+    const updated = { ...quotes };
+    for (const id of ids) {
+      delete updated[id];
+      deletedIdsRef.current.add(id);
+      if (dbReady) {
+        dirtyRef.current.add(id);
+        fetch('/api/quotes/' + id, { method: 'DELETE' }).catch(() => {}).finally(() => { dirtyRef.current.delete(id); });
+      }
+    }
+    persistDeletedIds();
+    if (activeQuoteId && ids.includes(activeQuoteId)) { setActiveQuoteId(null); setView("quotes"); }
+    saveQuotes(updated);
   }
 
   function updateQuoteStatus(id, newStatus) {
@@ -2139,6 +2195,17 @@ function SABQuoteTool() {
         q.projectCosts = pc;
       } catch (e) { /* leave byRoom untouched on estimator failure */ }
     }
+    updated[activeQuoteId] = q;
+    saveQuotes(updated);
+  }
+
+  // "Items are alternatives" — the quote produces NO grand total; instead each
+  // line item is shown with its own ex-VAT and inc-VAT price (used for menus of
+  // independently-selectable options). Distinct from alternativesMode (rooms).
+  function toggleItemsAlternatives() {
+    const updated = { ...quotes };
+    const q = { ...updated[activeQuoteId] };
+    q.itemsAreAlternatives = !q.itemsAreAlternatives;
     updated[activeQuoteId] = q;
     saveQuotes(updated);
   }
@@ -2345,13 +2412,18 @@ function SABQuoteTool() {
             </div>
           </div>
           {/* Status folder tabs */}
-          <div style={{ display:"flex", gap:2, marginBottom:24 }}>
-            {[["active","Active"],["sold","Sold"],["lost","Lost"],["archive","Archive"]].map(([k,l]) => {
-              const count = Object.values(quotes).filter(q => (q.status || "active") === k).length;
+          <div style={{ display:"flex", gap:2, marginBottom:24, alignItems:"center", flexWrap:"wrap" }}>
+            {[["active","Active"],["sold","Sold"],["lost","Lost"],["archive","Archive"],["deleted","Deleted"]].map(([k,l]) => {
+              const count = k === "deleted"
+                ? Object.values(quotes).filter(q => q.deleted).length
+                : Object.values(quotes).filter(q => !q.deleted && (q.status || "active") === k).length;
               return (
                 <button key={k} onClick={() => setQuoteStatusTab(k)} style={{ padding:"7px 16px", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", background: quoteStatusTab===k ? "#c8a96e" : "transparent", color: quoteStatusTab===k ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{l} ({count})</button>
               );
             })}
+            {quoteStatusTab === "deleted" && Object.values(quotes).some(q => q.deleted) && (
+              <button onClick={emptyDeletedFolder} style={{ marginLeft:"auto", padding:"7px 16px", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", background:"transparent", color:"#b8503e", border:"1px solid #e0a89c", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>🗑 Empty Folder</button>
+            )}
           </div>
           {showNewQuote && (
             <div style={{ background:"#f0eeeb", border:"1px solid #c8c3bc", borderRadius:8, padding:26, marginBottom:22 }}>
@@ -2374,7 +2446,7 @@ function SABQuoteTool() {
               <div style={{ fontSize:13, letterSpacing:"0.05em" }}>No quotes yet — create your first one</div>
             </div>
           )}
-          {Object.values(quotes).filter(q => (q.status || "active") === quoteStatusTab).map(q => {
+          {Object.values(quotes).filter(q => quoteStatusTab === "deleted" ? q.deleted : (!q.deleted && (q.status || "active") === quoteStatusTab)).map(q => {
             const t = quoteTotals(q);
             const rc = Object.keys(q.rooms||{}).length;
             const ic = Object.values(q.rooms||{}).reduce((s,r) => s+r.items.length, 0);
@@ -2392,8 +2464,17 @@ function SABQuoteTool() {
                   <div>
                     <div style={{ fontSize:19, color:"#c8a96e" }}>{fmt(t.totalExVAT)}</div>
                     <div style={{ fontSize:9, color:"#999999", letterSpacing:"0.08em" }}>EX VAT</div>
-                    <button onClick={e => { e.stopPropagation(); deleteQuote(q.id); }} style={{ marginTop:6, background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>Delete</button>
+                    {q.deleted ? (
+                      <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:4, alignItems:"flex-end" }}>
+                        {q.deletedAt && <div style={{ fontSize:9, color:"#b8503e" }}>deleted {daysAgo(q.deletedAt)}</div>}
+                        <button onClick={e => { e.stopPropagation(); restoreQuote(q.id); }} style={{ background:"transparent", border:"none", color:"#6f9a5e", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>↩ Restore</button>
+                        <button onClick={e => { e.stopPropagation(); permanentlyDeleteQuote(q.id); }} style={{ background:"transparent", border:"none", color:"#b8503e", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>Delete permanently</button>
+                      </div>
+                    ) : (
+                      <button onClick={e => { e.stopPropagation(); deleteQuote(q.id); }} style={{ marginTop:6, background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>Delete</button>
+                    )}
                   </div>
+                  {!q.deleted && (
                   <div style={{ position:"relative" }}>
                     <button onClick={e => { e.stopPropagation(); setStatusMenuOpen(statusMenuOpen === q.id ? null : q.id); }} style={{ background:"transparent", border:"1px solid #d8d3cc", borderRadius:3, color:"#777777", cursor:"pointer", fontSize:16, padding:"2px 6px", fontFamily:"inherit", lineHeight:1 }}>⋮</button>
                     {statusMenuOpen === q.id && (
@@ -2406,6 +2487,7 @@ function SABQuoteTool() {
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
               </div>
             );
@@ -2429,6 +2511,11 @@ function SABQuoteTool() {
               <div onClick={toggleAlternativesMode} title="When ON, each room is treated as an alternative quote option — no grand total. Each room gets its own full project costs (survey, delivery, fitting, etc.)." style={{ marginTop:10, padding:"6px 8px", background: activeQuote.alternativesMode ? "rgba(200,169,110,0.12)" : "transparent", border:`1px solid ${activeQuote.alternativesMode ? "#c8a96e" : "#d8d3cc"}`, borderRadius:4, cursor:"pointer", display:"flex", alignItems:"center", gap:7 }}>
                 <div style={{ width:14, height:14, borderRadius:3, border:`1.5px solid ${activeQuote.alternativesMode ? "#c8a96e" : "#c8c3bc"}`, background: activeQuote.alternativesMode ? "#c8a96e" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, lineHeight:1, flexShrink:0 }}>{activeQuote.alternativesMode ? "✓" : ""}</div>
                 <div style={{ fontSize:9, color: activeQuote.alternativesMode ? "#c8a96e" : "#999", letterSpacing:"0.04em", lineHeight:1.3 }}>Rooms are alternatives<br/><span style={{ fontSize:8, color:"#999" }}>(don't total)</span></div>
+              </div>
+              {/* Items are alternatives — when ON, no grand total; each line item shows its own ex/inc VAT. */}
+              <div onClick={toggleItemsAlternatives} title="When ON, the quote produces no grand total. Each line item is shown with its own price ex VAT and inc VAT — for a menu of independently-selectable options." style={{ marginTop:6, padding:"6px 8px", background: activeQuote.itemsAreAlternatives ? "rgba(200,169,110,0.12)" : "transparent", border:`1px solid ${activeQuote.itemsAreAlternatives ? "#c8a96e" : "#d8d3cc"}`, borderRadius:4, cursor:"pointer", display:"flex", alignItems:"center", gap:7 }}>
+                <div style={{ width:14, height:14, borderRadius:3, border:`1.5px solid ${activeQuote.itemsAreAlternatives ? "#c8a96e" : "#c8c3bc"}`, background: activeQuote.itemsAreAlternatives ? "#c8a96e" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, lineHeight:1, flexShrink:0 }}>{activeQuote.itemsAreAlternatives ? "✓" : ""}</div>
+                <div style={{ fontSize:9, color: activeQuote.itemsAreAlternatives ? "#c8a96e" : "#999", letterSpacing:"0.04em", lineHeight:1.3 }}>Items are alternatives<br/><span style={{ fontSize:8, color:"#999" }}>(no total · per-line ex/inc VAT)</span></div>
               </div>
               {/* Continuous numbering — when ON, item numbers run 1,2,3… across all rooms; OFF restarts per room. */}
               <div onClick={() => { const u = { ...quotes }; u[activeQuoteId].continuousNumbering = !u[activeQuoteId].continuousNumbering; saveQuotes(u); }} title="When ON, item numbers run continuously across all rooms. OFF: numbering restarts at 1 in each room." style={{ marginTop:6, padding:"6px 8px", background: activeQuote.continuousNumbering ? "rgba(200,169,110,0.12)" : "transparent", border:`1px solid ${activeQuote.continuousNumbering ? "#c8a96e" : "#d8d3cc"}`, borderRadius:4, cursor:"pointer", display:"flex", alignItems:"center", gap:7 }}>
