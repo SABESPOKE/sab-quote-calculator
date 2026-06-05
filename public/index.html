@@ -1627,6 +1627,9 @@ function SABQuoteTool() {
   const [newRoomName, setNewRoomName] = useState("");
   const [newQuoteForm, setNewQuoteForm] = useState({ client: "", project: "", ref: "" });
   const [showNewQuote, setShowNewQuote] = useState(false);
+  // Client/Project hierarchy: null = show the Clients list; a name = show that
+  // client's quotes. Quotes are grouped by their `client` field (no DB schema change).
+  const [selectedClient, setSelectedClient] = useState(null);
   const [showAddItem, setShowAddItem] = useState(false);
   const [addItemForm, setAddItemForm] = useState({ ...ITEM_DEFAULTS.cabinet });
   const [expandedItem, setExpandedItem] = useState(null);
@@ -1838,6 +1841,7 @@ function SABQuoteTool() {
     saveQuotes({ ...quotes, [id]: q });
     setActiveQuoteId(id); setShowNewQuote(false);
     setNewQuoteForm({ client:"", project:"", ref:"" });
+    setSelectedClient(q.client); // stay grouped under this client when we come back
     setView("build");
     setChatHistory([{ role:"assistant", text:`Quote started for **${q.client}** — ${q.project}. Add a room to begin.` }]);
     setAiConvHistory([]); setActiveRoom(null);
@@ -1945,6 +1949,7 @@ function SABQuoteTool() {
     saveQuotes({ ...quotes, [newId]: clone });
     setActiveQuoteId(newId);
     setActiveRoom(null);
+    setSelectedClient(clone.client); // duplicate stays under the same client group
     setView("build");
     setStatusMenuOpen(null);
   }
@@ -2499,7 +2504,7 @@ function SABQuoteTool() {
               <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:5 }}>Quote Management</div>
             </div>
             <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-              <button onClick={() => setShowNewQuote(true)} style={{ padding:"11px 22px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>+ New Quote</button>
+              <button onClick={() => { setNewQuoteForm({ client: selectedClient || "", project: "", ref: "" }); setShowNewQuote(true); }} style={{ padding:"11px 22px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", fontFamily:"inherit", fontWeight:600 }}>{selectedClient ? "+ New Quote" : "+ New Client / Project"}</button>
               <button onClick={exportBackup} style={{ padding:"8px 14px", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:4, cursor:"pointer", fontSize:10, fontFamily:"inherit" }}>↓ Export</button>
               <label style={{ padding:"8px 14px", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:4, cursor:"pointer", fontSize:10, fontFamily:"inherit", display:"inline-block" }}>
                 ↑ Import
@@ -2536,13 +2541,59 @@ function SABQuoteTool() {
               </div>
             </div>
           )}
-          {Object.values(quotes).length === 0 && !showNewQuote && (
-            <div style={{ textAlign:"center", padding:"60px 0", color:"#999999" }}>
-              <div style={{ fontSize:36, marginBottom:10 }}>📋</div>
-              <div style={{ fontSize:13, letterSpacing:"0.05em" }}>No quotes yet — create your first one</div>
-            </div>
-          )}
-          {Object.values(quotes).filter(q => quoteStatusTab === "deleted" ? q.deleted : (!q.deleted && (q.status || "active") === quoteStatusTab)).map(q => {
+          {(() => {
+            // Group the status-filtered quotes by client (no DB change). Quotes with
+            // no client fall under "Unassigned". null selectedClient = show the Clients
+            // list; a selected client = show that client's quotes.
+            const visible = Object.values(quotes).filter(q => quoteStatusTab === "deleted" ? q.deleted : (!q.deleted && (q.status || "active") === quoteStatusTab));
+            const groups = {};
+            for (const q of visible) { const c = q.client || "Unassigned"; (groups[c] = groups[c] || []).push(q); }
+            const clientNames = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+            if (Object.values(quotes).length === 0 && !showNewQuote) {
+              return (
+                <div style={{ textAlign:"center", padding:"60px 0", color:"#999999" }}>
+                  <div style={{ fontSize:36, marginBottom:10 }}>📋</div>
+                  <div style={{ fontSize:13, letterSpacing:"0.05em" }}>No quotes yet — create your first one</div>
+                </div>
+              );
+            }
+            // ── LEVEL 1: Clients ──
+            if (selectedClient === null) {
+              if (clientNames.length === 0) return (
+                <div style={{ textAlign:"center", padding:"50px 0", color:"#999999", fontSize:12 }}>No quotes in this folder</div>
+              );
+              return clientNames.map(name => {
+                const qs = groups[name];
+                const total = qs.reduce((s, q) => s + (quoteTotals(q).totalExVAT || 0), 0);
+                return (
+                  <div key={name} onClick={() => setSelectedClient(name)}
+                    style={{ background:"#f0eeeb", border:"1px solid #c8c3bc", borderRadius:8, padding:"18px 22px", marginBottom:10, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor="#c8a96e"}
+                    onMouseLeave={e => e.currentTarget.style.borderColor="#c8c3bc"}>
+                    <div>
+                      <div style={{ fontSize:16, color:"#1a1a1a", marginBottom:3 }}>{name}</div>
+                      <div style={{ fontSize:11, color:"#777777" }}>{qs.length} quote{qs.length !== 1 ? "s" : ""}</div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontSize:19, color:"#c8a96e" }}>{fmt(total)}</div>
+                      <div style={{ fontSize:9, color:"#999999", letterSpacing:"0.08em" }}>EX VAT · {qs.length} QUOTE{qs.length !== 1 ? "S" : ""}</div>
+                    </div>
+                  </div>
+                );
+              });
+            }
+            // ── LEVEL 2: this client's quotes ──
+            const clientQuotes = groups[selectedClient] || [];
+            return (
+              <>
+                <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
+                  <button onClick={() => setSelectedClient(null)} style={{ padding:"6px 14px", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", background:"transparent", color:"#c8a96e", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>← Clients</button>
+                  <div style={{ fontSize:15, color:"#1a1a1a" }}>{selectedClient}</div>
+                </div>
+                {clientQuotes.length === 0 && (
+                  <div style={{ textAlign:"center", padding:"40px 0", color:"#999999", fontSize:12 }}>No quotes for this client in this folder</div>
+                )}
+                {clientQuotes.map(q => {
             const t = quoteTotals(q);
             const rc = Object.keys(q.rooms||{}).length;
             const ic = Object.values(q.rooms||{}).reduce((s,r) => s+r.items.length, 0);
@@ -2588,6 +2639,9 @@ function SABQuoteTool() {
               </div>
             );
           })}
+              </>
+            );
+          })()}
         </div>
       )}
 
