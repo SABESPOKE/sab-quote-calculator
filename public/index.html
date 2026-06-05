@@ -1265,6 +1265,7 @@ function applySpecToAllItems(quote, field, name) {
 function printQuote(quote, viewMode, roomFilter) {
   const mode = viewMode || "itemised";
   const altMode = !!quote.alternativesMode;
+  const itemsAlt = !!quote.itemsAreAlternatives;
   const dist = distributeProjectCosts(quote);
   const itemNumbers = computeItemNumbers(quote);
   const numPrefix = (roomName, idx) => itemNumbers[roomName]?.[idx] != null ? `${itemNumbers[roomName][idx]}. ` : "";
@@ -1333,6 +1334,18 @@ function printQuote(quote, viewMode, roomFilter) {
       </div>
     </div>`;
   }).join("");
+  // Items-are-alternatives: each line shows its own ex/inc VAT (raw item price,
+  // not baked with project costs); no combined total. Mirrors the on-screen view.
+  const itemsAltSections = !itemsAlt ? "" : filteredRooms.map(({ roomName }) => {
+    const items = (quote.rooms[roomName]?.items || []);
+    if (items.length === 0) return "";
+    const itemRows = items.map((i, idx) => {
+      const ex = i.pricing?.totalSellExVAT || 0;
+      const inc = i.pricing?.totalSellIncVAT || (ex * (1 + vatRate));
+      return `<tr><td class="td-desc">${numPrefix(roomName, idx)}${i.qty > 1 ? `${i.qty}&times; ` : ""}${i.description}${dimsHtml(i)}</td><td class="td-price" style="white-space:nowrap"><span style="color:#777;font-weight:400">${fmt(ex)} ex VAT</span> &nbsp;·&nbsp; <span style="color:#1a1815;font-weight:600">${fmt(inc)} inc VAT</span></td></tr>`;
+    }).join("");
+    return `<div class="room-block"><div class="room-title">${roomName}</div><table class="item-tbl"><tbody>${itemRows}</tbody></table></div>`;
+  }).join("");
   // Cabinetry spec for PDF
   const derived = deriveSpec(quote);
   const spec = quote.spec || {};
@@ -1392,12 +1405,12 @@ function printQuote(quote, viewMode, roomFilter) {
   <div class="client-blk"><div><div class="client-name">${quote.client}</div><div class="client-proj">${quote.project}</div></div>
   <div class="contact-info">design@stevenandrewsbespoke.com<br>www.stevenandrewsbespoke.com</div></div>
   ${specBlock}
-  <div class="sec-label">${altMode ? "Quotation Options" : "Scope of Works"}</div>${altMode ? altRoomSections : roomSections}
+  <div class="sec-label">${itemsAlt ? "Quotation — Individual Options" : altMode ? "Quotation Options" : "Scope of Works"}</div>${itemsAlt ? itemsAltSections : altMode ? altRoomSections : roomSections}
   ${dist.services.length > 0 ? `<div style="margin-bottom:18px;padding:12px 16px;background:#f9f8f6;border:0.5pt solid #e0d8cc;border-radius:4px">
   <div style="font-size:7pt;letter-spacing:.28em;color:#c8a96e;text-transform:uppercase;font-weight:700;margin-bottom:8px">${altMode ? "Each Option Includes" : "What's Included"}</div>
   ${dist.services.map(s => `<div style="padding:3px 0;font-size:9pt;color:#5a5045">✓ ${s}</div>`).join("")}
   </div>` : ""}
-  ${altMode ? `<div style="margin-top:18px;padding:10px 14px;background:#f5f5f5;border-radius:4px;font-size:9pt;color:#777;font-style:italic">The options above are alternatives. Each is a self-contained quotation; only one option is to be selected.</div>` : `<div class="totals-blk">
+  ${itemsAlt ? `<div style="margin-top:18px;padding:10px 14px;background:#f5f5f5;border-radius:4px;font-size:9pt;color:#777;font-style:italic">Items above are priced individually as alternatives — there is no combined project total.</div>` : altMode ? `<div style="margin-top:18px;padding:10px 14px;background:#f5f5f5;border-radius:4px;font-size:9pt;color:#777;font-style:italic">The options above are alternatives. Each is a self-contained quotation; only one option is to be selected.</div>` : `<div class="totals-blk">
   <div class="tot-row"><span>Subtotal (ex VAT)</span><span>${fmt(totals.totalExVAT)}</span></div>
   <div class="tot-row"><span>VAT (20%)</span><span>${fmt(totals.vat)}</span></div>
   <div class="tot-final"><span>Total (inc VAT)</span><span>${fmt(totals.totalIncVAT)}</span></div></div>`}
@@ -4269,6 +4282,7 @@ function SABQuoteTool() {
       {/* ── CLIENT VIEW ── */}
       {view === "client" && activeQuote && (() => {
         const altMode = !!activeQuote.alternativesMode;
+        const itemsAlt = !!activeQuote.itemsAreAlternatives;
         const dist = distributeProjectCosts(activeQuote);
         const t = dist.totals;
         const itemNumbers = computeItemNumbers(activeQuote);
@@ -4392,7 +4406,38 @@ function SABQuoteTool() {
                 is a self-contained quote: its own full project costs (survey,
                 install, delivery, PM, consumables, contingency, warranty) plus
                 its own VAT and total. No project-wide totals at the bottom. */}
-            {altMode ? (() => {
+            {itemsAlt ? (() => {
+              // Items-are-alternatives: each line shows its own ex/inc VAT (raw item
+              // price — NOT baked with project costs) and there is no combined total.
+              return (<>
+                {filteredRooms.map(({ roomName }) => {
+                  const items = activeQuote.rooms[roomName]?.items || [];
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={roomName} style={{ marginBottom:28 }}>
+                      <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:14, paddingBottom:7, borderBottom:"1px solid #d8d3cc" }}>{roomName}</div>
+                      {items.map((item, i) => {
+                        const ex = item.pricing?.totalSellExVAT || 0;
+                        const inc = item.pricing?.totalSellIncVAT || (ex * (1 + (DB.settings.vat || 0.2)));
+                        return (
+                          <div key={i} style={{ padding:"10px 0", borderBottom:"1px solid #d8d3cc", fontSize:12 }}>
+                            <div style={{ color:"#333333", marginBottom:4 }}>{numPrefix(roomName, i)}{item.qty > 1 ? item.qty + "× " : ""}{item.description}
+                              {item.params?.widthMm && <span style={{ fontSize:10, color:"#999999", marginLeft:10 }}>{item.params.widthMm}×{item.params.heightMm}{item.params.depthMm ? "×" + item.params.depthMm : ""} mm</span>}
+                            </div>
+                            <div style={{ textAlign:"right", fontSize:11 }}>
+                              <span style={{ color:"#777777" }}>{fmt(ex)} ex VAT</span>
+                              <span style={{ color:"#c8c3bc", margin:"0 9px" }}>·</span>
+                              <span style={{ color:"#1a1a1a", fontWeight:500 }}>{fmt(inc)} inc VAT</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+                <div style={{ marginTop:8, padding:"10px 14px", background:"#f5f5f5", borderRadius:4, fontSize:10, color:"#777", fontStyle:"italic" }}>Items above are priced individually as alternatives — there is no combined project total.</div>
+              </>);
+            })() : altMode ? (() => {
               const estDays = estimatedDaysByRoom(activeQuote);
               return filteredRooms.map(({ roomName }) => {
                 const rt = roomTotals(activeQuote, roomName, estDays[roomName]);
@@ -4470,9 +4515,9 @@ function SABQuoteTool() {
               </div>
             )}
 
-            {/* Project-wide totals — suppressed in alternatives mode since each
-                option is its own self-contained quote with its own total above. */}
-            {!altMode && (
+            {/* Project-wide totals — suppressed in alternatives mode (rooms OR items)
+                since each option/item is priced on its own above. */}
+            {!altMode && !itemsAlt && (
               <div style={{ marginTop:28, padding:"22px", background:"#f0eeeb", borderRadius:8, border:"1px solid #d8d3cc" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>Subtotal (ex VAT)</span><span>{fmt(filteredSubtotal)}</span></div>
                 <div style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", fontSize:12, color:"#777777", borderBottom:"1px solid #d8d3cc" }}><span>VAT (20%)</span><span>{fmt(filteredVAT)}</span></div>
