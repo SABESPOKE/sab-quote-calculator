@@ -202,11 +202,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── API ROUTES ──────────────────────────────────────────────────────────────
 
-// Health check (also tells the client if DB is available).
-// engineCheck runs a canonical open-lacquered carcass (no doors) through the loaded
-// engine, so one `curl /api/health` confirms the DEPLOYED engine is (a) loaded and
-// (b) current — carcassFinishHrs ≈ 3.06 and present means the latest pricing.js is live.
+// Public health check — minimal, no internals. `pricingEngine` is a plain boolean
+// (whether the engine module loaded); the raw error and pricing details are exposed
+// only on the auth-gated diagnostic route below.
 app.get('/api/health', (req, res) => {
+  res.json({ ok: true, db: !!pool, pricingEngine: !!priceItem });
+});
+
+// Auth-gated engine diagnostic (NOT in PUBLIC_PATHS, so authMiddleware protects it).
+// Runs a canonical open-lacquered carcass through the live engine so the deploy owner
+// can confirm it's loaded AND current — carcassFinishHrs ≈ 3.06 and present means the
+// latest pricing.js is live. The raw load error is only returned here, never publicly.
+app.get('/api/health/engine', (req, res) => {
   let engineCheck = null;
   if (priceItem) {
     try {
@@ -215,7 +222,7 @@ app.get('/api/health', (req, res) => {
       engineCheck = { finishHrs: bd.finishHrs, carcassFinishHrs: bd.carcassFinishHrs, hasCarcassFinishHrs: ('carcassFinishHrs' in bd) };
     } catch (e) { engineCheck = { error: e.message }; }
   }
-  res.json({ ok: true, db: !!pool, pricingEngine: !!priceItem, pricingEngineError, engineCheck });
+  res.json({ pricingEngine: !!priceItem, pricingEngineError, engineCheck });
 });
 
 // Get all quotes
