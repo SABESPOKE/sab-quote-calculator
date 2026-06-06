@@ -9,10 +9,11 @@ const { pool, initDB } = require('./db');
 // so figures added after a quote was saved (e.g. labour hours) appear without
 // anyone re-opening and re-saving the quote.
 let priceItem = null;
+let calcDesignHrsPerRoom = null;
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
-  ({ priceItem } = require(path.join(__dirname, 'public', 'pricing.js')));
+  ({ priceItem, calcDesignHrsPerRoom } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
   pricingEngineError = err.message;
@@ -35,6 +36,26 @@ function recomputeQuotePricing(quote) {
         catch { return item; }
       }),
     };
+  }
+  return { ...quote, rooms };
+}
+
+// Read/serialize-time ONLY (applied in GET /api/quotes, not in the persist path):
+// annotate each room that has design time with its effective design labour, resolving
+// blank inputs against the DB.settings defaults — the same figure the UI shows. Adds
+// room.designHrs and resolves room.techDays in the RESPONSE only; stored data untouched.
+// Deliberately not folded into recomputeQuotePricing so /api/quotes/reprice can't bake
+// a resolved techDays into the DB (which would break "blank = follow the default").
+function withDesignHrs(quote) {
+  if (!calcDesignHrsPerRoom || !quote || !quote.rooms) return quote;
+  const rooms = {};
+  for (const [roomName, room] of Object.entries(quote.rooms)) {
+    if (room && room.includeDesignTime !== false) {
+      const d = calcDesignHrsPerRoom(room);
+      rooms[roomName] = { ...room, designHrs: +d.designHrs.toFixed(3), techDays: d.techDays };
+    } else {
+      rooms[roomName] = room;
+    }
   }
   return { ...quote, rooms };
 }
@@ -232,7 +253,7 @@ app.get('/api/quotes', async (req, res) => {
     const { rows } = await pool.query('SELECT id, data, updated_at FROM quotes ORDER BY updated_at DESC');
     const quotes = {};
     for (const row of rows) {
-      quotes[row.id] = recomputeQuotePricing({ ...row.data, _serverUpdatedAt: row.updated_at });
+      quotes[row.id] = withDesignHrs(recomputeQuotePricing({ ...row.data, _serverUpdatedAt: row.updated_at }));
     }
     res.json(quotes);
   } catch (err) {

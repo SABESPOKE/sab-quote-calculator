@@ -331,15 +331,23 @@ function hingeCount(doorHeightMm) {
   return 4;
 }
 
-function calcDesignTimePerRoom(roomData) {
+// Effective design labour for a room, resolving blank inputs against the DB.settings
+// defaults — the same numbers the UI shows. Returns the labour hours plus the
+// effective tech-drawing days (resolved if blank). Single source for both the fee
+// (below) and the read-only designHrs exposed by the API.
+function calcDesignHrsPerRoom(roomData) {
   const s = DB.settings;
   const rounds = roomData?.designRounds ?? s.designRoundsPerRoom;
   const hrsPerRound = roomData?.designHrsPerRound ?? s.designHoursPerRound;
   const techDays = roomData?.techDays ?? s.technicalDrawingDays;
-  const rate = roomData?.designRate ?? s.designHourlyRate;
-  const totalHrs = rounds * hrsPerRound + techDays * s.workingHoursPerDay;
-  const total = totalHrs * rate;
-  return total;
+  const designHrs = rounds * hrsPerRound + techDays * s.workingHoursPerDay;
+  return { designHrs, techDays, rounds, hrsPerRound };
+}
+
+function calcDesignTimePerRoom(roomData) {
+  const { designHrs } = calcDesignHrsPerRoom(roomData);
+  const rate = roomData?.designRate ?? DB.settings.designHourlyRate;
+  return designHrs * rate;
 }
 
 // ─── PRICING ENGINE ───────────────────────────────────────────────────────────
@@ -1112,7 +1120,8 @@ function priceItem(item, effectiveMargin) {
     calcSprayFinishCost, calcDoorCost, calcFrameCost, calcDrawerCost, calcCabinetCost,
     calcEndPanelCost, calcFloatingShelfCost, calcMouldingCost, parseWRPDimensions,
     calcWRPFinishCostPerM, calcWRPMouldingCost, calcCabinetFaceFrameCost,
-    calcCabinetEdgebandCost, calcFillerCost, priceItem };
+    calcCabinetEdgebandCost, calcFillerCost, priceItem,
+    calcDesignHrsPerRoom, calcDesignTimePerRoom };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") Object.assign(window, api);
 })();
