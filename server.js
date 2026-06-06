@@ -9,8 +9,15 @@ const { pool, initDB } = require('./db');
 // so figures added after a quote was saved (e.g. labour hours) appear without
 // anyone re-opening and re-saving the quote.
 let priceItem = null;
-try { ({ priceItem } = require('./public/pricing.js')); }
-catch (err) { console.error('pricing engine load failed (GET /api/quotes will return stored pricing as-is):', err.message); }
+let pricingEngineError = null;
+try {
+  // Explicit absolute path so it resolves regardless of CWD on the deploy host.
+  ({ priceItem } = require(path.join(__dirname, 'public', 'pricing.js')));
+  console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
+} catch (err) {
+  pricingEngineError = err.message;
+  console.error('[pricing] engine load FAILED — GET /api/quotes will return STORED pricing as-is:\n', err.stack || err.message);
+}
 
 // Recompute every item's `pricing` from its stored params using the canonical engine.
 // Purely additive/non-destructive: structure is preserved, and if the engine is
@@ -195,9 +202,27 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── API ROUTES ──────────────────────────────────────────────────────────────
 
-// Health check (also tells the client if DB is available)
+// Public health check — minimal, no internals. `pricingEngine` is a plain boolean
+// (whether the engine module loaded); the raw error and pricing details are exposed
+// only on the auth-gated diagnostic route below.
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, db: !!pool });
+  res.json({ ok: true, db: !!pool, pricingEngine: !!priceItem });
+});
+
+// Auth-gated engine diagnostic (NOT in PUBLIC_PATHS, so authMiddleware protects it).
+// Runs a canonical open-lacquered carcass through the live engine so the deploy owner
+// can confirm it's loaded AND current — carcassFinishHrs ≈ 3.06 and present means the
+// latest pricing.js is live. The raw load error is only returned here, never publicly.
+app.get('/api/health/engine', (req, res) => {
+  let engineCheck = null;
+  if (priceItem) {
+    try {
+      const r = priceItem({ type: 'cabinet', qty: 1, params: { widthMm: 600, heightMm: 2400, depthMm: 560, doorCount: 0, shelfCount: 5, carcassFinish: 'lacquer', carcassMaterialKey: 'MAT_BIRCH_UNF_18' } });
+      const bd = (r && r.breakdown) || {};
+      engineCheck = { finishHrs: bd.finishHrs, carcassFinishHrs: bd.carcassFinishHrs, hasCarcassFinishHrs: ('carcassFinishHrs' in bd) };
+    } catch (e) { engineCheck = { error: e.message }; }
+  }
+  res.json({ pricingEngine: !!priceItem, pricingEngineError, engineCheck });
 });
 
 // Get all quotes
@@ -212,6 +237,28 @@ app.get('/api/quotes', async (req, res) => {
     res.json(quotes);
   } catch (err) {
     console.error('GET /api/quotes error:', err.message);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// One-off: recompute every stored quote with the CURRENT engine and PERSIST it, so the
+// raw Postgres rows are refreshed (not just the on-read recompute). Use after a
+// pricing.js change to bake new fields (e.g. carcassFinishHrs) into stored data.
+// Auth-protected (not in PUBLIC_PATHS). Returns a sample so you can confirm the result.
+app.post('/api/quotes/reprice', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'No database' });
+  if (!priceItem) return res.status(503).json({ error: 'Pricing engine not loaded', pricingEngineError });
+  try {
+    const { rows } = await pool.query('SELECT id, data FROM quotes');
+    let repriced = 0;
+    for (const row of rows) {
+      const updated = recomputeQuotePricing(row.data);
+      await pool.query('UPDATE quotes SET data = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(updated), row.id]);
+      repriced++;
+    }
+    res.json({ ok: true, repriced });
+  } catch (err) {
+    console.error('POST /api/quotes/reprice error:', err.message);
     res.status(500).json({ error: 'Database error' });
   }
 });
