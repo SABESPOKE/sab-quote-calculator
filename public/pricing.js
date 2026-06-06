@@ -765,6 +765,7 @@ function calcCabinetCost({
   //   Difference: open cabinets include shelf-front edges in the perimeter (visible);
   //   closed cabinets don't (hidden by doors).
   let carcassFinishCost = 0;
+  let carcassFinishHrs = 0; // spray-tech labour to finish the carcass shell (0 unless a carcass finish is set)
   if (carcassFinish && carcassFinish !== "none") {
     const W = widthMm / 1000;
     const H = heightMm / 1000;
@@ -799,6 +800,7 @@ function calcCabinetCost({
       perimMOverride,
     });
     carcassFinishCost = cf ? cf.costPerDoor : 0;
+    carcassFinishHrs  = cf ? cf.breakdown.totalHrs : 0;
   }
 
   // (Filler items are now top-level items priced independently — see calcFillerCost.
@@ -812,7 +814,7 @@ function calcCabinetCost({
   // ── Labour hours roll-up, person-hours per cabinet (additive, for production scheduling) ──
   const frameHrs    = frameResult.labourHrs || 0;     // face-frame-making labour
   const edgebandHrs = edgebandResult.labourHrs || 0;  // edgebanding labour
-  const finishHrs   = doorFinishHrs + drawerFrontFinishHrs; // total spray finishing labour
+  const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs; // total spray finishing labour (doors + fronts + carcass shell)
   const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs).toFixed(3);
 
   return {
@@ -822,7 +824,7 @@ function calcCabinetCost({
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
     breakdown: { carcassMaterial: carcassMaterialCost, carcassLabour: carcassLabourCost, carcassHardware, doors: doorsCost, drawers: drawersCost, drawerFronts: drawerFrontsCost, frame: frameResult.total, edgeband: edgebandResult.total,
-      assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, finishHrs, totalHrs },
+      assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs, totalHrs },
   };
 }
 
