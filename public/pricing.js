@@ -350,6 +350,100 @@ function calcDesignTimePerRoom(roomData) {
   return designHrs * rate;
 }
 
+// ─── PROJECT COST DEFAULTS ────────────────────────────────────────────────────
+// (Moved here from index.html so the SAME totals code runs in both the browser
+// and on the server — see quoteTotals below.)
+function getDefaultProjectCosts() {
+  const s = DB.settings;
+  return {
+    surveyFee:           s.surveyFee,           // £ flat
+    installDaysByRoom:   {},                     // { [roomName]: days } — per-room fitting
+    installDayRate:      s.installDayRate,       // £/day
+    deliveryFee:         s.deliveryFee,          // £ flat
+    pmPercent:           s.pmPercent,            // % of mfg sell ex VAT
+    consumablesPerItem:  s.consumablesPerItem,   // £ per item
+    contingencyPercent:  s.contingencyPercent,   // % of subtotal
+    warrantyPercent:     s.warrantyPercent,      // % of subtotal
+    // toggles
+    includeSurvey:       true,
+    includeInstall:      false,   // user enables once scope is known
+    includeDelivery:     true,
+    includePM:           true,
+    includeConsumables:  true,
+    includeContingency:  false,   // user enables for complex/risky jobs
+    includeWarranty:     false,   // user enables as appropriate
+  };
+}
+
+// Sum install days from per-room map. Falls back to legacy single `installDays`
+// for quotes that haven't been migrated yet (read-side compatibility).
+function totalInstallDays(pc) {
+  if (pc && pc.installDaysByRoom && typeof pc.installDaysByRoom === "object") {
+    return Object.values(pc.installDaysByRoom).reduce((s, n) => s + (Number(n) || 0), 0);
+  }
+  return Number(pc?.installDays) || 0;
+}
+
+// ─── QUOTE TOTALS ─────────────────────────────────────────────────────────────
+// SINGLE SOURCE OF TRUTH for a quote's grand total — the exact figure the
+// calculator shows at the bottom of a quote (and per-quote in the list view).
+// Browser calls it as a window global; the server requires it to persist the
+// total onto the quote record (see quoteGrandTotal). Keep DOM/React free.
+function quoteTotals(quote) {
+  let mfgCost = 0, mfgSellExVAT = 0, designFee = 0;
+  // nonFixed* track items that participate in margin/overhead allocation
+  // (i.e. exclude fixed-price pass-through items). PM% is applied against the
+  // non-fixed manufacturing sell value so fixed items don't inflate the PM fee.
+  let nonFixedSellExVAT = 0;
+  Object.values(quote.rooms || {}).forEach(room => {
+    room.items.forEach(item => {
+      mfgCost += item.pricing?.totalCost || 0;
+      mfgSellExVAT += item.pricing?.totalSellExVAT || 0;
+      if (!item.fixedPrice) nonFixedSellExVAT += item.pricing?.totalSellExVAT || 0;
+    });
+    if (room.includeDesignTime !== false) designFee += calcDesignTimePerRoom(room);
+  });
+
+  // Project-level costs
+  const pc = quote.projectCosts || getDefaultProjectCosts();
+  const s  = DB.settings;
+  // Fixed-price items don't consume a consumables-per-item slot.
+  const totalItems = Object.values(quote.rooms || {}).reduce((sum, r) => sum + r.items.filter(i => !i.fixedPrice).length, 0);
+
+  const survey      = pc.includeSurvey       ? (pc.surveyFee          ?? s.surveyFee)          * s.margin : 0;
+  const install     = pc.includeInstall      ? totalInstallDays(pc) * (pc.installDayRate ?? s.installDayRate) * s.margin : 0;
+  const delivery    = pc.includeDelivery     ? (pc.deliveryFee        ?? s.deliveryFee)         * s.margin : 0;
+  const pm          = pc.includePM           ? nonFixedSellExVAT * ((pc.pmPercent         ?? s.pmPercent)        / 100) : 0;
+  const consumables = pc.includeConsumables  ? totalItems   * (pc.consumablesPerItem ?? s.consumablesPerItem) : 0;
+
+  const subtotalBeforeContingency = mfgSellExVAT + designFee + survey + install + delivery + pm + consumables;
+  const contingency = pc.includeContingency ? subtotalBeforeContingency * ((pc.contingencyPercent ?? s.contingencyPercent) / 100) : 0;
+  const subtotalBeforeWarranty    = subtotalBeforeContingency + contingency;
+  const warranty    = pc.includeWarranty    ? subtotalBeforeWarranty   * ((pc.warrantyPercent    ?? s.warrantyPercent)    / 100) : 0;
+
+  const totalExVAT = subtotalBeforeWarranty + warranty;
+  const vat        = totalExVAT * s.vat;
+  return {
+    mfgCost, mfgSellExVAT, designFee,
+    survey, install, delivery, pm, consumables, contingency, warranty,
+    totalExVAT, vat, totalIncVAT: totalExVAT + vat,
+    margin: mfgCost > 0 ? mfgSellExVAT / mfgCost : 0,
+  };
+}
+
+// Canonical grand-total for a whole quote, rounded to pennies exactly as the UI
+// displays it (fmt() shows 2dp). This is the figure persisted onto the quote
+// record and served by the API so downstream consumers (the client portal /
+// orchestrator) don't have to re-derive project-level costs themselves.
+function quoteGrandTotal(quote) {
+  const round2 = n => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+  const t = quoteTotals(quote);
+  return {
+    totalSellExVAT:  round2(t.totalExVAT),
+    totalSellIncVAT: round2(t.totalIncVAT),
+  };
+}
+
 // ─── PRICING ENGINE ───────────────────────────────────────────────────────────
 
 // Spray finishing — full prep model: caulking + sanding between coats + spray per coat
@@ -1114,6 +1208,29 @@ function priceItem(item, effectiveMargin) {
   }
   return null;
 }
+
+// Recompute every item's `pricing` from its stored params using the canonical
+// engine. Purely additive/non-destructive: structure is preserved, and if an
+// item throws/returns null its stored pricing is kept. Shared by the server
+// (GET /api/quotes recompute-on-read, /reprice, persist-time total stamping)
+// and the backfill script so the logic lives in one place.
+function recomputeQuotePricing(quote) {
+  if (!quote || !quote.rooms) return quote;
+  // Per-quote margin override (falls back to the engine default when unset).
+  const effectiveMargin = quote.marginOverride;
+  const rooms = {};
+  for (const [roomName, room] of Object.entries(quote.rooms)) {
+    rooms[roomName] = {
+      ...room,
+      items: (room.items || []).map(item => {
+        try { const pricing = priceItem(item, effectiveMargin); return pricing ? { ...item, pricing } : item; }
+        catch { return item; }
+      }),
+    };
+  }
+  return { ...quote, rooms };
+}
+
 // ─── Exports / global exposure ──────────────────────────────────────────────
 (function () {
   const api = { DB, FRAME_MATERIALS, EDGEBAND_TYPES, NO_EDGE_MATERIALS, er, hingeCount, fmt,
@@ -1121,7 +1238,9 @@ function priceItem(item, effectiveMargin) {
     calcEndPanelCost, calcFloatingShelfCost, calcMouldingCost, parseWRPDimensions,
     calcWRPFinishCostPerM, calcWRPMouldingCost, calcCabinetFaceFrameCost,
     calcCabinetEdgebandCost, calcFillerCost, priceItem,
-    calcDesignHrsPerRoom, calcDesignTimePerRoom };
+    calcDesignHrsPerRoom, calcDesignTimePerRoom,
+    getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
+    recomputeQuotePricing };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") Object.assign(window, api);
 })();

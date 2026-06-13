@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sab-v53';
+const CACHE_NAME = 'sab-v54';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',

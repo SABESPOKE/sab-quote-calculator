@@ -10,34 +10,31 @@ const { pool, initDB } = require('./db');
 // anyone re-opening and re-saving the quote.
 let priceItem = null;
 let calcDesignHrsPerRoom = null;
+let recomputeQuotePricing = null;
+let quoteGrandTotal = null;
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
-  ({ priceItem, calcDesignHrsPerRoom } = require(path.join(__dirname, 'public', 'pricing.js')));
+  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
   pricingEngineError = err.message;
   console.error('[pricing] engine load FAILED — GET /api/quotes will return STORED pricing as-is:\n', err.stack || err.message);
 }
 
-// Recompute every item's `pricing` from its stored params using the canonical engine.
-// Purely additive/non-destructive: structure is preserved, and if the engine is
-// unavailable or an item throws/returns null, that item's stored pricing is kept.
-function recomputeQuotePricing(quote) {
-  if (!priceItem || !quote || !quote.rooms) return quote;
-  // Per-quote margin override (falls back to the engine default when unset).
-  const effectiveMargin = quote.marginOverride;
-  const rooms = {};
-  for (const [roomName, room] of Object.entries(quote.rooms)) {
-    rooms[roomName] = {
-      ...room,
-      items: (room.items || []).map(item => {
-        try { const pricing = priceItem(item, effectiveMargin); return pricing ? { ...item, pricing } : item; }
-        catch { return item; }
-      }),
-    };
+// Stamp the quote's grand total (totalSellExVAT / totalSellIncVAT) onto the
+// record using the canonical UI total function (pricing.js → quoteGrandTotal),
+// so the downstream client portal can read a final figure that already includes
+// design + all project-level costs. Purely additive: the field is layered on
+// top of the existing data; on any failure the quote is returned unchanged.
+function withGrandTotal(quote) {
+  if (!quoteGrandTotal || !quote || !quote.rooms) return quote;
+  try {
+    return { ...quote, ...quoteGrandTotal(quote) };
+  } catch (err) {
+    console.error('[pricing] grand-total stamp failed:', err.message);
+    return quote;
   }
-  return { ...quote, rooms };
 }
 
 // Read/serialize-time ONLY (applied in GET /api/quotes, not in the persist path):
@@ -253,7 +250,11 @@ app.get('/api/quotes', async (req, res) => {
     const { rows } = await pool.query('SELECT id, data, updated_at FROM quotes ORDER BY updated_at DESC');
     const quotes = {};
     for (const row of rows) {
-      quotes[row.id] = withDesignHrs(recomputeQuotePricing({ ...row.data, _serverUpdatedAt: row.updated_at }));
+      const base = { ...row.data, _serverUpdatedAt: row.updated_at };
+      const recomputed = recomputeQuotePricing ? recomputeQuotePricing(base) : base;
+      // Stamp the grand total from the freshly-recomputed items so the served
+      // total always matches the served line items (and the calculator UI).
+      quotes[row.id] = withGrandTotal(withDesignHrs(recomputed));
     }
     res.json(quotes);
   } catch (err) {
@@ -273,7 +274,7 @@ app.post('/api/quotes/reprice', async (req, res) => {
     const { rows } = await pool.query('SELECT id, data FROM quotes');
     let repriced = 0;
     for (const row of rows) {
-      const updated = recomputeQuotePricing(row.data);
+      const updated = withGrandTotal(recomputeQuotePricing(row.data));
       await pool.query('UPDATE quotes SET data = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(updated), row.id]);
       repriced++;
     }
@@ -288,7 +289,9 @@ app.post('/api/quotes/reprice', async (req, res) => {
 app.put('/api/quotes/:id', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });
   const { id } = req.params;
-  const data = req.body;
+  // Stamp the grand total from the client's own item pricing (computed by the
+  // same engine) so the stored figure matches exactly what the UI displayed.
+  const data = withGrandTotal(req.body);
   try {
     await pool.query(
       `INSERT INTO quotes (id, data, updated_at)
@@ -312,7 +315,8 @@ app.patch('/api/quotes/:id', async (req, res) => {
     // Read current data, merge patch fields into it, write back
     const { rows } = await pool.query('SELECT data FROM quotes WHERE id = $1', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    const updated = { ...rows[0].data, ...patch };
+    // Re-stamp the grand total in case the patch touched pricing-affecting fields.
+    const updated = withGrandTotal({ ...rows[0].data, ...patch });
     await pool.query(
       'UPDATE quotes SET data = $1, updated_at = NOW() WHERE id = $2',
       [JSON.stringify(updated), id]
@@ -368,14 +372,16 @@ app.post('/api/quotes/sync', async (req, res) => {
       const serverEntry = serverMap[id];
 
       if (!serverEntry || clientTime > new Date(serverEntry.updated_at)) {
-        // Client is newer — upsert to server
+        // Client is newer — upsert to server, stamping the grand total so the
+        // stored record carries the same final figure the UI showed.
+        const stamped = withGrandTotal(quote);
         await pool.query(
           `INSERT INTO quotes (id, data, updated_at)
            VALUES ($1, $2, $3)
            ON CONFLICT (id) DO UPDATE SET data = $2, updated_at = $3`,
-          [id, JSON.stringify(quote), quote.updated_at || new Date().toISOString()]
+          [id, JSON.stringify(stamped), quote.updated_at || new Date().toISOString()]
         );
-        merged[id] = quote;
+        merged[id] = stamped;
       } else {
         // Server is newer — use server version
         merged[id] = serverEntry.data;

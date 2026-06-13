@@ -11,9 +11,21 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const P = require(path.join(__dirname, '..', 'public', 'pricing.js'));
-const { priceItem, calcCabinetCost, calcDoorCost, calcDesignHrsPerRoom, calcDesignTimePerRoom, DB } = P;
+const { priceItem, calcCabinetCost, calcDoorCost, calcDesignHrsPerRoom, calcDesignTimePerRoom, DB,
+        quoteTotals, quoteGrandTotal, getDefaultProjectCosts, totalInstallDays, recomputeQuotePricing } = P;
 
 const close = (a, b, eps = 0.02) => Math.abs(a - b) <= eps;
+const round2 = n => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+
+// Build a quote with every item pre-priced (as the UI stores it). `pc` overrides
+// projectCosts; `roomExtra` lets a test toggle includeDesignTime etc. per room.
+const ALL_PC_OFF = { includeSurvey: false, includeInstall: false, includeDelivery: false, includePM: false, includeConsumables: false, includeContingency: false, includeWarranty: false };
+const pricedRoom = (items, extra = {}) => ({ items: items.map(it => ({ ...it, pricing: priceItem(it) })), ...extra });
+const makeQuote = ({ rooms, projectCosts, ...rest } = {}) => ({
+  rooms: rooms || { Kitchen: pricedRoom([cabinet(), door()], { includeDesignTime: false }) },
+  projectCosts,
+  ...rest,
+});
 
 // ─── canonical item fixtures ───────────────────────────────────────────────
 const cabinet = (over = {}) => ({ type: 'cabinet', qty: 1, params: { widthMm: 600, heightMm: 770, depthMm: 560, doorCount: 2, doorType: 'SHAKER_PNT', shelfCount: 1, carcassMaterialKey: 'MAT_BIRCH_UNF_18', ...over } });
@@ -148,4 +160,94 @@ test('fixed-price item uses its own markup, not the global margin', () => {
   const r = priceItem(item, 99); // huge margin override must be ignored
   assert.equal(r.totalSellExVAT, 1100);
   assert.equal(r.isFixedPrice, true);
+});
+
+// ─── QUOTE GRAND TOTAL (the figure persisted onto the quote / served by the API) ─
+// These lock in that the stored total is the SAME number the calculator UI shows
+// (quoteTotals), and that it actually captures project-level costs the downstream
+// portal was previously missing.
+
+test('engine exports the quote-level total functions', () => {
+  for (const fn of ['quoteTotals', 'quoteGrandTotal', 'getDefaultProjectCosts', 'totalInstallDays', 'recomputeQuotePricing']) {
+    assert.equal(typeof P[fn], 'function', `${fn} should be exported`);
+  }
+});
+
+test('with all project costs off and no design time, grand total = sum of item sells', () => {
+  const room = pricedRoom([cabinet(), door(), drawer()], { includeDesignTime: false });
+  const quote = makeQuote({ rooms: { Kitchen: room }, projectCosts: ALL_PC_OFF });
+  const itemsSell = room.items.reduce((s, i) => s + i.pricing.totalSellExVAT, 0);
+  const t = quoteTotals(quote);
+  assert.ok(close(t.totalExVAT, itemsSell), `total ${t.totalExVAT} != items ${itemsSell}`);
+  assert.ok(close(t.mfgSellExVAT, itemsSell), 'mfgSellExVAT should equal items sell');
+});
+
+test('quoteGrandTotal = quoteTotals rounded to 2dp (the UI display figure)', () => {
+  const quote = makeQuote({ projectCosts: { ...ALL_PC_OFF, includeDelivery: true, includePM: true } });
+  const t = quoteTotals(quote);
+  const g = quoteGrandTotal(quote);
+  assert.equal(g.totalSellExVAT, round2(t.totalExVAT));
+  assert.equal(g.totalSellIncVAT, round2(t.totalIncVAT));
+  // inc VAT is the ex-VAT figure plus VAT, within a penny of the rounded relationship
+  assert.ok(close(g.totalSellIncVAT, round2(g.totalSellExVAT * (1 + DB.settings.vat)), 0.011), 'inc VAT mismatch');
+});
+
+test('grand total includes project-level costs items-only summing misses', () => {
+  // This is the bug the field fixes: a portal summing only line items understates
+  // the quote by every active project cost. Turning delivery on must raise the
+  // grand total by exactly the margined delivery fee.
+  const base = makeQuote({ projectCosts: { ...ALL_PC_OFF } });
+  const withDelivery = makeQuote({ rooms: base.rooms, projectCosts: { ...ALL_PC_OFF, includeDelivery: true } });
+  const diff = quoteTotals(withDelivery).totalExVAT - quoteTotals(base).totalExVAT;
+  const expected = DB.settings.deliveryFee * DB.settings.margin;
+  assert.ok(close(diff, expected), `delivery should add ${expected}, added ${diff}`);
+});
+
+test('design time and PM% lift the total above the bare item sells', () => {
+  const room = pricedRoom([cabinet(), cabinet()], { includeDesignTime: true });
+  const quote = makeQuote({ rooms: { Kitchen: room }, projectCosts: { ...ALL_PC_OFF, includePM: true } });
+  const itemsSell = room.items.reduce((s, i) => s + i.pricing.totalSellExVAT, 0);
+  const t = quoteTotals(quote);
+  assert.ok(t.designFee > 0, 'design fee should be charged');
+  assert.ok(t.pm > 0, 'PM should be charged');
+  assert.ok(t.totalExVAT > itemsSell, 'total must exceed bare item sells');
+  assert.ok(close(t.totalExVAT, itemsSell + t.designFee + t.pm), 'total = items + design + pm (all else off)');
+});
+
+test('persisted total is stable through a recompute (server-side stamping path)', () => {
+  // The server stamps the total after recomputeQuotePricing; recomputing already
+  // up-to-date items must not move the figure (same engine in, same figure out).
+  const quote = makeQuote({ projectCosts: { ...ALL_PC_OFF, includeDelivery: true, includePM: true, includeConsumables: true } });
+  const fromStored = quoteGrandTotal(quote);
+  const fromRecomputed = quoteGrandTotal(recomputeQuotePricing(quote));
+  assert.deepEqual(fromRecomputed, fromStored);
+});
+
+test('recomputeQuotePricing is non-destructive to rooms/items shape', () => {
+  const quote = makeQuote();
+  const out = recomputeQuotePricing(quote);
+  assert.deepEqual(Object.keys(out.rooms), Object.keys(quote.rooms));
+  assert.equal(out.rooms.Kitchen.items.length, quote.rooms.Kitchen.items.length);
+  for (const it of out.rooms.Kitchen.items) assert.ok(it.pricing && 'totalSellExVAT' in it.pricing);
+});
+
+test('empty quote does not throw and yields a finite total', () => {
+  const g = quoteGrandTotal({ rooms: {}, projectCosts: ALL_PC_OFF });
+  assert.equal(g.totalSellExVAT, 0);
+  assert.equal(g.totalSellIncVAT, 0);
+});
+
+// ─── project-cost helpers (moved from index.html, now shared) ─────────────────
+test('getDefaultProjectCosts seeds toggles and pulls rates from DB.settings', () => {
+  const pc = getDefaultProjectCosts();
+  assert.equal(pc.surveyFee, DB.settings.surveyFee);
+  assert.equal(pc.includeSurvey, true);
+  assert.equal(pc.includeInstall, false);
+  assert.deepEqual(pc.installDaysByRoom, {});
+});
+
+test('totalInstallDays sums the per-room map and falls back to legacy installDays', () => {
+  assert.equal(totalInstallDays({ installDaysByRoom: { Kitchen: 2, Utility: 1.5 } }), 3.5);
+  assert.equal(totalInstallDays({ installDays: 4 }), 4); // legacy single-number quotes
+  assert.equal(totalInstallDays({}), 0);
 });
