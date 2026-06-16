@@ -12,7 +12,8 @@ const path = require('node:path');
 
 const P = require(path.join(__dirname, '..', 'public', 'pricing.js'));
 const { priceItem, calcCabinetCost, calcDoorCost, calcDesignHrsPerRoom, calcDesignTimePerRoom, DB,
-        quoteTotals, quoteGrandTotal, getDefaultProjectCosts, totalInstallDays, recomputeQuotePricing } = P;
+        quoteTotals, quoteGrandTotal, getDefaultProjectCosts, totalInstallDays, recomputeQuotePricing,
+        quoteMaterialsBom } = P;
 
 const close = (a, b, eps = 0.02) => Math.abs(a - b) <= eps;
 const round2 = n => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
@@ -250,4 +251,149 @@ test('totalInstallDays sums the per-room map and falls back to legacy installDay
   assert.equal(totalInstallDays({ installDaysByRoom: { Kitchen: 2, Utility: 1.5 } }), 3.5);
   assert.equal(totalInstallDays({ installDays: 4 }), 4); // legacy single-number quotes
   assert.equal(totalInstallDays({}), 0);
+});
+
+// ─── MATERIALS BOM (read-only, additive — material quantities for ordering) ──────
+// These lock in that the BOM is produced from the SAME geometry that prices each
+// cabinet (so it can never disagree with the price), and that it's purely additive.
+
+test('engine exports quoteMaterialsBom', () => {
+  assert.equal(typeof quoteMaterialsBom, 'function');
+});
+
+test('cabinet breakdown exposes a bom of material quantities (additive, no cost change)', () => {
+  const bd = priceItem(cabinet({ drawerCount: 0 })).breakdown;
+  assert.ok(bd.bom, 'cabinet breakdown should carry a bom');
+  for (const k of ['carcass', 'doors', 'drawerBoxes', 'frames', 'edgeband', 'hardware']) {
+    assert.ok(Array.isArray(bd.bom[k]), `bom.${k} should be an array`);
+  }
+  // 2-door SHAKER_PNT cabinet: 2 door panels of that type, with positive area.
+  const doors = bd.bom.doors.find(d => d.key === 'SHAKER_PNT');
+  assert.ok(doors && doors.count === 2 && doors.areaM2 > 0, 'two door panels with area');
+  // Carcass material is the picked key; birch needs no edgeband.
+  assert.ok(bd.bom.carcass.some(c => c.key === 'MAT_BIRCH_UNF_18' && c.areaM2 > 0), 'carcass area present');
+});
+
+test('bom quantities scale linearly with cabinet qty', () => {
+  // Note: the cabinet() fixture spreads overrides into params, so set the line qty
+  // at the top level (item.qty is what the engine multiplies by).
+  const one = priceItem({ ...cabinet(), qty: 1 }).breakdown.bom;
+  const three = priceItem({ ...cabinet(), qty: 3 }).breakdown.bom;
+  const a1 = one.carcass.reduce((s, c) => s + c.areaM2, 0);
+  const a3 = three.carcass.reduce((s, c) => s + c.areaM2, 0);
+  assert.ok(close(a3, a1 * 3, 0.05), `carcass area should triple: ${a1} → ${a3}`);
+  assert.equal(three.doors[0].count, one.doors[0].count * 3, 'door panel count should triple');
+});
+
+test('drawer fronts fold into the door type bucket and drawer boxes are counted', () => {
+  const bd = priceItem(cabinet({ doorCount: 2, drawerCount: 3, drawerType: 'DRW_BIRCH_PLY' })).breakdown;
+  const doors = bd.bom.doors.find(d => d.key === 'SHAKER_PNT');
+  // 2 doors + 3 drawer fronts all made/finished as SHAKER_PNT panels.
+  assert.equal(doors.count, 5, 'door bucket = doors + drawer fronts');
+  const boxes = bd.bom.drawerBoxes.find(b => b.key === 'DRW_BIRCH_PLY');
+  assert.ok(boxes && boxes.count === 3, 'three drawer boxes counted');
+  const runners = bd.bom.hardware.find(h => h.key === 'HW_RUN_BLUM_SM');
+  assert.ok(runners && runners.count === 3, 'three runner pairs');
+});
+
+// ─── handles: positions pull through (split door/drawer) even when not priced ─────
+test('handle positions are reported split by door/drawer, and live in their own field', () => {
+  const bd = priceItem(cabinet({ doorCount: 2, drawerCount: 3, drawerType: 'DRW_BIRCH_PLY', handleKey: 'HW_HDL_BAR128' })).breakdown;
+  const doorH = bd.bom.handles.find(h => h.target === 'door');
+  const drawerH = bd.bom.handles.find(h => h.target === 'drawer');
+  assert.ok(doorH && doorH.count === 2 && doorH.key === 'HW_HDL_BAR128', '2 door handle positions');
+  assert.ok(drawerH && drawerH.count === 3 && drawerH.key === 'HW_HDL_BAR128', '3 drawer handle positions');
+  // Handles are NOT mixed into the generic hardware array (which stays hinges + runners).
+  assert.ok(!bd.bom.hardware.some(h => String(h.key).startsWith('HW_HDL')), 'handles not in hardware array');
+});
+
+test('handle positions still pull through when "No handle" is selected (the common case)', () => {
+  const bd = priceItem(cabinet({ doorCount: 2, drawerCount: 3, drawerType: 'DRW_BIRCH_PLY', handleKey: 'HW_HDL_NONE' })).breakdown;
+  const positions = bd.bom.handles.reduce((s, h) => s + h.count, 0);
+  assert.equal(positions, 5, '5 handle positions reported even with HW_HDL_NONE');
+  assert.ok(bd.bom.handles.every(h => h.key === 'HW_HDL_NONE'), 'key reflects the (none) selection');
+});
+
+test('"No handle" adds no cost; selecting a real handle does (price only when chosen)', () => {
+  const none = priceItem(cabinet({ doorCount: 2, drawerCount: 3, drawerType: 'DRW_BIRCH_PLY', handleKey: 'HW_HDL_NONE' }));
+  const bar = priceItem(cabinet({ doorCount: 2, drawerCount: 3, drawerType: 'DRW_BIRCH_PLY', handleKey: 'HW_HDL_BAR128' }));
+  // 5 positions × £12 = £60 added when the handle is actually selected.
+  assert.ok(close(bar.totalCost - none.totalCost, 5 * 12, 0.01), 'real handle adds 5 × £12; none adds nothing');
+});
+
+test('when a real handle IS selected, priced count equals the BOM handle positions', () => {
+  // Source-of-truth for the priced case: positions == handles charged.
+  for (const cfg of [{ doorCount: 2, drawerCount: 0 }, { doorCount: 2, drawerCount: 3, drawerType: 'DRW_BIRCH_PLY' }, { doorCount: 0, shelfCount: 0, drawerCount: 4, drawerType: 'DRW_BIRCH_PLY' }]) {
+    const withH = priceItem(cabinet({ ...cfg, handleKey: 'HW_HDL_BAR128' }));
+    const noneH = priceItem(cabinet({ ...cfg, handleKey: 'HW_HDL_NONE' }));
+    const pricedHandles = Math.round((withH.totalCost - noneH.totalCost) / 12);
+    const bomPositions = withH.breakdown.bom.handles.reduce((s, h) => s + h.count, 0);
+    assert.equal(bomPositions, pricedHandles, `positions (${bomPositions}) != priced (${pricedHandles}) for ${JSON.stringify(cfg)}`);
+  }
+});
+
+test('quoteMaterialsBom aggregates handle positions by key + target across the quote', () => {
+  // Two cabinets, knobs on doors / drawers — positions merge by (key, target).
+  const room = pricedRoom([
+    cabinet({ doorCount: 2, drawerCount: 3, drawerType: 'DRW_BIRCH_PLY', handleKey: 'HW_HDL_KNOB' }),
+    cabinet({ doorCount: 2, drawerCount: 0, handleKey: 'HW_HDL_KNOB' }),
+  ], { includeDesignTime: false });
+  const bom = quoteMaterialsBom(makeQuote({ rooms: { Kitchen: room } }));
+  const doorPos = bom.handles.find(h => h.key === 'HW_HDL_KNOB' && h.target === 'door');
+  const drawerPos = bom.handles.find(h => h.key === 'HW_HDL_KNOB' && h.target === 'drawer');
+  assert.equal(doorPos.count, 4, '2 + 2 door positions');
+  assert.equal(drawerPos.count, 3, '3 drawer positions');
+});
+
+test('hinge counts match the priced hinges (per-door hinge count × doors)', () => {
+  const params = cabinet({ doorCount: 2, heightMm: 770, hingeKey: 'HW_HINGE_SM' }).params;
+  const bd = calcCabinetCost({ ...params, qty: 1 }).breakdown;
+  const hinges = bd.bom.hardware.find(h => h.key === 'HW_HINGE_SM');
+  // doorH = 770-6 = 764 ≤ 900 → 2 hinges/door × 2 doors = 4.
+  assert.ok(hinges && hinges.count === 4, `expected 4 hinges, got ${hinges && hinges.count}`);
+});
+
+test('a frame on the cabinet surfaces frame lineal metres and suppresses edgeband', () => {
+  const bd = priceItem(cabinet({ frameKey: 'FRAME_TIM_OAK', carcassMaterialKey: 'MAT_OAK_MDF_PREF_19' })).breakdown;
+  const frame = bd.bom.frames.find(f => f.key === 'FRAME_TIM_OAK');
+  assert.ok(frame && frame.linealM > 0, 'frame lineal metres present');
+  assert.equal(bd.bom.edgeband.length, 0, 'framed cabinet has no edgeband');
+});
+
+test('quoteMaterialsBom aggregates across rooms and merges identical keys', () => {
+  const room = pricedRoom([cabinet(), cabinet()], { includeDesignTime: false });
+  const quote = makeQuote({ rooms: { Kitchen: room } });
+  const bom = quoteMaterialsBom(quote);
+  assert.ok(bom, 'bom should be produced for a quote with cabinets');
+  // Two identical cabinets → one merged carcass line, doubled area, integer sheet count.
+  const carcass = bom.carcass.find(c => c.key === 'MAT_BIRCH_UNF_18');
+  assert.ok(carcass, 'carcass key merged');
+  const singleCarcass = priceItem(cabinet()).breakdown.bom.carcass.reduce((s, c) => s + c.areaM2, 0);
+  assert.equal(carcass.areaM2, round2(singleCarcass * 2));
+  assert.ok(Number.isInteger(carcass.sheets) && carcass.sheets >= 1, 'sheet count is a positive integer');
+  const doors = bom.doors.find(d => d.key === 'SHAKER_PNT');
+  assert.equal(doors.count, 4, 'two 2-door cabinets → 4 door panels');
+});
+
+test('quoteMaterialsBom recomputes bom when items lack a pre-priced breakdown', () => {
+  // Items with no .pricing at all — aggregator must price them itself.
+  const quote = { rooms: { Kitchen: { items: [cabinet(), cabinet()], includeDesignTime: false } } };
+  const bom = quoteMaterialsBom(quote);
+  assert.ok(bom && bom.doors.find(d => d.key === 'SHAKER_PNT').count === 4, 'aggregated without pre-priced items');
+});
+
+test('quoteMaterialsBom returns null for empty / fixed-price-only quotes', () => {
+  assert.equal(quoteMaterialsBom({ rooms: {} }), null, 'empty quote → null');
+  const fixed = { type: 'cabinet', qty: 1, fixedPrice: true, fixedCostExVAT: 1000, fixedMarkupPct: 10, params: {} };
+  const quote = { rooms: { Kitchen: { items: [{ ...fixed, pricing: priceItem(fixed) }] } } };
+  assert.equal(quoteMaterialsBom(quote), null, 'fixed-price-only quote → null');
+});
+
+test('materials bom does not change the existing pricing shape or numbers', () => {
+  // Adding breakdown.bom must not perturb any costed figure.
+  const r = priceItem(cabinet({ drawerCount: 1 }));
+  for (const k of ['costPerUnit', 'sellPerUnit', 'totalCost', 'totalSellExVAT', 'totalSellIncVAT']) {
+    assert.equal(typeof r[k], 'number', `${k} still present`);
+  }
+  assert.ok(close(r.totalSellExVAT, r.totalCost * DB.settings.margin), 'sell = cost × margin still holds');
 });

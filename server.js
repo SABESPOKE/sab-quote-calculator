@@ -12,10 +12,11 @@ let priceItem = null;
 let calcDesignHrsPerRoom = null;
 let recomputeQuotePricing = null;
 let quoteGrandTotal = null;
+let quoteMaterialsBom = null;
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
-  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal } = require(path.join(__dirname, 'public', 'pricing.js')));
+  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
   pricingEngineError = err.message;
@@ -43,6 +44,22 @@ function withGrandTotal(quote) {
 // room.designHrs and resolves room.techDays in the RESPONSE only; stored data untouched.
 // Deliberately not folded into recomputeQuotePricing so /api/quotes/reprice can't bake
 // a resolved techDays into the DB (which would break "blank = follow the default").
+// Read/serialize-time ONLY (GET /api/quotes, never persisted): attach a per-quote
+// materials bill-of-materials (material QUANTITIES, not costs) derived from the same
+// engine geometry that prices each item — so downstream consumers can pull exact order
+// quantities that never drift from the price. Purely additive; quote returned unchanged
+// on any failure or when the quote has no material lines.
+function withMaterialsBom(quote) {
+  if (!quoteMaterialsBom || !quote || !quote.rooms) return quote;
+  try {
+    const bom = quoteMaterialsBom(quote);
+    return bom ? { ...quote, materialsBom: bom } : quote;
+  } catch (err) {
+    console.error('[pricing] materialsBom build failed:', err.message);
+    return quote;
+  }
+}
+
 function withDesignHrs(quote) {
   if (!calcDesignHrsPerRoom || !quote || !quote.rooms) return quote;
   const rooms = {};
@@ -253,8 +270,9 @@ app.get('/api/quotes', async (req, res) => {
       const base = { ...row.data, _serverUpdatedAt: row.updated_at };
       const recomputed = recomputeQuotePricing ? recomputeQuotePricing(base) : base;
       // Stamp the grand total from the freshly-recomputed items so the served
-      // total always matches the served line items (and the calculator UI).
-      quotes[row.id] = withGrandTotal(withDesignHrs(recomputed));
+      // total always matches the served line items (and the calculator UI), and
+      // attach the materials BOM aggregated from the same recomputed items.
+      quotes[row.id] = withMaterialsBom(withGrandTotal(withDesignHrs(recomputed)));
     }
     res.json(quotes);
   } catch (err) {
