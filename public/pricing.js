@@ -781,15 +781,22 @@ function calcCabinetCost({
   const carcassLabourCost = assemblyHrs * er();
   const carcassHardware = 8 + shelfCount * 1.50; // cam bolts, shelf pins, etc.
 
+  // Handle used across doors AND drawer fronts (one handle per panel). Resolved at
+  // cabinet scope so drawer-only cabinets are also charged for their handles.
+  const handle = DB.hardware.handles[handleKey] || DB.hardware.handles["HW_HDL_BAR128"];
+
   // Doors (cost only, margin applied to cabinet total)
   let doorsCost = 0;
   let doorHrs = 0;       // door-making labour, person-hours per cabinet (all doors)
   let doorFinishHrs = 0; // spray finishing labour on doors, person-hours per cabinet
+  // BOM quantities (per single cabinet — multiplied by qty at the return). These are
+  // the SAME geometry the costing above uses, surfaced for the read-only materials BOM.
+  let doorAreaM2 = 0;   // total door face area (m²)
+  let hingeUnits = 0;   // hinges consumed (matches the hinges priced)
   if (doorCount > 0 && doorType && DB.doorTypes[doorType]) {
     const doorW = Math.floor(widthMm / doorCount) - 2;
     const doorH = heightMm - 6;
     const hinge = DB.hardware.hinges[hingeKey] || DB.hardware.hinges["HW_HINGE_SM"];
-    const handle = DB.hardware.handles[handleKey] || DB.hardware.handles["HW_HDL_BAR128"];
     const hingeCostPerDoor = hingeCount(doorH) * hinge.costEach;
     const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: doorCount, hingeCost: hingeCostPerDoor, handleCost: handle.costEach, hasStain, sprayFinishOverride,
       timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey,
@@ -797,6 +804,8 @@ function calcCabinetCost({
     doorsCost = dp ? dp.totalCost : 0;
     doorHrs = dp ? dp.breakdown.doorHrs * doorCount : 0;
     doorFinishHrs = dp ? dp.breakdown.finishHrs * doorCount : 0;
+    doorAreaM2 = (doorW / 1000) * (doorH / 1000) * doorCount;
+    hingeUnits = hingeCount(doorH) * doorCount;
   }
 
   // Drawers (cost only)
@@ -813,6 +822,7 @@ function calcCabinetCost({
   let drawerFrontsCost = 0;
   let drawerFrontHrs = 0;       // drawer-front-making labour (made like doors), per cabinet
   let drawerFrontFinishHrs = 0; // spray finishing labour on drawer fronts, per cabinet
+  let drawerFrontAreaM2 = 0;    // total drawer-front face area (m²) — same doorType as the doors
   const drawerFrontHeights = [];
   if (drawerCount > 0 && doorType && DB.doorTypes[doorType]) {
     const topRailMm = 32;
@@ -823,14 +833,17 @@ function calcCabinetCost({
     const defaultFrontH = Math.round(availableHeight / drawerCount);
     for (let i = 0; i < drawerCount; i++) drawerFrontHeights.push(defaultFrontH);
     const frontW = widthMm - 4; // drawer fronts span full cabinet width
+    const effFrontW = frontW > 0 ? frontW : widthMm - 4;
     for (const fh of drawerFrontHeights) {
-      const dfp = calcDoorCost({ doorType, widthMm: frontW > 0 ? frontW : widthMm - 4, heightMm: fh, qty: 1, hingeCost: 0, handleCost: 0, sprayFinish: true, hasStain, sprayFinishOverride,
+      // One handle per drawer front (no hinges — fronts run on the drawer runners).
+      const dfp = calcDoorCost({ doorType, widthMm: effFrontW, heightMm: fh, qty: 1, hingeCost: 0, handleCost: handle.costEach, sprayFinish: true, hasStain, sprayFinishOverride,
         timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey,
         frameStileWidthMm, frameThicknessMm: doorFrameThicknessMm });
       if (dfp) {
         drawerFrontsCost += dfp.totalCost;
         drawerFrontHrs += dfp.breakdown.doorHrs;
         drawerFrontFinishHrs += dfp.breakdown.finishHrs;
+        drawerFrontAreaM2 += (effFrontW / 1000) * (fh / 1000);
       }
     }
   }
@@ -919,6 +932,50 @@ function calcCabinetCost({
   const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs; // total spray finishing labour (doors + fronts + carcass shell)
   const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs).toFixed(3);
 
+  // ── Bill of materials (read-only, additive) ───────────────────────────────
+  // The MATERIAL QUANTITIES already computed above, surfaced per cabinet so the
+  // read API can aggregate exact order quantities that never disagree with the
+  // price. All quantities are scaled by qty (the priced figures are per-unit).
+  // Keys are the canonical MAT_*/HW_*/FRAME_*/EDGE_*/door-type codes.
+  const r4 = n => +(n || 0).toFixed(4);
+  const r3 = n => +(n || 0).toFixed(3);
+  const carcassKey = carcassMaterialKey;
+  const backKey    = backMaterialKey || carcassMaterialKey;
+  // Merge main + back when they share a material key (backs default to the carcass).
+  const bomCarcass = [];
+  const addCarcass = (key, area) => {
+    const e = bomCarcass.find(x => x.key === key);
+    if (e) e.areaM2 = r4(e.areaM2 + area); else bomCarcass.push({ key, areaM2: r4(area) });
+  };
+  addCarcass(carcassKey, mainArea * qty);
+  if (backArea > 0) addCarcass(backKey, backArea * qty);
+  // Doors + drawer fronts share the door type (both made & finished like doors).
+  const bomDoors = [];
+  const doorPanels = doorCount + drawerFrontHeights.length;
+  const doorPanelArea = doorAreaM2 + drawerFrontAreaM2;
+  if (doorType && DB.doorTypes[doorType] && doorPanels > 0) {
+    bomDoors.push({ key: doorType, count: doorPanels * qty, areaM2: r4(doorPanelArea * qty) });
+  }
+  const bomDrawerBoxes = (drawerCount > 0 && drawerType && DB.drawerTypes[drawerType])
+    ? [{ key: drawerType, count: drawerCount * qty }] : [];
+  const bomFrames = (frameKey && frameKey !== "FRAME_NONE" && FRAME_MATERIALS[frameKey] && frameResult.perimM > 0)
+    ? [{ key: frameKey, linealM: r3(frameResult.perimM * qty) }] : [];
+  const bomEdgeband = (needsEdgeband && edgebandResult.totalM > 0)
+    ? [{ key: edgebandKey || "EDGE_ABS_PAINT", linealM: r3(edgebandResult.totalM * qty) }] : [];
+  const bomHardware = [];
+  if (hingeUnits > 0 && hingeKey && hingeKey !== "HW_HINGE_NONE") bomHardware.push({ key: hingeKey, count: hingeUnits * qty });
+  if (drawerCount > 0 && drawerType && DB.drawerTypes[drawerType] && runnerKey) bomHardware.push({ key: runnerKey, count: drawerCount * qty });
+  // Handles — reported as door + drawer POSITIONS regardless of whether a handle is
+  // priced (handleKey is often HW_HDL_NONE: bought separately / client's choice). Split
+  // by target so a different handle type can be assigned to doors vs drawers downstream.
+  // When a real handle IS selected it's also charged in the price (calcDoorCost calls
+  // above) on the same positions — one source of truth for the priced case.
+  const bomHandles = [];
+  const doorHandlePositions   = (doorCount > 0 && doorType && DB.doorTypes[doorType]) ? doorCount : 0;
+  const drawerHandlePositions = drawerFrontHeights.length;
+  if (doorHandlePositions > 0)   bomHandles.push({ key: handleKey, target: "door",   count: doorHandlePositions * qty });
+  if (drawerHandlePositions > 0) bomHandles.push({ key: handleKey, target: "drawer", count: drawerHandlePositions * qty });
+
   return {
     costPerUnit: totalCostPerUnit,
     sellPerUnit: totalCostPerUnit * margin,
@@ -926,7 +983,8 @@ function calcCabinetCost({
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
     breakdown: { carcassMaterial: carcassMaterialCost, carcassLabour: carcassLabourCost, carcassHardware, doors: doorsCost, drawers: drawersCost, drawerFronts: drawerFrontsCost, frame: frameResult.total, edgeband: edgebandResult.total,
-      assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs, totalHrs },
+      assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs, totalHrs,
+      bom: { carcass: bomCarcass, doors: bomDoors, drawerBoxes: bomDrawerBoxes, frames: bomFrames, edgeband: bomEdgeband, hardware: bomHardware, handles: bomHandles } },
   };
 }
 
@@ -1231,6 +1289,69 @@ function recomputeQuotePricing(quote) {
   return { ...quote, rooms };
 }
 
+// ─── MATERIALS BILL OF MATERIALS (read-only, additive) ───────────────────────
+// Aggregate the per-cabinet material QUANTITIES (breakdown.bom, produced by
+// calcCabinetCost) into one per-quote BOM. Quantities come straight from the same
+// geometry that prices each item, so the BOM never disagrees with the price.
+//
+// Returns null when the quote yields no material lines (e.g. only fixed-price or
+// custom items) so the caller can omit the field entirely. Standard sheet size for
+// the sheet-count estimate is 2440×1220mm (2.9768 m²).
+function quoteMaterialsBom(quote) {
+  if (!quote || !quote.rooms) return null;
+  const SHEET_M2 = 2.4384 * 1.2192; // 2440×1220mm = 2.9729 m²
+  // Per-category accumulators keyed by material/hardware code.
+  const carcass = new Map();      // key → areaM2
+  const doors = new Map();        // key → { count, areaM2 }
+  const drawerBoxes = new Map();  // key → count
+  const frames = new Map();       // key → linealM
+  const edgeband = new Map();     // key → linealM
+  const hardware = new Map();     // key → count
+  const handles = new Map();      // "key|target" → count (positions; may be HW_HDL_NONE)
+  const addNum = (map, key, n) => { if (key) map.set(key, (map.get(key) || 0) + (Number(n) || 0)); };
+
+  for (const room of Object.values(quote.rooms)) {
+    for (const item of (room.items || [])) {
+      if (!item || item.fixedPrice) continue;
+      // Prefer the already-recomputed bom; fall back to pricing the item if absent
+      // (keeps the aggregator order-independent of the read-path recompute).
+      let bom = item.pricing && item.pricing.breakdown && item.pricing.breakdown.bom;
+      if (!bom) {
+        try { const p = priceItem(item); bom = p && p.breakdown && p.breakdown.bom; } catch { bom = null; }
+      }
+      if (!bom) continue;
+      (bom.carcass || []).forEach(e => addNum(carcass, e.key, e.areaM2));
+      (bom.doors || []).forEach(e => {
+        const cur = doors.get(e.key) || { count: 0, areaM2: 0 };
+        cur.count += Number(e.count) || 0;
+        cur.areaM2 += Number(e.areaM2) || 0;
+        doors.set(e.key, cur);
+      });
+      (bom.drawerBoxes || []).forEach(e => addNum(drawerBoxes, e.key, e.count));
+      (bom.frames || []).forEach(e => addNum(frames, e.key, e.linealM));
+      (bom.edgeband || []).forEach(e => addNum(edgeband, e.key, e.linealM));
+      (bom.hardware || []).forEach(e => addNum(hardware, e.key, e.count));
+      (bom.handles || []).forEach(e => addNum(handles, `${e.key}|${e.target}`, e.count));
+    }
+  }
+
+  const r2 = n => Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+  const out = {
+    carcass: [...carcass].map(([key, areaM2]) => ({ key, areaM2: r2(areaM2), sheets: Math.ceil(areaM2 / SHEET_M2) })),
+    doors: [...doors].map(([key, v]) => ({ key, count: v.count, areaM2: r2(v.areaM2) })),
+    drawerBoxes: [...drawerBoxes].map(([key, count]) => ({ key, count })),
+    frames: [...frames].map(([key, linealM]) => ({ key, linealM: r2(linealM) })),
+    edgeband: [...edgeband].map(([key, linealM]) => ({ key, linealM: r2(linealM) })),
+    hardware: [...hardware].map(([key, count]) => ({ key, count })),
+    // Handle positions required (split by door/drawer; key may be HW_HDL_NONE when
+    // handles aren't priced — the count is still the number you'd need to order).
+    handles: [...handles].map(([k, count]) => { const [key, target] = k.split('|'); return { key, target, count }; }),
+  };
+  // Omit entirely when nothing was found (empty / fixed-price-only quotes).
+  const empty = Object.values(out).every(arr => arr.length === 0);
+  return empty ? null : out;
+}
+
 // ─── Exports / global exposure ──────────────────────────────────────────────
 (function () {
   const api = { DB, FRAME_MATERIALS, EDGEBAND_TYPES, NO_EDGE_MATERIALS, er, hingeCount, fmt,
@@ -1240,7 +1361,7 @@ function recomputeQuotePricing(quote) {
     calcCabinetEdgebandCost, calcFillerCost, priceItem,
     calcDesignHrsPerRoom, calcDesignTimePerRoom,
     getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
-    recomputeQuotePricing };
+    recomputeQuotePricing, quoteMaterialsBom };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") Object.assign(window, api);
 })();
