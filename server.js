@@ -13,11 +13,13 @@ let calcDesignHrsPerRoom = null;
 let recomputeQuotePricing = null;
 let quoteGrandTotal = null;
 let quoteMaterialsBom = null;
+let withPricingStatus = null, lockQuote = null, quoteSettings = null, applySettings = null, ENGINE_VERSION = null;
 let PRICING_DB = null, FRAME_MATERIALS = null, EDGEBAND_TYPES = null; // lookup tables for /api/cabinet-cost
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
-  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES } = require(path.join(__dirname, 'public', 'pricing.js')));
+  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES,
+     withPricingStatus, lockQuote, quoteSettings, applySettings, ENGINE_VERSION } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
   pricingEngineError = err.message;
@@ -41,9 +43,9 @@ function withGrandTotal(quote) {
 
 // Read/serialize-time ONLY (applied in GET /api/quotes, not in the persist path):
 // annotate each room that has design time with its effective design labour, resolving
-// blank inputs against the DB.settings defaults — the same figure the UI shows. Adds
+// blank inputs against the quote's settings (locked or live) — the same figure the UI shows. Adds
 // room.designHrs and resolves room.techDays in the RESPONSE only; stored data untouched.
-// Deliberately not folded into recomputeQuotePricing so /api/quotes/reprice can't bake
+// Deliberately not folded into recomputeQuotePricing so no persist path can bake
 // a resolved techDays into the DB (which would break "blank = follow the default").
 // Read/serialize-time ONLY (GET /api/quotes, never persisted): attach a per-quote
 // materials bill-of-materials (material QUANTITIES, not costs) derived from the same
@@ -66,13 +68,41 @@ function withDesignHrs(quote) {
   const rooms = {};
   for (const [roomName, room] of Object.entries(quote.rooms)) {
     if (room && room.includeDesignTime !== false) {
-      const d = calcDesignHrsPerRoom(room);
+      const d = calcDesignHrsPerRoom(room, quoteSettings(quote));
       rooms[roomName] = { ...room, designHrs: +d.designHrs.toFixed(3), techDays: d.techDays };
     } else {
       rooms[roomName] = room;
     }
   }
   return { ...quote, rooms };
+}
+
+// Read-time ONLY: live hours next to priced hours + the mixed-pricing flag (pricing.js
+// → withPricingStatus). Never changes a price; quote returned unchanged on failure.
+function withHours(quote) {
+  if (!withPricingStatus) return quote;
+  try { return withPricingStatus(quote); }
+  catch (err) { console.error('[pricing] hours annotation failed:', err.message); return quote; }
+}
+
+// A quote the server has never stored is new: price anything unpriced and lock it.
+// An existing quote keeps its stored lock even if a stale client sends it without one.
+function lockOnWrite(quote, storedLock) {
+  if (!quote || !lockQuote) return quote;
+  if (quote.pricingLock) return quote;
+  if (storedLock !== undefined) return storedLock ? { ...quote, pricingLock: storedLock } : quote;
+  return lockQuote(recomputeQuotePricing(quote));
+}
+
+// Shared pricing settings (the Settings page's DB JSON), stored once in Postgres and
+// applied to this process's engine, so the API prices exactly as the browser does.
+// ponytail: applied in-process; with several server instances each must reload on change.
+async function loadSharedSettings() {
+  if (!pool || !applySettings) return;
+  try {
+    const { rows } = await pool.query("SELECT data FROM settings WHERE id = 'pricing'");
+    if (rows.length) { applySettings(rows[0].data); console.log('[pricing] shared settings applied'); }
+  } catch (err) { console.error('[pricing] shared settings load failed:', err.message); }
 }
 
 const app = express();
@@ -258,7 +288,7 @@ app.get('/api/health/engine', (req, res) => {
       engineCheck = { finishHrs: bd.finishHrs, carcassFinishHrs: bd.carcassFinishHrs, hasCarcassFinishHrs: ('carcassFinishHrs' in bd) };
     } catch (e) { engineCheck = { error: e.message }; }
   }
-  res.json({ pricingEngine: !!priceItem, pricingEngineError, engineCheck });
+  res.json({ pricingEngine: !!priceItem, engineVersion: ENGINE_VERSION, pricingEngineError, engineCheck });
 });
 
 // ─── CABINET COST API (for the cabinet configurator) ─────────────────────────
@@ -366,7 +396,7 @@ app.get('/api/quotes', async (req, res) => {
       // Stamp the grand total from the freshly-recomputed items so the served
       // total always matches the served line items (and the calculator UI), and
       // attach the materials BOM aggregated from the same recomputed items.
-      quotes[row.id] = withMaterialsBom(withGrandTotal(withDesignHrs(recomputed)));
+      quotes[row.id] = withMaterialsBom(withHours(withGrandTotal(withDesignHrs(recomputed))));
     }
     res.json(quotes);
   } catch (err) {
@@ -375,24 +405,37 @@ app.get('/api/quotes', async (req, res) => {
   }
 });
 
-// One-off: recompute every stored quote with the CURRENT engine and PERSIST it, so the
-// raw Postgres rows are refreshed (not just the on-read recompute). Use after a
-// pricing.js change to bake new fields (e.g. carcassFinishHrs) into stored data.
-// Auth-protected (not in PUBLIC_PATHS). Returns a sample so you can confirm the result.
-app.post('/api/quotes/reprice', async (req, res) => {
-  if (!pool) return res.status(503).json({ error: 'No database' });
-  if (!priceItem) return res.status(503).json({ error: 'Pricing engine not loaded', pricingEngineError });
+// (POST /api/quotes/reprice was removed: quotes are price-locked and only move to new
+// pricing one at a time, through the calculator's "Reprice…" preview + confirm.)
+
+// Shared pricing settings — see loadSharedSettings. GET returns null until first saved.
+app.get('/api/settings', async (req, res) => {
+  if (!pool) return res.json(null);
   try {
-    const { rows } = await pool.query('SELECT id, data FROM quotes');
-    let repriced = 0;
-    for (const row of rows) {
-      const updated = withGrandTotal(recomputeQuotePricing(row.data));
-      await pool.query('UPDATE quotes SET data = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(updated), row.id]);
-      repriced++;
-    }
-    res.json({ ok: true, repriced });
+    const { rows } = await pool.query("SELECT data FROM settings WHERE id = 'pricing'");
+    res.json(rows.length ? rows[0].data : null);
   } catch (err) {
-    console.error('POST /api/quotes/reprice error:', err.message);
+    console.error('GET /api/settings error:', err.message);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+app.put('/api/settings', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'No database' });
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body) || !body.settings || typeof body.settings !== 'object') {
+    return res.status(400).json({ error: 'expected the pricing DB object with a settings object' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO settings (id, data, updated_at) VALUES ('pricing', $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = NOW()`,
+      [JSON.stringify(body)]
+    );
+    if (applySettings) applySettings(body);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('PUT /api/settings error:', err.message);
     res.status(500).json({ error: 'Database error' });
   }
 });
@@ -401,10 +444,11 @@ app.post('/api/quotes/reprice', async (req, res) => {
 app.put('/api/quotes/:id', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });
   const { id } = req.params;
-  // Stamp the grand total from the client's own item pricing (computed by the
-  // same engine) so the stored figure matches exactly what the UI displayed.
-  const data = withGrandTotal(req.body);
   try {
+    // New quote → priced + locked; existing → keeps its stored lock. Then stamp the grand
+    // total from the client's own item pricing so it matches what the UI displayed.
+    const { rows } = await pool.query("SELECT data->'pricingLock' AS lock FROM quotes WHERE id = $1", [id]);
+    const data = withGrandTotal(lockOnWrite(req.body, rows.length ? rows[0].lock : undefined));
     await pool.query(
       `INSERT INTO quotes (id, data, updated_at)
        VALUES ($1, $2, NOW())
@@ -486,7 +530,7 @@ app.post('/api/quotes/sync', async (req, res) => {
       if (!serverEntry || clientTime > new Date(serverEntry.updated_at)) {
         // Client is newer — upsert to server, stamping the grand total so the
         // stored record carries the same final figure the UI showed.
-        const stamped = withGrandTotal(quote);
+        const stamped = withGrandTotal(lockOnWrite(quote, serverEntry ? (serverEntry.data.pricingLock || null) : undefined));
         await pool.query(
           `INSERT INTO quotes (id, data, updated_at)
            VALUES ($1, $2, $3)
@@ -570,7 +614,7 @@ app.get('*', (req, res) => {
 // Exported for tests (which listen on their own port); started only when run directly.
 module.exports = app;
 if (require.main === module) {
-  initDB().then(() => {
+  initDB().then(loadSharedSettings).then(() => {
     app.listen(PORT, () => {
       console.log(`SAB Quote Calculator running on port ${PORT}`);
     });

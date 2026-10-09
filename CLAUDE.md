@@ -40,6 +40,8 @@ All under `/api/`:
 - Theme colours: `#c8a96e` (gold accent), `#1a1a1a` (dark), `#f5f5f5` (light)
 - Data persists to localStorage first, then syncs to PostgreSQL server
 - When updating the frontend, bump the service worker cache version in `sw.js`
+- Quotes are price-locked (`quote.pricingLock`): stored item prices are final and totals use the lock's settings, so engine/Settings changes only reach new quotes, edited items and a deliberate "Reprice…". Bump `ENGINE_VERSION` in `pricing.js` with any change that can move a price; hours stay live (`item.hours.current`, `quote.hoursCheck`)
+- Settings are shared: `GET/PUT /api/settings` (Postgres `settings` table) — the browser and server price from the same values
 
 ## Environment
 - `DATABASE_URL` — PostgreSQL connection string (set automatically on Railway; optional for local dev which uses localStorage only)

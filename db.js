@@ -24,6 +24,14 @@ async function initDB() {
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_quotes_updated ON quotes(updated_at)
     `);
+    // One row ('pricing'): the shared Settings page values both browser and server price with.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS settings (
+        id          TEXT PRIMARY KEY,
+        data        JSONB NOT NULL,
+        updated_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
     console.log('Database connected and quotes table ready');
     return true;
   } catch (err) {

@@ -304,21 +304,25 @@ const EDGEBAND_TYPES = {
 // Materials that DON'T need edgebanding (natural ply edge is fine / pre-edged)
 const NO_EDGE_MATERIALS = new Set(["MAT_BIRCH_UNF_18","MAT_BIRCH_UNF_12","MAT_BIRCH_UNF_25"]);
 
+// Deep-merge saved settings (the Settings page's DB JSON) over the defaults. Used by the
+// browser (localStorage cache) and the server (shared settings row, /api/settings).
+function applySettings(saved) {
+  (function deepMerge(target, source) {
+    for (const key of Object.keys(source)) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) && target[key] && typeof target[key] === 'object') {
+        deepMerge(target[key], source[key]);
+      } else {
+        target[key] = source[key];
+      }
+    }
+  })(DB, saved);
+}
+
 // Restore saved settings from localStorage (deep merge over defaults)
 try {
   const saved = JSON.parse(localStorage.getItem('sab_db_settings'));
-  if (saved) {
-    function deepMerge(target, source) {
-      for (const key of Object.keys(source)) {
-        if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) && target[key] && typeof target[key] === 'object') {
-          deepMerge(target[key], source[key]);
-        } else {
-          target[key] = source[key];
-        }
-      }
-    }
-    deepMerge(DB, saved);
-  }
+  if (saved) applySettings(saved);
 } catch {}
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -335,8 +339,7 @@ function hingeCount(doorHeightMm) {
 // defaults — the same numbers the UI shows. Returns the labour hours plus the
 // effective tech-drawing days (resolved if blank). Single source for both the fee
 // (below) and the read-only designHrs exposed by the API.
-function calcDesignHrsPerRoom(roomData) {
-  const s = DB.settings;
+function calcDesignHrsPerRoom(roomData, s = DB.settings) {
   const rounds = roomData?.designRounds ?? s.designRoundsPerRoom;
   const hrsPerRound = roomData?.designHrsPerRound ?? s.designHoursPerRound;
   const techDays = roomData?.techDays ?? s.technicalDrawingDays;
@@ -344,17 +347,16 @@ function calcDesignHrsPerRoom(roomData) {
   return { designHrs, techDays, rounds, hrsPerRound };
 }
 
-function calcDesignTimePerRoom(roomData) {
-  const { designHrs } = calcDesignHrsPerRoom(roomData);
-  const rate = roomData?.designRate ?? DB.settings.designHourlyRate;
+function calcDesignTimePerRoom(roomData, s = DB.settings) {
+  const { designHrs } = calcDesignHrsPerRoom(roomData, s);
+  const rate = roomData?.designRate ?? s.designHourlyRate;
   return designHrs * rate;
 }
 
 // ─── PROJECT COST DEFAULTS ────────────────────────────────────────────────────
 // (Moved here from index.html so the SAME totals code runs in both the browser
 // and on the server — see quoteTotals below.)
-function getDefaultProjectCosts() {
-  const s = DB.settings;
+function getDefaultProjectCosts(s = DB.settings) {
   return {
     surveyFee:           s.surveyFee,           // £ flat
     installDaysByRoom:   {},                     // { [roomName]: days } — per-room fitting
@@ -384,12 +386,57 @@ function totalInstallDays(pc) {
   return Number(pc?.installDays) || 0;
 }
 
+// ─── PRICE LOCK ──────────────────────────────────────────────────────────────
+// A locked quote (quote.pricingLock) never changes price because the engine or the
+// Settings changed: its stored item pricing is final and its totals use the settings
+// captured at lock time. Engine/Settings changes reach only new quotes, edited items
+// and a deliberate "Reprice to current pricing…". Hours stay live (withPricingStatus).
+// Bump ENGINE_VERSION with any pricing.js change that can move a price.
+const ENGINE_VERSION = "2026-10-09";
+
+// Short fingerprint (djb2) of the pricing tables + settings an item is priced with.
+function settingsFingerprint() {
+  const str = JSON.stringify(DB);
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(16);
+}
+// Items saved before the lock carry no stamp — they all count as one "saved" pricing.
+const pricingId = pw => pw ? `${pw.engine}/${pw.settings}` : "saved";
+
+function lockQuote(quote) {
+  return { ...quote, pricingLock: { engineVersion: ENGINE_VERSION, lockedAt: new Date().toISOString(), settings: JSON.parse(JSON.stringify(DB.settings)) } };
+}
+
+// Settings a quote's money is computed with: its lock snapshot, else the live settings.
+function quoteSettings(quote) {
+  const locked = quote && quote.pricingLock && quote.pricingLock.settings;
+  return locked ? { ...DB.settings, ...locked } : DB.settings;
+}
+
+// Locked quote, new margin: rescale the frozen costs (sell = cost × margin) instead of
+// re-running the engine. WRP (own markup) and fixed-price items are unaffected.
+function rescaleMargin(quote, marginOverride) {
+  const s = quoteSettings(quote);
+  const m = marginOverride ?? s.margin;
+  const rooms = {};
+  for (const [name, room] of Object.entries(quote.rooms || {})) {
+    rooms[name] = { ...room, items: (room.items || []).map(it => {
+      const p = it.pricing;
+      if (!p || it.fixedPrice || it.type === "wrp_moulding") return it;
+      return { ...it, pricing: { ...p, sellPerUnit: p.costPerUnit * m, totalSellExVAT: p.totalCost * m, totalSellIncVAT: p.totalCost * m * (1 + s.vat) } };
+    }) };
+  }
+  return { ...quote, marginOverride, rooms };
+}
+
 // ─── QUOTE TOTALS ─────────────────────────────────────────────────────────────
 // SINGLE SOURCE OF TRUTH for a quote's grand total — the exact figure the
 // calculator shows at the bottom of a quote (and per-quote in the list view).
 // Browser calls it as a window global; the server requires it to persist the
 // total onto the quote record (see quoteGrandTotal). Keep DOM/React free.
 function quoteTotals(quote) {
+  const s = quoteSettings(quote); // locked quotes: the settings captured at lock time
   let mfgCost = 0, mfgSellExVAT = 0, designFee = 0;
   // nonFixed* track items that participate in margin/overhead allocation
   // (i.e. exclude fixed-price pass-through items). PM% is applied against the
@@ -401,12 +448,11 @@ function quoteTotals(quote) {
       mfgSellExVAT += item.pricing?.totalSellExVAT || 0;
       if (!item.fixedPrice) nonFixedSellExVAT += item.pricing?.totalSellExVAT || 0;
     });
-    if (room.includeDesignTime !== false) designFee += calcDesignTimePerRoom(room);
+    if (room.includeDesignTime !== false) designFee += calcDesignTimePerRoom(room, s);
   });
 
   // Project-level costs
-  const pc = quote.projectCosts || getDefaultProjectCosts();
-  const s  = DB.settings;
+  const pc = quote.projectCosts || getDefaultProjectCosts(s);
   // Fixed-price items don't consume a consumables-per-item slot.
   const totalItems = Object.values(quote.rooms || {}).reduce((sum, r) => sum + r.items.filter(i => !i.fixedPrice).length, 0);
 
@@ -1256,7 +1302,14 @@ function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720,
   };
 }
 
+// Every computed price records the engine + settings it came from (pricing.pricedWith).
 function priceItem(item, effectiveMargin) {
+  const p = priceItemUnstamped(item, effectiveMargin);
+  if (p) p.pricedWith = { engine: ENGINE_VERSION, settings: settingsFingerprint() };
+  return p;
+}
+
+function priceItemUnstamped(item, effectiveMargin) {
   // effectiveMargin lets a quote override the global margin (quote.marginOverride).
   // When undefined/null it falls back to DB.settings.margin, so callers that pass
   // nothing price exactly as before.
@@ -1297,25 +1350,66 @@ function priceItem(item, effectiveMargin) {
 }
 
 // Recompute every item's `pricing` from its stored params using the canonical
-// engine. Purely additive/non-destructive: structure is preserved, and if an
-// item throws/returns null its stored pricing is kept. Shared by the server
-// (GET /api/quotes recompute-on-read, /reprice, persist-time total stamping)
-// and the backfill script so the logic lives in one place.
+// engine — EXCEPT on a locked quote, where stored pricing is final and only items
+// with no valid stored price get priced. Non-destructive: structure is preserved,
+// and if an item throws/returns null its stored pricing is kept. Shared by the
+// server (GET /api/quotes, new-quote locking), the browser load path and the scripts.
 function recomputeQuotePricing(quote) {
   if (!quote || !quote.rooms) return quote;
   // Per-quote margin override (falls back to the engine default when unset).
   const effectiveMargin = quote.marginOverride;
+  const locked = !!quote.pricingLock;
   const rooms = {};
   for (const [roomName, room] of Object.entries(quote.rooms)) {
     rooms[roomName] = {
       ...room,
       items: (room.items || []).map(item => {
+        if (locked && Number.isFinite(item.pricing && item.pricing.totalCost)) return item;
         try { const pricing = priceItem(item, effectiveMargin); return pricing ? { ...item, pricing } : item; }
         catch { return item; }
       }),
     };
   }
   return { ...quote, rooms };
+}
+
+// ─── PRICING STATUS (read-only, additive) ────────────────────────────────────
+// Hours are NOT frozen: each item gets hours.current from the live engine next to
+// hours.priced (what its stored price was built on). The quote gets hoursCheck
+// (priced vs current work) and pricingMixed (items priced with different engines /
+// settings). Never touches pricing.
+function hoursOf(bd) {
+  if (!bd || !Number.isFinite(bd.totalHrs)) return null;
+  const h = {};
+  for (const [k, v] of Object.entries(bd)) if (/Hrs$/.test(k) || k === "sprayDetail") h[k] = v;
+  return h;
+}
+
+function withPricingStatus(quote) {
+  if (!quote || !quote.rooms) return quote;
+  const check = { pricedHrs: 0, currentHrs: 0, deltaHrs: 0, itemsChanged: 0, itemsWithoutPricedHrs: 0 };
+  const ids = new Set();
+  const rooms = {};
+  for (const [roomName, room] of Object.entries(quote.rooms)) {
+    rooms[roomName] = { ...room, items: (room.items || []).map(item => {
+      if (!item || item.fixedPrice) return item;
+      if (item.pricing) ids.add(pricingId(item.pricing.pricedWith));
+      let current = null;
+      try { const p = priceItemUnstamped(item, quote.marginOverride); current = p && hoursOf(p.breakdown); } catch {}
+      const priced = hoursOf(item.pricing && item.pricing.breakdown);
+      if (!current && !priced) return item;
+      const qty = item.qty || 1;
+      const changed = priced && current ? +priced.totalHrs.toFixed(3) !== +current.totalHrs.toFixed(3) : null;
+      if (priced && current) { check.pricedHrs += priced.totalHrs * qty; check.currentHrs += current.totalHrs * qty; }
+      else if (current) check.itemsWithoutPricedHrs++;
+      if (changed) check.itemsChanged++;
+      return { ...item, hours: { priced, current, changed } };
+    }) };
+  }
+  check.pricedHrs = +check.pricedHrs.toFixed(2);
+  check.currentHrs = +check.currentHrs.toFixed(2);
+  check.deltaHrs = +(check.currentHrs - check.pricedHrs).toFixed(2);
+  return { ...quote, rooms, hoursCheck: check, pricingMixed: ids.size > 1 };
 }
 
 // ─── MATERIALS BILL OF MATERIALS (read-only, additive) ───────────────────────
@@ -1390,7 +1484,8 @@ function quoteMaterialsBom(quote) {
     calcCabinetEdgebandCost, calcFillerCost, priceItem,
     calcDesignHrsPerRoom, calcDesignTimePerRoom,
     getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
-    recomputeQuotePricing, quoteMaterialsBom };
+    recomputeQuotePricing, quoteMaterialsBom,
+    ENGINE_VERSION, applySettings, settingsFingerprint, pricingId, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") Object.assign(window, api);
 })();
