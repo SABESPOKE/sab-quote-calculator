@@ -446,6 +446,20 @@ function quoteGrandTotal(quote) {
 
 // ─── PRICING ENGINE ───────────────────────────────────────────────────────────
 
+// Spray-finish hours split (sprayDetail). Named steps, in shop order; handlingHrs —
+// setup (hanging, masking, repositioning) plus 3dp rounding — is the remainder, so the
+// parts always add up exactly to the total. Read-only output: no price depends on it.
+const SPRAY_STEP_KEYS = ["caulkHrs", "stainHrs", "primerHrs", "topCoatHrs", "lacquerHrs", "edgePolishHrs"];
+const sprayHandlingHrs = (bd, totalHrs) => +(totalHrs - SPRAY_STEP_KEYS.reduce((s, k) => s + (bd[k] || 0), 0)).toFixed(3);
+// Sum [sprayBreakdown, multiplier] pairs into one split that adds up to totalHrs.
+function sprayHrsSplit(totalHrs, parts) {
+  const out = {};
+  for (const [bd, n] of parts) for (const k of SPRAY_STEP_KEYS) if (bd && bd[k]) out[k] = +((out[k] || 0) + bd[k] * n).toFixed(3);
+  out.handlingHrs = sprayHandlingHrs(out, totalHrs);
+  out.totalHrs = totalHrs;
+  return out;
+}
+
 // Spray finishing — full prep model: caulking + sanding between coats + spray per coat
 // finishType: "none" | "edge_polish" | "primed" | "paint" | "lacquer" | "stain_lacquer"
 // surfaceType: "door" (2 faces + 4 edges) | "panel" (1 face)
@@ -461,7 +475,7 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
 
   // ── Short-circuits for non-spray finish types ────────────────────────────
   if (finishType === "none") {
-    return { costPerDoor: 0, total: 0, breakdown: { totalHrs: 0, labourCost: 0, boothCost: 0, matCost: 0, note: "no finish required" } };
+    return { costPerDoor: 0, total: 0, breakdown: { totalHrs: 0, labourCost: 0, boothCost: 0, matCost: 0, note: "no finish required", handlingHrs: 0 } };
   }
   if (finishType === "edge_polish") {
     // Edges only — sanded and waxed by hand, no booth time
@@ -476,7 +490,7 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
     return {
       costPerDoor,
       total: costPerDoor * qty,
-      breakdown: { totalHrs: +totalHrs.toFixed(3), labourCost: +labourCost.toFixed(2), boothCost: 0, matCost: +matCost.toFixed(2), perimM: +perimM.toFixed(3), note: "edge polish only" },
+      breakdown: { totalHrs: +totalHrs.toFixed(3), labourCost: +labourCost.toFixed(2), boothCost: 0, matCost: +matCost.toFixed(2), perimM: +perimM.toFixed(3), note: "edge polish only", edgePolishHrs: +totalHrs.toFixed(3), handlingHrs: 0 },
     };
   }
 
@@ -601,7 +615,8 @@ function calcSprayFinishCost({ doorType, widthMm, heightMm, qty = 1, finishType 
   return {
     costPerDoor,
     total: costPerDoor * qty,
-    breakdown: { ...bd, totalHrs: +totalHrs.toFixed(3), labourCost: +labourCost.toFixed(2), boothCost: +boothCost.toFixed(2), matCost: +matCost.toFixed(2) },
+    breakdown: { ...bd, totalHrs: +totalHrs.toFixed(3), labourCost: +labourCost.toFixed(2), boothCost: +boothCost.toFixed(2), matCost: +matCost.toFixed(2),
+      handlingHrs: sprayHandlingHrs(bd, +totalHrs.toFixed(3)) },
   };
 }
 
@@ -789,6 +804,7 @@ function calcCabinetCost({
   let doorsCost = 0;
   let doorHrs = 0;       // door-making labour, person-hours per cabinet (all doors)
   let doorFinishHrs = 0; // spray finishing labour on doors, person-hours per cabinet
+  let doorSpray = null;  // per-door spray breakdown (sprayDetail split)
   // BOM quantities (per single cabinet — multiplied by qty at the return). These are
   // the SAME geometry the costing above uses, surfaced for the read-only materials BOM.
   let doorAreaM2 = 0;   // total door face area (m²)
@@ -804,6 +820,7 @@ function calcCabinetCost({
     doorsCost = dp ? dp.totalCost : 0;
     doorHrs = dp ? dp.breakdown.doorHrs * doorCount : 0;
     doorFinishHrs = dp ? dp.breakdown.finishHrs * doorCount : 0;
+    doorSpray = dp ? dp.breakdown.sprayDetail : null;
     doorAreaM2 = (doorW / 1000) * (doorH / 1000) * doorCount;
     hingeUnits = hingeCount(doorH) * doorCount;
   }
@@ -823,6 +840,7 @@ function calcCabinetCost({
   let drawerFrontHrs = 0;       // drawer-front-making labour (made like doors), per cabinet
   let drawerFrontFinishHrs = 0; // spray finishing labour on drawer fronts, per cabinet
   let drawerFrontAreaM2 = 0;    // total drawer-front face area (m²) — same doorType as the doors
+  const frontSprays = [];       // [spray breakdown, 1] per drawer front (sprayDetail split)
   const drawerFrontHeights = [];
   if (drawerCount > 0 && doorType && DB.doorTypes[doorType]) {
     const topRailMm = 32;
@@ -843,6 +861,7 @@ function calcCabinetCost({
         drawerFrontsCost += dfp.totalCost;
         drawerFrontHrs += dfp.breakdown.doorHrs;
         drawerFrontFinishHrs += dfp.breakdown.finishHrs;
+        frontSprays.push([dfp.breakdown.sprayDetail, 1]);
         drawerFrontAreaM2 += (effFrontW / 1000) * (fh / 1000);
       }
     }
@@ -881,6 +900,7 @@ function calcCabinetCost({
   //   closed cabinets don't (hidden by doors).
   let carcassFinishCost = 0;
   let carcassFinishHrs = 0; // spray-tech labour to finish the carcass shell (0 unless a carcass finish is set)
+  let carcassSpray = null;
   if (carcassFinish && carcassFinish !== "none") {
     const W = widthMm / 1000;
     const H = heightMm / 1000;
@@ -916,6 +936,7 @@ function calcCabinetCost({
     });
     carcassFinishCost = cf ? cf.costPerDoor : 0;
     carcassFinishHrs  = cf ? cf.breakdown.totalHrs : 0;
+    carcassSpray      = cf ? cf.breakdown : null;
   }
 
   // (Filler items are now top-level items priced independently — see calcFillerCost.
@@ -931,6 +952,12 @@ function calcCabinetCost({
   const edgebandHrs = edgebandResult.labourHrs || 0;  // edgebanding labour
   const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs; // total spray finishing labour (doors + fronts + carcass shell)
   const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs).toFixed(3);
+  // finishHrs split by step, and by part (carcass / door / drawerFront) — parts present only when finished.
+  const sprayParts = {};
+  if (carcassFinishHrs > 0)     sprayParts.carcass     = sprayHrsSplit(carcassFinishHrs, [[carcassSpray, 1]]);
+  if (doorFinishHrs > 0)        sprayParts.door        = sprayHrsSplit(doorFinishHrs, [[doorSpray, doorCount]]);
+  if (drawerFrontFinishHrs > 0) sprayParts.drawerFront = sprayHrsSplit(drawerFrontFinishHrs, frontSprays);
+  const sprayDetail = { ...sprayHrsSplit(finishHrs, Object.values(sprayParts).map(p => [p, 1])), parts: sprayParts };
 
   // ── Bill of materials (read-only, additive) ───────────────────────────────
   // The MATERIAL QUANTITIES already computed above, surfaced per cabinet so the
@@ -983,7 +1010,7 @@ function calcCabinetCost({
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
     breakdown: { carcassMaterial: carcassMaterialCost, carcassLabour: carcassLabourCost, carcassHardware, doors: doorsCost, drawers: drawersCost, drawerFronts: drawerFrontsCost, frame: frameResult.total, edgeband: edgebandResult.total,
-      assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs, totalHrs,
+      assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs, totalHrs, sprayDetail,
       bom: { carcass: bomCarcass, doors: bomDoors, drawerBoxes: bomDrawerBoxes, frames: bomFrames, edgeband: bomEdgeband, hardware: bomHardware, handles: bomHandles } },
   };
 }
@@ -1012,7 +1039,8 @@ function calcEndPanelCost({ materialKey, widthMm, heightMm, thicknessMm = 18, fa
     breakdown: { material: matCost, labour: labourCost, spray: sprayC,
       panelHrs: +labourHrs.toFixed(3),      // end-panel build labour, person-hours per unit
       finishHrs,                            // spray finishing labour
-      totalHrs: +(labourHrs + finishHrs).toFixed(3) },
+      totalHrs: +(labourHrs + finishHrs).toFixed(3),
+      sprayDetail: spray.breakdown },
   };
 }
 
@@ -1058,7 +1086,8 @@ function calcFloatingShelfCost({ materialKey, lengthMm, depthMm, thicknessMm = 1
     breakdown: { material: matCost, labour: labourCost, spray: sprayC, isBoxShelf,
       shelfHrs: +labourHrs.toFixed(3),      // floating-shelf build labour, person-hours per unit
       finishHrs,                            // spray finishing labour
-      totalHrs: +(labourHrs + finishHrs).toFixed(3) },
+      totalHrs: +(labourHrs + finishHrs).toFixed(3),
+      sprayDetail: spray.breakdown },
   };
 }
 
@@ -1143,7 +1172,7 @@ function calcWRPMouldingCost({
       markup_pct: markup,
       finishHrs,                            // spray finishing labour, person-hours per unit
       totalHrs: finishHrs,
-      ...(paintBreakdown ? { spray: paintBreakdown } : {}),
+      ...(paintBreakdown ? { spray: paintBreakdown, sprayDetail: sprayHrsSplit(finishHrs, [[paintBreakdown, metres]]) } : {}),
     },
   };
 }
