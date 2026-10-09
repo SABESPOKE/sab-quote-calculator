@@ -10,7 +10,7 @@ const STATIC_ASSETS = [
 const CDN_ASSETS = [
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js'
+  'https://unpkg.com/@babel/standalone@7.29.8/babel.min.js'
 ];
 
 // Install — pre-cache static assets
