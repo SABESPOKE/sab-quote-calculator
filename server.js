@@ -13,10 +13,11 @@ let calcDesignHrsPerRoom = null;
 let recomputeQuotePricing = null;
 let quoteGrandTotal = null;
 let quoteMaterialsBom = null;
+let PRICING_DB = null, FRAME_MATERIALS = null, EDGEBAND_TYPES = null; // lookup tables for /api/cabinet-cost
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
-  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom } = require(path.join(__dirname, 'public', 'pricing.js')));
+  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
   pricingEngineError = err.message;
@@ -260,6 +261,99 @@ app.get('/api/health/engine', (req, res) => {
   res.json({ pricingEngine: !!priceItem, pricingEngineError, engineCheck });
 });
 
+// ─── CABINET COST API (for the cabinet configurator) ─────────────────────────
+// Thin wrapper over the SAME engine call the UI makes: the request body is the
+// engine's native cabinet params (the `params` object the UI stores on a cabinet
+// item) and it is priced via priceItem({ type:'cabinet', qty, params }). No remapping,
+// no defaults beyond the engine's own. Auth-gated by authMiddleware (not in
+// PUBLIC_PATHS): Bearer API_TOKEN for service callers, or the cookie session.
+//
+// Validation is strict on purpose ("never a guess"): the engine silently ignores
+// unknown fields and falls back to defaults for unknown hardware keys, so a typo
+// would price a different cabinet. Unknown fields and unknown keys are 400s.
+const CABINET_FIELDS = new Set([
+  'widthMm', 'heightMm', 'depthMm', 'carcassMaterialKey', 'carcassFinish', 'backMaterialKey',
+  'doorCount', 'doorType', 'drawerCount', 'drawerType', 'runnerKey', 'hingeKey', 'handleKey',
+  'shelfCount', 'frameKey', 'frameThicknessMm', 'frameMemberWidthMm', 'frameCustomSpeciesName',
+  'frameCustomPricePerM3', 'timberSpeciesKey', 'timberCustomSpeciesName', 'timberCustomPricePerM3',
+  'panelMaterialKey', 'frameStileWidthMm', 'doorFrameThicknessMm', 'edgebandKey', 'hasStain',
+  'sprayFinishOverride', 'qty',
+  'cabinetTypeKey', // informational — the engine prices from dims/counts, not the type
+]);
+const CARCASS_FINISHES = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
+const SPRAY_OVERRIDES  = ['', 'primed', 'edge_polish', 'none'];
+
+// Returns a list of problems (empty = OK). Only checks what the engine would otherwise guess at.
+function cabinetSpecErrors(spec) {
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return ['body must be a JSON object of cabinet params'];
+  const errs = [];
+  const unknown = Object.keys(spec).filter(k => !CABINET_FIELDS.has(k));
+  if (unknown.length) errs.push(`unknown field(s): ${unknown.join(', ')}`);
+  for (const f of ['widthMm', 'heightMm', 'depthMm']) {
+    if (typeof spec[f] !== 'number' || !Number.isFinite(spec[f]) || spec[f] <= 0) errs.push(`${f} must be a positive number`);
+  }
+  for (const f of ['doorCount', 'drawerCount', 'shelfCount']) {
+    if (spec[f] !== undefined && (!Number.isInteger(spec[f]) || spec[f] < 0)) errs.push(`${f} must be a non-negative integer`);
+  }
+  if (spec.qty !== undefined && (!Number.isInteger(spec.qty) || spec.qty < 1)) errs.push('qty must be a positive integer');
+  if (spec.carcassMaterialKey === undefined) errs.push('carcassMaterialKey is required');
+  const keyIn = (f, table, group) => { const v = spec[f]; if (v !== undefined && !(table && Object.prototype.hasOwnProperty.call(table, v))) errs.push(`unknown ${f} "${v}" — see GET /api/cabinet-cost/keys (${group})`); };
+  keyIn('carcassMaterialKey', PRICING_DB.materials, 'materials');
+  keyIn('backMaterialKey',    PRICING_DB.materials, 'materials');
+  keyIn('panelMaterialKey',   PRICING_DB.materials, 'materials');
+  keyIn('doorType',           PRICING_DB.doorTypes, 'doorTypes');
+  keyIn('drawerType',         PRICING_DB.drawerTypes, 'drawerTypes');
+  keyIn('runnerKey',          PRICING_DB.hardware.runners, 'hardware.runners');
+  keyIn('hingeKey',           PRICING_DB.hardware.hinges,  'hardware.hinges');
+  keyIn('handleKey',          PRICING_DB.hardware.handles, 'hardware.handles');
+  keyIn('timberSpeciesKey',   PRICING_DB.solidTimber, 'solidTimber');
+  keyIn('cabinetTypeKey',     PRICING_DB.cabinetTypes, 'cabinetTypes');
+  keyIn('frameKey',           FRAME_MATERIALS, 'frames');
+  keyIn('edgebandKey',        EDGEBAND_TYPES, 'edgebands');
+  if (spec.carcassFinish !== undefined && !CARCASS_FINISHES.includes(spec.carcassFinish)) errs.push(`carcassFinish must be one of ${CARCASS_FINISHES.join('|')}`);
+  if (spec.sprayFinishOverride !== undefined && !SPRAY_OVERRIDES.includes(spec.sprayFinishOverride)) errs.push(`sprayFinishOverride must be one of ""|${SPRAY_OVERRIDES.slice(1).join('|')}`);
+  if (spec.hasStain !== undefined && typeof spec.hasStain !== 'boolean') errs.push('hasStain must be a boolean');
+  return errs;
+}
+
+// POST /api/cabinet-cost — body: engine-native cabinet params → priceItem result
+// ({ costPerUnit, sellPerUnit, totalCost, totalSellExVAT, totalSellIncVAT, breakdown }).
+app.post('/api/cabinet-cost', (req, res) => {
+  if (!priceItem || !PRICING_DB) return res.status(503).json({ error: 'Pricing engine not loaded' });
+  const errors = cabinetSpecErrors(req.body);
+  if (errors.length) return res.status(400).json({ error: 'Cannot price cabinet', errors });
+  const { qty = 1, ...params } = req.body;
+  let result;
+  try { result = priceItem({ type: 'cabinet', qty, params }); }
+  catch (err) {
+    console.error('POST /api/cabinet-cost error:', err.message);
+    return res.status(422).json({ error: 'Pricing engine failed: ' + err.message });
+  }
+  if (!result || !Number.isFinite(result.totalCost)) return res.status(422).json({ error: 'Pricing engine returned no cost for this spec' });
+  res.json(result);
+});
+
+// GET /api/cabinet-cost/keys — valid keys (and display names) for every keyed field, so
+// the configurator can build/check its mapping without reading pricing.js.
+app.get('/api/cabinet-cost/keys', (req, res) => {
+  if (!PRICING_DB) return res.status(503).json({ error: 'Pricing engine not loaded' });
+  const namesOf = obj => Object.fromEntries(Object.entries(obj || {}).map(([k, v]) => [k, (v && v.name) || k]));
+  res.json({
+    materials:    namesOf(PRICING_DB.materials),
+    doorTypes:    namesOf(PRICING_DB.doorTypes),
+    drawerTypes:  namesOf(PRICING_DB.drawerTypes),
+    hardware:     { runners: namesOf(PRICING_DB.hardware.runners), hinges: namesOf(PRICING_DB.hardware.hinges), handles: namesOf(PRICING_DB.hardware.handles) },
+    frames:       namesOf(FRAME_MATERIALS),
+    edgebands:    namesOf(EDGEBAND_TYPES),
+    solidTimber:  namesOf(PRICING_DB.solidTimber),
+    cabinetTypes: namesOf(PRICING_DB.cabinetTypes),
+    carcassFinishes: CARCASS_FINISHES,
+    sprayFinishOverrides: SPRAY_OVERRIDES,
+    fields: [...CABINET_FIELDS],
+    settings: { margin: PRICING_DB.settings.margin, vat: PRICING_DB.settings.vat },
+  });
+});
+
 // Get all quotes
 app.get('/api/quotes', async (req, res) => {
   if (!pool) return res.json({});
@@ -473,8 +567,12 @@ app.get('*', (req, res) => {
 
 // ─── START ───────────────────────────────────────────────────────────────────
 
-initDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`SAB Quote Calculator running on port ${PORT}`);
+// Exported for tests (which listen on their own port); started only when run directly.
+module.exports = app;
+if (require.main === module) {
+  initDB().then(() => {
+    app.listen(PORT, () => {
+      console.log(`SAB Quote Calculator running on port ${PORT}`);
+    });
   });
-});
+}
