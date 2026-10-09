@@ -13,11 +13,13 @@ let calcDesignHrsPerRoom = null;
 let recomputeQuotePricing = null;
 let quoteGrandTotal = null;
 let quoteMaterialsBom = null;
+let withPricingStatus = null, lockQuote = null, quoteSettings = null, applySettings = null, validateSettings = null, ENGINE_VERSION = null;
 let PRICING_DB = null, FRAME_MATERIALS = null, EDGEBAND_TYPES = null; // lookup tables for /api/cabinet-cost
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
-  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES } = require(path.join(__dirname, 'public', 'pricing.js')));
+  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES,
+     withPricingStatus, lockQuote, quoteSettings, applySettings, validateSettings, ENGINE_VERSION } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
   pricingEngineError = err.message;
@@ -41,9 +43,9 @@ function withGrandTotal(quote) {
 
 // Read/serialize-time ONLY (applied in GET /api/quotes, not in the persist path):
 // annotate each room that has design time with its effective design labour, resolving
-// blank inputs against the DB.settings defaults — the same figure the UI shows. Adds
+// blank inputs against the quote's settings (locked or live) — the same figure the UI shows. Adds
 // room.designHrs and resolves room.techDays in the RESPONSE only; stored data untouched.
-// Deliberately not folded into recomputeQuotePricing so /api/quotes/reprice can't bake
+// Deliberately not folded into recomputeQuotePricing so no persist path can bake
 // a resolved techDays into the DB (which would break "blank = follow the default").
 // Read/serialize-time ONLY (GET /api/quotes, never persisted): attach a per-quote
 // materials bill-of-materials (material QUANTITIES, not costs) derived from the same
@@ -66,13 +68,51 @@ function withDesignHrs(quote) {
   const rooms = {};
   for (const [roomName, room] of Object.entries(quote.rooms)) {
     if (room && room.includeDesignTime !== false) {
-      const d = calcDesignHrsPerRoom(room);
+      const d = calcDesignHrsPerRoom(room, quoteSettings(quote));
       rooms[roomName] = { ...room, designHrs: +d.designHrs.toFixed(3), techDays: d.techDays };
     } else {
       rooms[roomName] = room;
     }
   }
   return { ...quote, rooms };
+}
+
+// Read-time ONLY: live hours next to priced hours + the mixed-pricing flag (pricing.js
+// → withPricingStatus). Never changes a price; quote returned unchanged on failure.
+function withHours(quote) {
+  if (!withPricingStatus) return quote;
+  try { return withPricingStatus(quote); }
+  catch (err) { console.error('[pricing] hours annotation failed:', err.message); return quote; }
+}
+
+// Writes vs the price lock. storedLock: undefined = quote never stored, null = stored
+// unlocked, object = stored locked. Works even if the engine failed to load.
+//  • new quote → price anything unpriced and lock it;
+//  • stored unlocked → written as sent (it gets locked by scripts/lock-quotes.js);
+//  • stored locked → only lock-aware code (X-Pricing-Engine header) sending the lock may
+//    write. A tab on the old code, or a copy loaded before the lock (and so repriced on
+//    load), is refused, so it can't overwrite frozen prices.
+const PRICING_CLIENT_HEADER = 'X-Pricing-Engine';
+const isLock = l => !!(l && typeof l === 'object' && l.settings && typeof l.settings === 'object');
+function guardWrite(quote, storedLock, trusted) {
+  if (isLock(storedLock)) return trusted && isLock(quote && quote.pricingLock) ? { data: quote } : { reject: true };
+  if (storedLock !== undefined || !quote || !lockQuote) return { data: quote };
+  return { data: isLock(quote.pricingLock) ? quote : lockQuote(recomputeQuotePricing(quote, { onlyUnpriced: true })) };
+}
+
+// Shared pricing settings (the Settings page's DB JSON), stored once in Postgres and
+// applied to this process's engine, so the API prices exactly as the browser does.
+// ponytail: applied in-process; with several server instances each must reload on change.
+async function loadSharedSettings() {
+  if (!pool || !applySettings) return;
+  try {
+    const { rows } = await pool.query("SELECT data FROM settings WHERE id = 'pricing'");
+    if (!rows.length) return;
+    const errs = validateSettings(rows[0].data);
+    if (errs.length) return console.error('[pricing] shared settings NOT applied (invalid):', errs.join('; '));
+    applySettings(rows[0].data);
+    console.log('[pricing] shared settings applied');
+  } catch (err) { console.error('[pricing] shared settings load failed:', err.message); }
 }
 
 const app = express();
@@ -258,7 +298,7 @@ app.get('/api/health/engine', (req, res) => {
       engineCheck = { finishHrs: bd.finishHrs, carcassFinishHrs: bd.carcassFinishHrs, hasCarcassFinishHrs: ('carcassFinishHrs' in bd) };
     } catch (e) { engineCheck = { error: e.message }; }
   }
-  res.json({ pricingEngine: !!priceItem, pricingEngineError, engineCheck });
+  res.json({ pricingEngine: !!priceItem, engineVersion: ENGINE_VERSION, pricingEngineError, engineCheck });
 });
 
 // ─── CABINET COST API (for the cabinet configurator) ─────────────────────────
@@ -366,7 +406,7 @@ app.get('/api/quotes', async (req, res) => {
       // Stamp the grand total from the freshly-recomputed items so the served
       // total always matches the served line items (and the calculator UI), and
       // attach the materials BOM aggregated from the same recomputed items.
-      quotes[row.id] = withMaterialsBom(withGrandTotal(withDesignHrs(recomputed)));
+      quotes[row.id] = withMaterialsBom(withHours(withGrandTotal(withDesignHrs(recomputed))));
     }
     res.json(quotes);
   } catch (err) {
@@ -375,24 +415,43 @@ app.get('/api/quotes', async (req, res) => {
   }
 });
 
-// One-off: recompute every stored quote with the CURRENT engine and PERSIST it, so the
-// raw Postgres rows are refreshed (not just the on-read recompute). Use after a
-// pricing.js change to bake new fields (e.g. carcassFinishHrs) into stored data.
-// Auth-protected (not in PUBLIC_PATHS). Returns a sample so you can confirm the result.
-app.post('/api/quotes/reprice', async (req, res) => {
-  if (!pool) return res.status(503).json({ error: 'No database' });
-  if (!priceItem) return res.status(503).json({ error: 'Pricing engine not loaded', pricingEngineError });
+// (POST /api/quotes/reprice was removed: quotes are price-locked and only move to new
+// pricing one at a time, through the calculator's "Reprice…" preview + confirm.)
+
+// Shared pricing settings — see loadSharedSettings. GET returns null until first saved.
+app.get('/api/settings', async (req, res) => {
+  if (!pool) return res.json(null);
   try {
-    const { rows } = await pool.query('SELECT id, data FROM quotes');
-    let repriced = 0;
-    for (const row of rows) {
-      const updated = withGrandTotal(recomputeQuotePricing(row.data));
-      await pool.query('UPDATE quotes SET data = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(updated), row.id]);
-      repriced++;
-    }
-    res.json({ ok: true, repriced });
+    const { rows } = await pool.query("SELECT data FROM settings WHERE id = 'pricing'");
+    res.json(rows.length ? rows[0].data : null);
   } catch (err) {
-    console.error('POST /api/quotes/reprice error:', err.message);
+    console.error('GET /api/settings error:', err.message);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Body = the settings DIFF from the engine defaults (pricing.js → settingsDiff); every
+// value is checked against the default's type. ?seed=1 only creates the row (first
+// browser after deploy) and never overwrites an existing one.
+app.put('/api/settings', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'No database' });
+  if (!validateSettings) return res.status(503).json({ error: 'Pricing engine not loaded' });
+  const errors = validateSettings(req.body);
+  if (errors.length) return res.status(400).json({ error: 'invalid settings', errors });
+  const seed = req.query.seed === '1';
+  try {
+    const r = await pool.query(
+      seed
+        ? `INSERT INTO settings (id, data, updated_at) VALUES ('pricing', $1, NOW()) ON CONFLICT (id) DO NOTHING`
+        : `INSERT INTO settings (id, data, updated_at) VALUES ('pricing', $1, NOW())
+           ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = NOW()`,
+      [JSON.stringify(req.body)]
+    );
+    const written = !seed || r.rowCount === 1;
+    if (written) applySettings(req.body);
+    res.json({ ok: true, written });
+  } catch (err) {
+    console.error('PUT /api/settings error:', err.message);
     res.status(500).json({ error: 'Database error' });
   }
 });
@@ -401,10 +460,13 @@ app.post('/api/quotes/reprice', async (req, res) => {
 app.put('/api/quotes/:id', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });
   const { id } = req.params;
-  // Stamp the grand total from the client's own item pricing (computed by the
-  // same engine) so the stored figure matches exactly what the UI displayed.
-  const data = withGrandTotal(req.body);
   try {
+    // Price-lock guard (see guardWrite), then stamp the grand total from the client's own
+    // item pricing so it matches what the UI displayed.
+    const { rows } = await pool.query("SELECT data->'pricingLock' AS lock FROM quotes WHERE id = $1", [id]);
+    const g = guardWrite(req.body, rows.length ? rows[0].lock : undefined, !!req.get(PRICING_CLIENT_HEADER));
+    if (g.reject) return res.status(409).json({ error: 'This quote is price-locked. Reload the calculator to edit the locked version.' });
+    const data = withGrandTotal(g.data);
     await pool.query(
       `INSERT INTO quotes (id, data, updated_at)
        VALUES ($1, $2, NOW())
@@ -427,8 +489,11 @@ app.patch('/api/quotes/:id', async (req, res) => {
     // Read current data, merge patch fields into it, write back
     const { rows } = await pool.query('SELECT data FROM quotes WHERE id = $1', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    // The lock is never patchable, nor are a locked quote's priced items.
+    const { pricingLock, ...safe } = patch || {};
+    if (isLock(rows[0].data.pricingLock)) delete safe.rooms;
     // Re-stamp the grand total in case the patch touched pricing-affecting fields.
-    const updated = withGrandTotal({ ...rows[0].data, ...patch });
+    const updated = withGrandTotal({ ...rows[0].data, ...safe });
     await pool.query(
       'UPDATE quotes SET data = $1, updated_at = NOW() WHERE id = $2',
       [JSON.stringify(updated), id]
@@ -459,6 +524,7 @@ app.post('/api/quotes/sync', async (req, res) => {
   if (!pool) return res.json({ quotes: req.body.quotes || {}, deleted: [] });
   const clientQuotes = req.body.quotes || {};
   const clientDeleted = Array.isArray(req.body.deleted) ? req.body.deleted : [];
+  const trusted = !!req.get(PRICING_CLIENT_HEADER);
   try {
     // Honour client tombstones first so the merge below can't re-introduce them.
     const confirmedDeleted = [];
@@ -483,10 +549,14 @@ app.post('/api/quotes/sync', async (req, res) => {
       const clientTime = quote.updated_at ? new Date(quote.updated_at) : new Date(0);
       const serverEntry = serverMap[id];
 
-      if (!serverEntry || clientTime > new Date(serverEntry.updated_at)) {
+      // Price-lock guard (see guardWrite): a refused write keeps the server copy.
+      const g = (!serverEntry || clientTime > new Date(serverEntry.updated_at))
+        ? guardWrite(quote, serverEntry ? (serverEntry.data.pricingLock || null) : undefined, trusted)
+        : null;
+      if (g && !g.reject) {
         // Client is newer — upsert to server, stamping the grand total so the
         // stored record carries the same final figure the UI showed.
-        const stamped = withGrandTotal(quote);
+        const stamped = withGrandTotal(g.data);
         await pool.query(
           `INSERT INTO quotes (id, data, updated_at)
            VALUES ($1, $2, $3)
@@ -569,8 +639,9 @@ app.get('*', (req, res) => {
 
 // Exported for tests (which listen on their own port); started only when run directly.
 module.exports = app;
+module.exports.guardWrite = guardWrite;
 if (require.main === module) {
-  initDB().then(() => {
+  initDB().then(loadSharedSettings).then(() => {
     app.listen(PORT, () => {
       console.log(`SAB Quote Calculator running on port ${PORT}`);
     });

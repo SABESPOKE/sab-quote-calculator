@@ -629,7 +629,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script src="/pricing.js"></script>
+  <script src="/pricing.js?v=sab-v56"></script>
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useMemo } = React;
 
@@ -723,6 +723,15 @@ function migrateLegacyFillers(quote) {
   return { quote: { ...quote, rooms: newRooms }, migratedCount };
 }
 
+// Apply new params to an item and reprice it — but only if the params really changed,
+// so re-applying a default that's already in place never moves a (locked) item's price.
+function withParams(item, params, margin) {
+  if (JSON.stringify(params) === JSON.stringify(item.params)) return item;
+  const upd = { ...item, params };
+  upd.pricing = priceItem(upd, margin);
+  return upd;
+}
+
 // Ensure every item in a quotes object has pricing calculated.
 // Runs migrateLegacyFillers first so old fillerCount data is converted on load.
 // Returns a new object so React detects the state change.
@@ -731,19 +740,9 @@ function ensurePricing(quotesObj) {
   for (const [id, q0] of Object.entries(quotesObj)) {
     const qMig = migrateInstallDays(q0);
     const { quote: q } = migrateLegacyFillers(qMig);
-    const newRooms = {};
-    for (const [roomName, room] of Object.entries(q.rooms || {})) {
-      newRooms[roomName] = {
-        ...room,
-        items: (room.items || []).map(item => {
-          // Always recompute on read so refreshed figures (e.g. labour hours) appear
-          // without re-saving. Falls back to the stored pricing if recompute throws.
-          try { const pricing = priceItem(item, q.marginOverride); return pricing ? { ...item, pricing } : item; }
-          catch { return item; }
-        }),
-      };
-    }
-    result[id] = { ...q, rooms: newRooms };
+    // Unlocked quotes recompute on read; locked quotes keep their stored prices
+    // (pricing.js → recomputeQuotePricing, the same code the server runs).
+    result[id] = recomputeQuotePricing({ ...q, rooms: q.rooms || {} });
   }
   return result;
 }
@@ -927,7 +926,7 @@ function estimatedDaysByRoom(quote) {
   if (!window.SAB_FITTING) return {};
   try {
     const est = window.SAB_FITTING.calculateFittingEstimate(quote);
-    const hrsPerPersonDay = DB.settings.fittingHoursPerPersonPerDay || 7.5;
+    const hrsPerPersonDay = quoteSettings(quote).fittingHoursPerPersonPerDay || 7.5;
     const ceilHalf = (x) => Math.ceil((x || 0) * 2) / 2;
     const out = {};
     Object.entries(est.byRoom || {}).forEach(([roomName, r]) => {
@@ -955,9 +954,9 @@ function roomTotals(quote, roomName, daysOverride) {
     mfgSellExVAT += item.pricing?.totalSellExVAT   || 0;
     if (!item.fixedPrice) nonFixedSellExVAT += item.pricing?.totalSellExVAT || 0;
   });
-  const designFee = room.includeDesignTime !== false ? calcDesignTimePerRoom(room) : 0;
-  const pc = quote.projectCosts || getDefaultProjectCosts();
-  const s  = DB.settings;
+  const s  = quoteSettings(quote); // locked quotes: settings captured at lock time
+  const designFee = room.includeDesignTime !== false ? calcDesignTimePerRoom(room, s) : 0;
+  const pc = quote.projectCosts || getDefaultProjectCosts(s);
   // Fixed-price items skip the consumables-per-item slot.
   const itemCount = (room.items || []).filter(i => !i.fixedPrice).length;
   const explicitDays = pc.installDaysByRoom?.[roomName];
@@ -1110,9 +1109,7 @@ function applySpecToAllItems(quote, field, name) {
       room.items = room.items.map(item => {
         const m = mutator(item);
         if (!m) return item;
-        const upd = { ...item, params: { ...item.params, ...m } };
-        upd.pricing = priceItem(upd, quote.marginOverride);
-        return upd;
+        return withParams(item, { ...item.params, ...m }, quote.marginOverride);
       });
       rooms[roomName] = room;
     });
@@ -1206,7 +1203,7 @@ function printQuote(quote, viewMode, roomFilter) {
   const numPrefix = (roomName, idx) => itemNumbers[roomName]?.[idx] != null ? `${itemNumbers[roomName][idx]}. ` : "";
   const filteredRooms = dist.rooms.filter(({ roomName }) => roomFilter == null || roomFilter.has?.(roomName) || roomFilter === roomName);
   const filteredSubtotal = filteredRooms.reduce((s, r) => s + r.items.reduce((rs, i) => rs + (i.bakedSellExVAT || 0), 0), 0);
-  const vatRate = DB.settings.vat || 0.2;
+  const vatRate = quoteSettings(quote).vat || 0.2;
   const filteredVAT = filteredSubtotal * vatRate;
   const totals = roomFilter == null
     ? quoteTotals(quote)
@@ -1467,10 +1464,13 @@ function SABQuoteTool() {
   });
   const [dbReady, setDbReady] = useState(false);
   const syncTimerRef = React.useRef(null);
+  const pendingSaveRef = React.useRef(new Set()); // quote ids waiting for the debounced PUT
   // Quote IDs with unsent local writes. Tracked so the visibility/online
   // resync doesn't replace local state with a stale server view before our
   // debounced PUT lands — the race that resurrects deleted items.
   const dirtyRef = React.useRef(new Set());
+  // Sold quotes whose price change Steve already confirmed this session (asked once).
+  const priceConfirmedRef = React.useRef(new Set());
   // Tombstones — IDs that were PERMANENTLY deleted (Empty folder / Delete
   // permanently). Kept in localStorage so a stale tab or another device can't
   // resurrect them via sync. Normal "delete" is a soft-delete (deleted:true flag)
@@ -1502,7 +1502,21 @@ function SABQuoteTool() {
     fetch('/api/health').then(r => r.json()).then(h => {
       if (!h.db) return;
       setDbReady(true);
-      return fetch('/api/quotes').then(r => r.json()).then(serverQuotes => {
+      // Shared settings first, so this browser prices exactly as the server does. If the
+      // server has none yet, seed it once from this browser's saved Settings.
+      return fetch('/api/settings').then(r => r.ok ? r.json().then(shared => ({ shared })) : null).then(res => {
+        if (!res) return; // server error: leave both copies alone
+        if (res.shared) {
+          applySettings(res.shared); // engine defaults + the shared changes
+          try { localStorage.setItem('sab_db_settings', JSON.stringify(res.shared)); } catch {}
+          setSettingsVer(v => v + 1);
+          return;
+        }
+        // No shared settings yet: offer this device's changes (insert-only — never
+        // overwrites a row another device created first).
+        const diff = settingsDiff();
+        if (Object.keys(diff).length) fetch('/api/settings?seed=1', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(diff) }).catch(() => {});
+      }).catch(() => {}).then(() => fetch('/api/quotes')).then(r => r.json()).then(serverQuotes => {
         setQuotes(prev => {
           const merged = { ...serverQuotes };
           for (const id of deletedIdsRef.current) delete merged[id]; // never resurrect a tombstoned quote
@@ -1530,7 +1544,7 @@ function SABQuoteTool() {
       if (dirtyRef.current.size > 0) return;
       fetch('/api/quotes/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Pricing-Engine': ENGINE_VERSION },
         body: JSON.stringify({ quotes, deleted: [...deletedIdsRef.current] })
       }).then(r => r.json()).then(res => {
         // Server confirms which tombstones it has purged — we can forget those.
@@ -1571,7 +1585,7 @@ function SABQuoteTool() {
   const [showProjectCosts, setShowProjectCosts] = useState(false);
   const [showProjectSettings, setShowProjectSettings] = useState(false);
   const [showFittingEst, setShowFittingEst] = useState(false);
-  const [recalcFlash, setRecalcFlash] = useState(null);
+  const [repricePreview, setRepricePreview] = useState(null); // { id, after, rows, a, b }
   const [editingItem, setEditingItem] = useState(null); // { room, idx }
   const [settingsVer, setSettingsVer] = useState(0);   // bumped to force re-render after DB mutation
   const [showRoomSetup, setShowRoomSetup] = useState(null); // room name being configured
@@ -1714,6 +1728,16 @@ function SABQuoteTool() {
       const currJson = JSON.stringify({ ...quote, updated_at: null });
       const baseJson = baselineRef.current[id];
       const isChanged = !baseJson || currJson !== baseJson;
+      if (isChanged && baseJson && ["sold", "accepted"].includes(quote.status) && !priceConfirmedRef.current.has(id)) {
+        const before = quoteGrandTotal(JSON.parse(baseJson)).totalSellExVAT, after = quoteGrandTotal(quote).totalSellExVAT;
+        if (before !== after) {
+          if (!window.confirm(`This changes the price the client agreed: ${fmt(before)} → ${fmt(after)} ex VAT. Continue?`)) {
+            stamped[id] = { ...JSON.parse(baseJson), updated_at: quote.updated_at }; // undo the edit
+            continue;
+          }
+          priceConfirmedRef.current.add(id);
+        }
+      }
       if (isChanged) {
         stamped[id] = { ...quote, updated_at: new Date().toISOString() };
         changedIds.push(id);
@@ -1728,16 +1752,22 @@ function SABQuoteTool() {
       if (!(id in q)) delete baselineRef.current[id];
     }
     setQuotes(stamped);
-    // Debounced push to server — only changed quotes.
+    // Debounced push to server — every quote changed since the last push (kept in a
+    // ref so a later save, even one that changes nothing, can't drop earlier ones).
+    for (const id of changedIds) pendingSaveRef.current.add(id);
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
       if (!dbReady) return;
-      for (const id of changedIds) {
+      const ids = [...pendingSaveRef.current];
+      pendingSaveRef.current.clear();
+      for (const id of ids) {
+        if (!stamped[id]) { dirtyRef.current.delete(id); continue; }
         fetch('/api/quotes/' + id, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Pricing-Engine': ENGINE_VERSION },
           body: JSON.stringify(stamped[id])
         })
+          .then(r => { if (r.status === 409) window.alert(`"${stamped[id].ref || id}" was price-locked after this page loaded, so this change wasn't saved. Reload the calculator to edit the locked version.`); })
           .catch(() => {})
           .finally(() => { dirtyRef.current.delete(id); });
       }
@@ -1767,13 +1797,15 @@ function SABQuoteTool() {
   };
 
   const activeQuote = quotes[activeQuoteId];
+  const pricingS = quoteSettings(activeQuote); // settings the active quote's money uses (locked or live)
+  const priceStatus = useMemo(() => activeQuote ? withPricingStatus(activeQuote) : null, [activeQuote]);
 
   // Quote management
   function createQuote() {
     if (!newQuoteForm.client) return;
     const id = `Q${Date.now()}`;
     const q = { id, ...newQuoteForm, ref: newQuoteForm.ref || `SAB-${new Date().getFullYear()}-${String(Object.keys(quotes).length + 1).padStart(3,"0")}`, created: new Date().toLocaleDateString("en-GB"), rooms: {}, projectCosts: getDefaultProjectCosts(), status: "active" };
-    saveQuotes({ ...quotes, [id]: q });
+    saveQuotes({ ...quotes, [id]: lockQuote(q) });
     setActiveQuoteId(id); setShowNewQuote(false);
     setNewQuoteForm({ client:"", project:"", ref:"" });
     setSelectedClient(q.client); // stay grouped under this client when we come back
@@ -1972,19 +2004,6 @@ function SABQuoteTool() {
     if (dbReady) fetch('/api/quotes/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }) }).catch(() => {});
   }
 
-  // Re-price every item in every quote after a DB setting change
-  function recalcAllQuotes(currentQuotes) {
-    const updated = {};
-    Object.entries(currentQuotes).forEach(([qid, quote]) => {
-      const updatedRooms = {};
-      Object.entries(quote.rooms || {}).forEach(([rname, room]) => {
-        updatedRooms[rname] = { ...room, items: room.items.map(item => ({ ...item, pricing: priceItem(item, quote.marginOverride) })) };
-      });
-      updated[qid] = { ...quote, rooms: updatedRooms };
-    });
-    return updated;
-  }
-
   // Pure: apply a room-default change + propagation rules to one room of one
   // quote, returning a new quote object. No state mutation, no setQuotes.
   // Used by both updateRoomDefault (single room) and updateProjectDefault
@@ -2008,9 +2027,7 @@ function SABQuoteTool() {
     const propagateToItems = (paramKey, newVal) => {
       room.items = room.items.map(item => {
         if (item.params && item.params[paramKey] !== undefined) {
-          const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
-          upd.pricing = priceItem(upd, q.marginOverride);
-          return upd;
+          return withParams(item, { ...item.params, [paramKey]: newVal }, q.marginOverride);
         }
         return item;
       });
@@ -2019,9 +2036,7 @@ function SABQuoteTool() {
       room.items = room.items.map(item => {
         if (item.type !== "cabinet" || !item.params) return item;
         if (filter && !filter(item)) return item;
-        const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
-        upd.pricing = priceItem(upd, q.marginOverride);
-        return upd;
+        return withParams(item, { ...item.params, [paramKey]: newVal }, q.marginOverride);
       });
     };
     const hasDoors    = (item) => Number(item.params?.doorCount) > 0;
@@ -2061,9 +2076,7 @@ function SABQuoteTool() {
       room.items = room.items.map(item => {
         if (item.params && (item.type === "cabinet" || item.type === "drawer")) {
           const newDT = defs.useSolidDrawers ? (defs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET";
-          const upd = { ...item, params: { ...item.params, drawerType: newDT } };
-          upd.pricing = priceItem(upd, q.marginOverride);
-          return upd;
+          return withParams(item, { ...item.params, drawerType: newDT }, q.marginOverride);
         }
         return item;
       });
@@ -2088,10 +2101,24 @@ function SABQuoteTool() {
   // Per-quote margin override. Setting it reprices every item in the quote with the new
   // effective margin (quote.marginOverride ?? DB.settings.margin). Clearing it (empty
   // input) drops the field and reverts the quote to the global default margin.
+  // Preview a quote at current pricing (engine + Settings). Nothing is saved until Confirm.
+  function openRepricePreview(id) {
+    const base = quotes[id];
+    if (!base) return;
+    const after = lockQuote(recomputeQuotePricing({ ...base, pricingLock: undefined }));
+    const rows = [];
+    for (const [room, r] of Object.entries(base.rooms || {})) (r.items || []).forEach((it, i) => {
+      const a = it.pricing?.totalSellExVAT || 0, b = after.rooms[room].items[i]?.pricing?.totalSellExVAT || 0;
+      if (Math.abs(a - b) >= 0.005) rows.push({ room, desc: it.description || it.type, a, b });
+    });
+    setRepricePreview({ id, base, after, rows, a: quoteGrandTotal(base), b: quoteGrandTotal(after) });
+  }
+
   function setQuoteMarginOverride(val) {
     const q = quotes[activeQuoteId];
     if (!q) return;
     const marginOverride = (val === "" || val == null || isNaN(+val)) ? undefined : +val;
+    if (q.pricingLock) return saveQuotes({ ...quotes, [activeQuoteId]: rescaleMargin(q, marginOverride) });
     const newRooms = {};
     for (const [rn, room] of Object.entries(q.rooms || {})) {
       newRooms[rn] = { ...room, items: (room.items || []).map(it => ({ ...it, pricing: priceItem(it, marginOverride) })) };
@@ -2106,16 +2133,17 @@ function SABQuoteTool() {
     saveQuotes({ ...quotes, [activeQuoteId]: newQ });
   }
 
-  // Mutate a nested DB value then re-price and save all quotes
+  // Mutate a nested DB value and save it (this device + the shared server copy). Existing
+  // quotes are price-locked and NOT repriced; new quotes and edited items use the new value.
   function updateDBSetting(path, val) {
     // path: array of keys, e.g. ['settings','margin'] or ['materials','MAT_BIRCH_UNF_18','costPerM2']
     let obj = DB;
     for (let i = 0; i < path.length - 1; i++) obj = obj[path[i]];
     obj[path[path.length - 1]] = Number(val);
     // Persist all DB settings to localStorage so they survive page reloads
-    try { localStorage.setItem('sab_db_settings', JSON.stringify(DB)); } catch {}
-    const recalced = recalcAllQuotes(quotes);
-    saveQuotes(recalced);
+    const diff = settingsDiff(); // only what differs from the engine defaults
+    try { localStorage.setItem('sab_db_settings', JSON.stringify(diff)); } catch {}
+    if (dbReady) fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(diff) }).catch(() => {});
     setSettingsVer(v => v + 1);
   }
 
@@ -2162,14 +2190,14 @@ function SABQuoteTool() {
 
   function updateProjectCost(field, val) {
     const updated = { ...quotes };
-    if (!updated[activeQuoteId].projectCosts) updated[activeQuoteId].projectCosts = getDefaultProjectCosts();
+    if (!updated[activeQuoteId].projectCosts) updated[activeQuoteId].projectCosts = getDefaultProjectCosts(pricingS);
     updated[activeQuoteId].projectCosts[field] = val;
     saveQuotes(updated);
   }
 
   function updateInstallDaysForRoom(roomName, days) {
     const updated = { ...quotes };
-    if (!updated[activeQuoteId].projectCosts) updated[activeQuoteId].projectCosts = getDefaultProjectCosts();
+    if (!updated[activeQuoteId].projectCosts) updated[activeQuoteId].projectCosts = getDefaultProjectCosts(pricingS);
     const pc = updated[activeQuoteId].projectCosts;
     pc.installDaysByRoom = { ...(pc.installDaysByRoom || {}) };
     const d = Number(days) || 0;
@@ -2188,11 +2216,11 @@ function SABQuoteTool() {
     // estimator. Without this, only the room that received the legacy
     // installDays migration shows a fitting line; the other options read £0.
     if (turningOn && window.SAB_FITTING) {
-      const pc = { ...(q.projectCosts || getDefaultProjectCosts()) };
+      const pc = { ...(q.projectCosts || getDefaultProjectCosts(pricingS)) };
       const byRoom = { ...(pc.installDaysByRoom || {}) };
       try {
         const est = window.SAB_FITTING.calculateFittingEstimate(q);
-        const hrsPerPersonDay = DB.settings.fittingHoursPerPersonPerDay || 7.5;
+        const hrsPerPersonDay = quoteSettings(q).fittingHoursPerPersonPerDay || 7.5;
         const ceilHalf = (x) => Math.ceil((x || 0) * 2) / 2;
         Object.entries(est.byRoom || {}).forEach(([roomName, r]) => {
           if (byRoom[roomName] != null) return; // user-set value, leave alone
@@ -2401,6 +2429,54 @@ function SABQuoteTool() {
   return (
     <div style={{ fontFamily:"'Raleway',sans-serif", background:"#f5f5f5", minHeight:"100vh", color:"#1a1a1a" }}>
 
+      {/* ── Reprice preview: per-item old → new sell and the new total; saved only on Confirm ── */}
+      {repricePreview && (() => {
+        const rp = repricePreview, q = quotes[rp.id];
+        const d = rp.b.totalSellExVAT - rp.a.totalSellExVAT;
+        return (
+          <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+            <div style={{ background:"#f0eeeb", border:"1px solid #c8c3bc", borderRadius:8, padding:26, width:"100%", maxWidth:640, maxHeight:"85vh", overflowY:"auto" }}>
+              <div style={{ fontSize:12, letterSpacing:"0.1em", color:"#c8a96e", textTransform:"uppercase", marginBottom:14 }}>Reprice to current pricing</div>
+              {["sold", "accepted"].includes(q?.status) && (
+                <div style={{ fontSize:12, color:"#a8442e", marginBottom:12 }}>This quote is {q.status}: repricing changes the price the client agreed.</div>
+              )}
+              <div style={{ fontSize:13, color:"#1a1a1a", marginBottom:14 }}>
+                Total ex VAT {fmt(rp.a.totalSellExVAT)} → <strong>{fmt(rp.b.totalSellExVAT)}</strong> ({d >= 0 ? "+" : "−"}{fmt(Math.abs(d))})
+              </div>
+              {rp.rows.length === 0 ? (
+                <div style={{ fontSize:12, color:"#777777" }}>No item prices change.</div>
+              ) : (
+                <table style={{ width:"100%", fontSize:11, borderCollapse:"collapse" }}>
+                  <tbody>
+                    {rp.rows.map((r, i) => (
+                      <tr key={i} style={{ borderTop:"1px solid #d8d3cc" }}>
+                        <td style={{ padding:"6px 4px", color:"#777777" }}>{r.room}</td>
+                        <td style={{ padding:"6px 4px", color:"#1a1a1a" }}>{r.desc}</td>
+                        <td style={{ padding:"6px 4px", textAlign:"right", color:"#777777", whiteSpace:"nowrap" }}>{fmt(r.a)}</td>
+                        <td style={{ padding:"6px 4px", textAlign:"right", color:"#1a1a1a", whiteSpace:"nowrap" }}>{fmt(r.b)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div style={{ display:"flex", gap:10, marginTop:18 }}>
+                <button onClick={() => {
+                  // Changed since the preview opened (an edit or a sync)? Show fresh figures instead.
+                  if (quotes[rp.id] !== rp.base) return openRepricePreview(rp.id);
+                  // This dialog is the confirmation, so saveQuotes doesn't ask again for this save.
+                  const had = priceConfirmedRef.current.has(rp.id);
+                  priceConfirmedRef.current.add(rp.id);
+                  saveQuotes({ ...quotes, [rp.id]: rp.after });
+                  if (!had) priceConfirmedRef.current.delete(rp.id);
+                  setRepricePreview(null);
+                }} style={{ padding:"10px 22px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, fontFamily:"inherit", fontWeight:600 }}>Confirm reprice</button>
+                <button onClick={() => setRepricePreview(null)} style={{ padding:"10px 22px", background:"transparent", color:"#777777", border:"1px solid #c8c3bc", borderRadius:4, cursor:"pointer", fontSize:11, fontFamily:"inherit" }}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Header ── */}
       <div className="sab-header" style={{ background:"#1a1a1a", borderBottom:"1px solid #c8a96e33", padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:72 }}>
         <div className="sab-header-brand" style={{ display:"flex", alignItems:"center", gap:16 }}>
@@ -2416,27 +2492,13 @@ function SABQuoteTool() {
             {[["build","Build"],["margin","Margin"],["client","Client View"]].map(([v,l]) => (
               <button key={v} onClick={() => setView(v)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", textTransform:"uppercase", background:view===v?"#c8a96e":"transparent", color:view===v?"#1a1a1a":"#777777", border:"none", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{l}</button>
             ))}
-            <button onClick={() => {
-              // Force-recompute pricing on every item in the active quote.
-              // Safety net for items that were imported, duplicated, restored from server
-              // with stale cached pricing, or saved before a pricing-engine change.
-              if (!activeQuote) return;
-              const updated = { ...quotes };
-              const q = { ...updated[activeQuoteId] };
-              const newRooms = {};
-              let count = 0;
-              for (const [roomName, room] of Object.entries(q.rooms || {})) {
-                newRooms[roomName] = { ...room, items: (room.items || []).map(item => {
-                  try { const pricing = priceItem(item, q.marginOverride); count++; return { ...item, pricing }; }
-                  catch (e) { return item; }
-                })};
-              }
-              q.rooms = newRooms;
-              updated[activeQuoteId] = q;
-              saveQuotes(updated);
-              setRecalcFlash(count);
-              setTimeout(() => setRecalcFlash(null), 2000);
-            }} title="Re-run priceItem on every item in this quote — forces a refresh of cached prices used by Client View / PDF" style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background: recalcFlash != null ? "#6a8a4a" : "transparent", color: recalcFlash != null ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>{recalcFlash != null ? `✓ ${recalcFlash} repriced` : "↻ Recalc"}</button>
+            {activeQuote.pricingLock && (
+              <span title={`Prices locked ${(activeQuote.pricingLock.lockedAt || "").slice(0, 10)} · engine ${activeQuote.pricingLock.engineVersion}${priceStatus?.pricingMixed ? " · items priced with different engines/settings" : ""}${priceStatus?.hoursCheck ? ` · work ${priceStatus.hoursCheck.currentHrs} h vs ${priceStatus.hoursCheck.pricedHrs} h priced` : ""}`}
+                style={{ fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", color:"#c8a96e", padding:"0 6px", whiteSpace:"nowrap" }}>
+                Locked{priceStatus?.pricingMixed ? " · mixed" : ""}{priceStatus?.hoursCheck?.deltaHrs > 0.05 ? ` · work +${priceStatus.hoursCheck.deltaHrs} h` : ""}
+              </span>
+            )}
+            <button onClick={() => openRepricePreview(activeQuoteId)} title="Preview this quote at current pricing — nothing changes until you confirm" style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>Reprice…</button>
             <button onClick={() => printQuote(activeQuote, clientViewMode, clientViewRoomFilter)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>↓ PDF {clientViewRoomFilter ? `(${clientViewRoomFilter.size === 1 ? [...clientViewRoomFilter][0] : clientViewRoomFilter.size + " rooms"})` : ""}</button>
             <button onClick={() => { setView("quotes"); setActiveQuoteId(null); }} style={{ padding:"6px 14px", fontSize:11, background:"transparent", color:"#777777", border:"none", cursor:"pointer", fontFamily:"inherit" }}>← All</button>
             <div style={{ width:1, height:20, background:"#d8d3cc", margin:"0 4px" }} />
@@ -2633,7 +2695,7 @@ function SABQuoteTool() {
               {Object.keys(activeQuote.rooms || {}).map(room => {
                 const items = activeQuote.rooms[room].items;
                 const mfg = items.reduce((s,i) => s+(i.pricing?.totalSellExVAT||0), 0);
-                const dt = activeQuote.rooms[room].includeDesignTime !== false ? calcDesignTimePerRoom(activeQuote.rooms[room]) : 0;
+                const dt = activeQuote.rooms[room].includeDesignTime !== false ? calcDesignTimePerRoom(activeQuote.rooms[room], pricingS) : 0;
                 return (
                   <div key={room} style={{ display:"flex", alignItems:"stretch" }}>
                     <div onClick={() => setActiveRoom(room)} style={{ flex:1, padding:"9px 15px", cursor:"pointer", background:activeRoom===room?"#f0eeeb":"transparent", borderLeft:activeRoom===room?"2px solid #c8a96e":"2px solid transparent" }}>
@@ -3028,7 +3090,7 @@ function SABQuoteTool() {
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                     <div style={{ fontSize:11, color:"#c8a96e" }}>Design & Drawing Service</div>
                     <div style={{ display:"flex", alignItems:"center", gap:16 }}>
-                      <div style={{ fontSize:14, color: activeQuote.rooms[activeRoom]?.includeDesignTime !== false ? "#c8a96e" : "#c8c3bc" }}>{fmt(calcDesignTimePerRoom(activeQuote.rooms[activeRoom]))}</div>
+                      <div style={{ fontSize:14, color: activeQuote.rooms[activeRoom]?.includeDesignTime !== false ? "#c8a96e" : "#c8c3bc" }}>{fmt(calcDesignTimePerRoom(activeQuote.rooms[activeRoom], pricingS))}</div>
                       <button onClick={() => toggleDesignTime(activeRoom)} style={{ padding:"5px 10px", background:"transparent", border:"1px solid #c8c3bc", borderRadius:3, color: activeQuote.rooms[activeRoom]?.includeDesignTime !== false ? "#c8a96e" : "#c8c3bc", cursor:"pointer", fontSize:9, fontFamily:"inherit", letterSpacing:"0.08em" }}>
                         {activeQuote.rooms[activeRoom]?.includeDesignTime !== false ? "INCLUDED ✓" : "EXCLUDED"}
                       </button>
@@ -3036,10 +3098,10 @@ function SABQuoteTool() {
                   </div>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:8, marginTop:10 }}>
                     {[
-                      ["Design rounds", "designRounds", activeQuote.rooms[activeRoom]?.designRounds ?? DB.settings.designRoundsPerRoom],
-                      ["Hrs / round", "designHrsPerRound", activeQuote.rooms[activeRoom]?.designHrsPerRound ?? DB.settings.designHoursPerRound],
-                      ["Tech days", "techDays", activeQuote.rooms[activeRoom]?.techDays ?? DB.settings.technicalDrawingDays],
-                      ["£/hr rate", "designRate", activeQuote.rooms[activeRoom]?.designRate ?? DB.settings.designHourlyRate]
+                      ["Design rounds", "designRounds", activeQuote.rooms[activeRoom]?.designRounds ?? pricingS.designRoundsPerRoom],
+                      ["Hrs / round", "designHrsPerRound", activeQuote.rooms[activeRoom]?.designHrsPerRound ?? pricingS.designHoursPerRound],
+                      ["Tech days", "techDays", activeQuote.rooms[activeRoom]?.techDays ?? pricingS.technicalDrawingDays],
+                      ["£/hr rate", "designRate", activeQuote.rooms[activeRoom]?.designRate ?? pricingS.designHourlyRate]
                     ].map(([label, field, val]) => (
                       <div key={field}>
                         <div style={{ fontSize:8, color:"#999999", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:3 }}>{label}</div>
@@ -3054,11 +3116,11 @@ function SABQuoteTool() {
                   <div style={{ fontSize:9, color:"#999999", marginTop:6 }}>
                     {(() => {
                       const rm = activeQuote.rooms[activeRoom];
-                      const rounds = rm?.designRounds ?? DB.settings.designRoundsPerRoom;
-                      const hpr = rm?.designHrsPerRound ?? DB.settings.designHoursPerRound;
-                      const td = rm?.techDays ?? DB.settings.technicalDrawingDays;
-                      const rate = rm?.designRate ?? DB.settings.designHourlyRate;
-                      const totalHrs = rounds * hpr + td * DB.settings.workingHoursPerDay;
+                      const rounds = rm?.designRounds ?? pricingS.designRoundsPerRoom;
+                      const hpr = rm?.designHrsPerRound ?? pricingS.designHoursPerRound;
+                      const td = rm?.techDays ?? pricingS.technicalDrawingDays;
+                      const rate = rm?.designRate ?? pricingS.designHourlyRate;
+                      const totalHrs = rounds * hpr + td * pricingS.workingHoursPerDay;
                       return rounds + " rounds × " + hpr + "hrs + " + td + " tech days × 8hrs = " + totalHrs + "hrs × £" + rate + "/hr";
                     })()}
                   </div>
@@ -3069,13 +3131,13 @@ function SABQuoteTool() {
             {/* ── Fitting Estimate Panel — per-room days × per-fitter day rate ── */}
             {(() => {
               if (!window.SAB_FITTING) return null;
-              const hrsPerPersonDay = DB.settings.fittingHoursPerPersonPerDay || 7.5;
+              const hrsPerPersonDay = pricingS.fittingHoursPerPersonPerDay || 7.5;
               let est;
               try { est = window.SAB_FITTING.calculateFittingEstimate(activeQuote); }
               catch (e) { return null; }
-              const pc = activeQuote.projectCosts || getDefaultProjectCosts();
+              const pc = activeQuote.projectCosts || getDefaultProjectCosts(pricingS);
               const accent = "#c8a96e";
-              const dayRate = pc.installDayRate ?? DB.settings.installDayRate;
+              const dayRate = pc.installDayRate ?? pricingS.installDayRate;
               const installDaysByRoom = pc.installDaysByRoom || {};
               const ceilHalf = (x) => Math.ceil((x || 0) * 2) / 2;
               // Per-room estimated days (independent of project-wide aggregate).
@@ -3265,14 +3327,14 @@ function SABQuoteTool() {
                       <div style={{ marginTop:14, paddingTop:10, borderTop:"1px solid #e8e3dc" }}>
                         <div style={{ fontSize:9, color:"#777777", letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:6 }}>Margin Override</div>
                         <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
-                          <input type="number" step="0.05" min="0" placeholder={`Default ${DB.settings.margin}`}
+                          <input type="number" step="0.05" min="0" placeholder={`Default ${pricingS.margin}`}
                             value={activeQuote.marginOverride ?? ""}
                             onChange={e => setQuoteMarginOverride(e.target.value)}
                             style={{ background:"#ffffff", border: activeQuote.marginOverride != null ? "1px solid #c8a96e" : "1px solid #d8d3cc", borderRadius:3, padding:"5px 8px", color:"#1a1a1a", fontSize:11, fontFamily:"inherit", width:110 }} />
                           <span style={{ fontSize:10, color: activeQuote.marginOverride != null ? "#c8a96e" : "#999999" }}>
                             {activeQuote.marginOverride != null
-                              ? `Overriding the global ${DB.settings.margin}× margin for this quote`
-                              : `Using global default margin (${DB.settings.margin}×) — enter a value to override`}
+                              ? `Overriding the global ${pricingS.margin}× margin for this quote`
+                              : `Using global default margin (${pricingS.margin}×) — enter a value to override`}
                           </span>
                         </div>
                       </div>
@@ -3284,7 +3346,7 @@ function SABQuoteTool() {
 
             {/* ── Project Costs Panel (quote-level, always shown) ── */}
             {(() => {
-              const pc = activeQuote.projectCosts || getDefaultProjectCosts();
+              const pc = activeQuote.projectCosts || getDefaultProjectCosts(pricingS);
               const t  = quoteTotals(activeQuote);
               const pcTotal = t.survey + t.install + t.delivery + t.pm + t.consumables + t.contingency + t.warranty;
               const installTotalDays = totalInstallDays(pc);
@@ -3292,10 +3354,10 @@ function SABQuoteTool() {
                 { key:"includeSurvey",      label:"Site Survey",             hint:"Flat fee for site visit & measure-up",               valField:"surveyFee",          valFmt: v => `£${v}` },
                 { key:"includeInstall",     label:"Installation & Fitting",  hint:`${installTotalDays} day(s) total — set per room in Fitting Estimate above`, valField:"installDayRate", valFmt: v => `£${v}/day`, step:10, min:0 },
                 { key:"includeDelivery",    label:"Delivery & Transport",    hint:"Flat fee for van hire & delivery to site",           valField:"deliveryFee",        valFmt: v => `£${v}` },
-                { key:"includePM",          label:"Project Management",      hint:`${pc.pmPercent ?? DB.settings.pmPercent}% of manufacturing sell`,  valField:"pmPercent", valFmt: v => `${v}%`, step:0.5, min:0 },
-                { key:"includeConsumables", label:"Consumables & Fixings",   hint:`£${pc.consumablesPerItem ?? DB.settings.consumablesPerItem} per item — screws, glue, tape, abrasives`, valField:"consumablesPerItem", valFmt: v => `£${v}/item` },
-                { key:"includeContingency", label:"Contingency",             hint:`${pc.contingencyPercent ?? DB.settings.contingencyPercent}% uplift — for access issues, revisions, unknowns`, valField:"contingencyPercent", valFmt: v => `${v}%`, step:0.5, min:0 },
-                { key:"includeWarranty",    label:"Warranty & Aftercare",    hint:`${pc.warrantyPercent ?? DB.settings.warrantyPercent}% — call-backs, adjustments within warranty period`, valField:"warrantyPercent", valFmt: v => `${v}%`, step:0.5, min:0 },
+                { key:"includePM",          label:"Project Management",      hint:`${pc.pmPercent ?? pricingS.pmPercent}% of manufacturing sell`,  valField:"pmPercent", valFmt: v => `${v}%`, step:0.5, min:0 },
+                { key:"includeConsumables", label:"Consumables & Fixings",   hint:`£${pc.consumablesPerItem ?? pricingS.consumablesPerItem} per item — screws, glue, tape, abrasives`, valField:"consumablesPerItem", valFmt: v => `£${v}/item` },
+                { key:"includeContingency", label:"Contingency",             hint:`${pc.contingencyPercent ?? pricingS.contingencyPercent}% uplift — for access issues, revisions, unknowns`, valField:"contingencyPercent", valFmt: v => `${v}%`, step:0.5, min:0 },
+                { key:"includeWarranty",    label:"Warranty & Aftercare",    hint:`${pc.warrantyPercent ?? pricingS.warrantyPercent}% — call-backs, adjustments within warranty period`, valField:"warrantyPercent", valFmt: v => `${v}%`, step:0.5, min:0 },
               ];
               const rowAmounts = { includeSurvey: t.survey, includeInstall: t.install, includeDelivery: t.delivery, includePM: t.pm, includeConsumables: t.consumables, includeContingency: t.contingency, includeWarranty: t.warranty };
               return (
@@ -4306,7 +4368,7 @@ function SABQuoteTool() {
             {Object.entries(activeQuote.rooms || {}).map(([room, data]) => {
               const rCost = data.items.reduce((s,i) => s+(i.pricing?.totalCost||0), 0);
               const rSell = data.items.reduce((s,i) => s+(i.pricing?.totalSellExVAT||0), 0);
-              const rDTCalc = calcDesignTimePerRoom(data); const rDT = data.includeDesignTime !== false ? rDTCalc : 0;
+              const rDTCalc = calcDesignTimePerRoom(data, pricingS); const rDT = data.includeDesignTime !== false ? rDTCalc : 0;
               return (
                 <div key={room} style={{ background:"#f0eeeb", border:"1px solid #d8d3cc", borderRadius:8, marginBottom:14, overflow:"hidden" }}>
                   <div style={{ padding:"13px 18px", background:"#f0eeeb", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -4381,7 +4443,7 @@ function SABQuoteTool() {
         const numPrefix = (roomName, idx) => itemNumbers[roomName]?.[idx] != null ? `${itemNumbers[roomName][idx]}. ` : "";
         const filteredRooms = dist.rooms.filter(({ roomName }) => clientViewRoomFilter === null || clientViewRoomFilter.has(roomName));
         const filteredSubtotal = filteredRooms.reduce((s, r) => s + r.items.reduce((rs, i) => rs + (i.bakedSellExVAT || 0), 0), 0);
-        const filteredVAT = filteredSubtotal * (DB.settings.vat || 0.2);
+        const filteredVAT = filteredSubtotal * (pricingS.vat || 0.2);
         const filteredTotal = filteredSubtotal + filteredVAT;
         return (
           <div data-view-mode={clientViewMode === "itemised" ? "itemised" : "total-only"} style={{ maxWidth:740, margin:"0 auto", padding:"46px 30px" }}>
@@ -4510,7 +4572,7 @@ function SABQuoteTool() {
                       <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:14, paddingBottom:7, borderBottom:"1px solid #d8d3cc" }}>{roomName}</div>
                       {items.map((item, i) => {
                         const ex = item.pricing?.totalSellExVAT || 0;
-                        const inc = item.pricing?.totalSellIncVAT || (ex * (1 + (DB.settings.vat || 0.2)));
+                        const inc = item.pricing?.totalSellIncVAT || (ex * (1 + (pricingS.vat || 0.2)));
                         return (
                           <div key={i} style={{ padding:"10px 0", borderBottom:"1px solid #d8d3cc", fontSize:12 }}>
                             <div style={{ color:"#333333", marginBottom:4 }}>{numPrefix(roomName, i)}{item.qty > 1 ? item.qty + "× " : ""}{item.description}
@@ -4571,7 +4633,7 @@ function SABQuoteTool() {
               });
             })() : filteredRooms.map(({ roomName, items }) => {
               const roomSubtotal = items.reduce((s, item) => s + (item.bakedSellExVAT || 0), 0);
-              const roomVAT = roomSubtotal * (DB.settings.vat || 0.2);
+              const roomVAT = roomSubtotal * (pricingS.vat || 0.2);
               return (
               <div key={roomName} style={{ marginBottom:32 }}>
                 <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:14, paddingBottom:7, borderBottom:"1px solid #d8d3cc" }}>{roomName}</div>
