@@ -304,11 +304,17 @@ const EDGEBAND_TYPES = {
 // Materials that DON'T need edgebanding (natural ply edge is fine / pre-edged)
 const NO_EDGE_MATERIALS = new Set(["MAT_BIRCH_UNF_18","MAT_BIRCH_UNF_12","MAT_BIRCH_UNF_25"]);
 
-// Deep-merge saved settings (the Settings page's DB JSON) over the defaults. Used by the
+// Settings are stored as the DIFF from these engine defaults (what the user changed),
+// so a later engine default change still applies wherever the user hasn't overridden it.
+const DB_DEFAULTS = JSON.parse(JSON.stringify(DB));
+
+// Reset DB to the engine defaults, then deep-merge saved settings over them. Used by the
 // browser (localStorage cache) and the server (shared settings row, /api/settings).
+// Accepts a diff, or a legacy full-DB object from older localStorage.
 function applySettings(saved) {
+  for (const k of Object.keys(DB_DEFAULTS)) DB[k] = JSON.parse(JSON.stringify(DB_DEFAULTS[k]));
   (function deepMerge(target, source) {
-    for (const key of Object.keys(source)) {
+    for (const key of Object.keys(source || {})) {
       if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
       if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) && target[key] && typeof target[key] === 'object') {
         deepMerge(target[key], source[key]);
@@ -317,6 +323,33 @@ function applySettings(saved) {
       }
     }
   })(DB, saved);
+}
+
+// What the user changed: values in DB that differ from the defaults (known keys only).
+function settingsDiff(cur = DB, def = DB_DEFAULTS) {
+  const out = {};
+  for (const k of Object.keys(def)) {
+    const a = cur[k], b = def[k];
+    if (b && typeof b === 'object') {
+      const d = a && typeof a === 'object' ? settingsDiff(a, b) : {};
+      if (Object.keys(d).length) out[k] = d;
+    } else if (a !== undefined && a !== b) out[k] = a;
+  }
+  return out;
+}
+
+// Errors for a settings diff: only known keys, same type as the default, finite numbers.
+function validateSettings(diff, def = DB_DEFAULTS, path = '') {
+  if (!diff || typeof diff !== 'object' || Array.isArray(diff)) return [`${path || 'settings'} must be an object`];
+  const errs = [];
+  for (const [k, v] of Object.entries(diff)) {
+    const p = path ? `${path}.${k}` : k;
+    if (!Object.prototype.hasOwnProperty.call(def, k)) { errs.push(`unknown setting ${p}`); continue; }
+    const d = def[k];
+    if (d && typeof d === 'object') errs.push(...validateSettings(v, d, p));
+    else if (typeof v !== typeof d || (typeof v === 'number' && !Number.isFinite(v))) errs.push(`${p} must be a ${typeof d === 'number' ? 'finite number' : typeof d}`);
+  }
+  return errs;
 }
 
 // Restore saved settings from localStorage (deep merge over defaults)
@@ -404,14 +437,15 @@ function settingsFingerprint() {
 // Items saved before the lock carry no stamp — they all count as one "saved" pricing.
 const pricingId = pw => pw ? `${pw.engine}/${pw.settings}` : "saved";
 
+const isPricingLock = l => !!(l && typeof l === "object" && l.settings && typeof l.settings === "object");
+
 function lockQuote(quote) {
   return { ...quote, pricingLock: { engineVersion: ENGINE_VERSION, lockedAt: new Date().toISOString(), settings: JSON.parse(JSON.stringify(DB.settings)) } };
 }
 
 // Settings a quote's money is computed with: its lock snapshot, else the live settings.
 function quoteSettings(quote) {
-  const locked = quote && quote.pricingLock && quote.pricingLock.settings;
-  return locked ? { ...DB.settings, ...locked } : DB.settings;
+  return quote && isPricingLock(quote.pricingLock) ? { ...DB.settings, ...quote.pricingLock.settings } : DB.settings;
 }
 
 // Locked quote, new margin: rescale the frozen costs (sell = cost × margin) instead of
@@ -1350,21 +1384,22 @@ function priceItemUnstamped(item, effectiveMargin) {
 }
 
 // Recompute every item's `pricing` from its stored params using the canonical
-// engine — EXCEPT on a locked quote, where stored pricing is final and only items
-// with no valid stored price get priced. Non-destructive: structure is preserved,
-// and if an item throws/returns null its stored pricing is kept. Shared by the
-// server (GET /api/quotes, new-quote locking), the browser load path and the scripts.
-function recomputeQuotePricing(quote) {
+// engine — EXCEPT on a locked quote, which is returned untouched (its stored pricing
+// is final). onlyUnpriced prices just the items with no valid stored price: used when
+// a quote is being locked, never on read. Non-destructive: structure is preserved, and
+// if an item throws/returns null its stored pricing is kept. Shared by the server
+// (GET /api/quotes, new-quote locking), the browser load path and the scripts.
+function recomputeQuotePricing(quote, { onlyUnpriced = false } = {}) {
   if (!quote || !quote.rooms) return quote;
+  if (isPricingLock(quote.pricingLock)) return quote;
   // Per-quote margin override (falls back to the engine default when unset).
   const effectiveMargin = quote.marginOverride;
-  const locked = !!quote.pricingLock;
   const rooms = {};
   for (const [roomName, room] of Object.entries(quote.rooms)) {
     rooms[roomName] = {
       ...room,
       items: (room.items || []).map(item => {
-        if (locked && Number.isFinite(item.pricing && item.pricing.totalCost)) return item;
+        if (onlyUnpriced && Number.isFinite(item.pricing && item.pricing.totalCost)) return item;
         try { const pricing = priceItem(item, effectiveMargin); return pricing ? { ...item, pricing } : item; }
         catch { return item; }
       }),
@@ -1485,7 +1520,7 @@ function quoteMaterialsBom(quote) {
     calcDesignHrsPerRoom, calcDesignTimePerRoom,
     getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
     recomputeQuotePricing, quoteMaterialsBom,
-    ENGINE_VERSION, applySettings, settingsFingerprint, pricingId, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
+    ENGINE_VERSION, applySettings, settingsDiff, validateSettings, settingsFingerprint, pricingId, isPricingLock, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") Object.assign(window, api);
 })();

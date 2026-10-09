@@ -629,7 +629,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script src="/pricing.js"></script>
+  <script src="/pricing.js?v=sab-v56"></script>
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useMemo } = React;
 
@@ -721,6 +721,15 @@ function migrateLegacyFillers(quote) {
     newRooms[roomName] = { ...room, items: newItems };
   }
   return { quote: { ...quote, rooms: newRooms }, migratedCount };
+}
+
+// Apply new params to an item and reprice it — but only if the params really changed,
+// so re-applying a default that's already in place never moves a (locked) item's price.
+function withParams(item, params, margin) {
+  if (JSON.stringify(params) === JSON.stringify(item.params)) return item;
+  const upd = { ...item, params };
+  upd.pricing = priceItem(upd, margin);
+  return upd;
 }
 
 // Ensure every item in a quotes object has pricing calculated.
@@ -917,7 +926,7 @@ function estimatedDaysByRoom(quote) {
   if (!window.SAB_FITTING) return {};
   try {
     const est = window.SAB_FITTING.calculateFittingEstimate(quote);
-    const hrsPerPersonDay = DB.settings.fittingHoursPerPersonPerDay || 7.5;
+    const hrsPerPersonDay = quoteSettings(quote).fittingHoursPerPersonPerDay || 7.5;
     const ceilHalf = (x) => Math.ceil((x || 0) * 2) / 2;
     const out = {};
     Object.entries(est.byRoom || {}).forEach(([roomName, r]) => {
@@ -1100,9 +1109,7 @@ function applySpecToAllItems(quote, field, name) {
       room.items = room.items.map(item => {
         const m = mutator(item);
         if (!m) return item;
-        const upd = { ...item, params: { ...item.params, ...m } };
-        upd.pricing = priceItem(upd, quote.marginOverride);
-        return upd;
+        return withParams(item, { ...item.params, ...m }, quote.marginOverride);
       });
       rooms[roomName] = room;
     });
@@ -1457,6 +1464,7 @@ function SABQuoteTool() {
   });
   const [dbReady, setDbReady] = useState(false);
   const syncTimerRef = React.useRef(null);
+  const pendingSaveRef = React.useRef(new Set()); // quote ids waiting for the debounced PUT
   // Quote IDs with unsent local writes. Tracked so the visibility/online
   // resync doesn't replace local state with a stale server view before our
   // debounced PUT lands — the race that resurrects deleted items.
@@ -1496,14 +1504,18 @@ function SABQuoteTool() {
       setDbReady(true);
       // Shared settings first, so this browser prices exactly as the server does. If the
       // server has none yet, seed it once from this browser's saved Settings.
-      return fetch('/api/settings').then(r => r.ok ? r.json() : null).then(shared => {
-        if (shared) {
-          applySettings(shared);
-          try { localStorage.setItem('sab_db_settings', JSON.stringify(DB)); } catch {}
+      return fetch('/api/settings').then(r => r.ok ? r.json().then(shared => ({ shared })) : null).then(res => {
+        if (!res) return; // server error: leave both copies alone
+        if (res.shared) {
+          applySettings(res.shared); // engine defaults + the shared changes
+          try { localStorage.setItem('sab_db_settings', JSON.stringify(res.shared)); } catch {}
           setSettingsVer(v => v + 1);
-        } else if ((() => { try { return localStorage.getItem('sab_db_settings'); } catch { return null; } })()) {
-          fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(DB) }).catch(() => {});
+          return;
         }
+        // No shared settings yet: offer this device's changes (insert-only — never
+        // overwrites a row another device created first).
+        const diff = settingsDiff();
+        if (Object.keys(diff).length) fetch('/api/settings?seed=1', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(diff) }).catch(() => {});
       }).catch(() => {}).then(() => fetch('/api/quotes')).then(r => r.json()).then(serverQuotes => {
         setQuotes(prev => {
           const merged = { ...serverQuotes };
@@ -1532,7 +1544,7 @@ function SABQuoteTool() {
       if (dirtyRef.current.size > 0) return;
       fetch('/api/quotes/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Pricing-Engine': ENGINE_VERSION },
         body: JSON.stringify({ quotes, deleted: [...deletedIdsRef.current] })
       }).then(r => r.json()).then(res => {
         // Server confirms which tombstones it has purged — we can forget those.
@@ -1740,16 +1752,22 @@ function SABQuoteTool() {
       if (!(id in q)) delete baselineRef.current[id];
     }
     setQuotes(stamped);
-    // Debounced push to server — only changed quotes.
+    // Debounced push to server — every quote changed since the last push (kept in a
+    // ref so a later save, even one that changes nothing, can't drop earlier ones).
+    for (const id of changedIds) pendingSaveRef.current.add(id);
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
       if (!dbReady) return;
-      for (const id of changedIds) {
+      const ids = [...pendingSaveRef.current];
+      pendingSaveRef.current.clear();
+      for (const id of ids) {
+        if (!stamped[id]) { dirtyRef.current.delete(id); continue; }
         fetch('/api/quotes/' + id, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Pricing-Engine': ENGINE_VERSION },
           body: JSON.stringify(stamped[id])
         })
+          .then(r => { if (r.status === 409) window.alert(`"${stamped[id].ref || id}" was price-locked after this page loaded, so this change wasn't saved. Reload the calculator to edit the locked version.`); })
           .catch(() => {})
           .finally(() => { dirtyRef.current.delete(id); });
       }
@@ -2009,9 +2027,7 @@ function SABQuoteTool() {
     const propagateToItems = (paramKey, newVal) => {
       room.items = room.items.map(item => {
         if (item.params && item.params[paramKey] !== undefined) {
-          const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
-          upd.pricing = priceItem(upd, q.marginOverride);
-          return upd;
+          return withParams(item, { ...item.params, [paramKey]: newVal }, q.marginOverride);
         }
         return item;
       });
@@ -2020,9 +2036,7 @@ function SABQuoteTool() {
       room.items = room.items.map(item => {
         if (item.type !== "cabinet" || !item.params) return item;
         if (filter && !filter(item)) return item;
-        const upd = { ...item, params: { ...item.params, [paramKey]: newVal } };
-        upd.pricing = priceItem(upd, q.marginOverride);
-        return upd;
+        return withParams(item, { ...item.params, [paramKey]: newVal }, q.marginOverride);
       });
     };
     const hasDoors    = (item) => Number(item.params?.doorCount) > 0;
@@ -2062,9 +2076,7 @@ function SABQuoteTool() {
       room.items = room.items.map(item => {
         if (item.params && (item.type === "cabinet" || item.type === "drawer")) {
           const newDT = defs.useSolidDrawers ? (defs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET";
-          const upd = { ...item, params: { ...item.params, drawerType: newDT } };
-          upd.pricing = priceItem(upd, q.marginOverride);
-          return upd;
+          return withParams(item, { ...item.params, drawerType: newDT }, q.marginOverride);
         }
         return item;
       });
@@ -2089,6 +2101,19 @@ function SABQuoteTool() {
   // Per-quote margin override. Setting it reprices every item in the quote with the new
   // effective margin (quote.marginOverride ?? DB.settings.margin). Clearing it (empty
   // input) drops the field and reverts the quote to the global default margin.
+  // Preview a quote at current pricing (engine + Settings). Nothing is saved until Confirm.
+  function openRepricePreview(id) {
+    const base = quotes[id];
+    if (!base) return;
+    const after = lockQuote(recomputeQuotePricing({ ...base, pricingLock: undefined }));
+    const rows = [];
+    for (const [room, r] of Object.entries(base.rooms || {})) (r.items || []).forEach((it, i) => {
+      const a = it.pricing?.totalSellExVAT || 0, b = after.rooms[room].items[i]?.pricing?.totalSellExVAT || 0;
+      if (Math.abs(a - b) >= 0.005) rows.push({ room, desc: it.description || it.type, a, b });
+    });
+    setRepricePreview({ id, base, after, rows, a: quoteGrandTotal(base), b: quoteGrandTotal(after) });
+  }
+
   function setQuoteMarginOverride(val) {
     const q = quotes[activeQuoteId];
     if (!q) return;
@@ -2116,8 +2141,9 @@ function SABQuoteTool() {
     for (let i = 0; i < path.length - 1; i++) obj = obj[path[i]];
     obj[path[path.length - 1]] = Number(val);
     // Persist all DB settings to localStorage so they survive page reloads
-    try { localStorage.setItem('sab_db_settings', JSON.stringify(DB)); } catch {}
-    if (dbReady) fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(DB) }).catch(() => {});
+    const diff = settingsDiff(); // only what differs from the engine defaults
+    try { localStorage.setItem('sab_db_settings', JSON.stringify(diff)); } catch {}
+    if (dbReady) fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(diff) }).catch(() => {});
     setSettingsVer(v => v + 1);
   }
 
@@ -2194,7 +2220,7 @@ function SABQuoteTool() {
       const byRoom = { ...(pc.installDaysByRoom || {}) };
       try {
         const est = window.SAB_FITTING.calculateFittingEstimate(q);
-        const hrsPerPersonDay = DB.settings.fittingHoursPerPersonPerDay || 7.5;
+        const hrsPerPersonDay = quoteSettings(q).fittingHoursPerPersonPerDay || 7.5;
         const ceilHalf = (x) => Math.ceil((x || 0) * 2) / 2;
         Object.entries(est.byRoom || {}).forEach(([roomName, r]) => {
           if (byRoom[roomName] != null) return; // user-set value, leave alone
@@ -2435,10 +2461,13 @@ function SABQuoteTool() {
               )}
               <div style={{ display:"flex", gap:10, marginTop:18 }}>
                 <button onClick={() => {
+                  // Changed since the preview opened (an edit or a sync)? Show fresh figures instead.
+                  if (quotes[rp.id] !== rp.base) return openRepricePreview(rp.id);
                   // This dialog is the confirmation, so saveQuotes doesn't ask again for this save.
+                  const had = priceConfirmedRef.current.has(rp.id);
                   priceConfirmedRef.current.add(rp.id);
                   saveQuotes({ ...quotes, [rp.id]: rp.after });
-                  priceConfirmedRef.current.delete(rp.id);
+                  if (!had) priceConfirmedRef.current.delete(rp.id);
                   setRepricePreview(null);
                 }} style={{ padding:"10px 22px", background:"#c8a96e", color:"#1a1a1a", border:"none", borderRadius:4, cursor:"pointer", fontSize:11, fontFamily:"inherit", fontWeight:600 }}>Confirm reprice</button>
                 <button onClick={() => setRepricePreview(null)} style={{ padding:"10px 22px", background:"transparent", color:"#777777", border:"1px solid #c8c3bc", borderRadius:4, cursor:"pointer", fontSize:11, fontFamily:"inherit" }}>Cancel</button>
@@ -2469,17 +2498,7 @@ function SABQuoteTool() {
                 Locked{priceStatus?.pricingMixed ? " · mixed" : ""}{priceStatus?.hoursCheck?.deltaHrs > 0.05 ? ` · work +${priceStatus.hoursCheck.deltaHrs} h` : ""}
               </span>
             )}
-            <button onClick={() => {
-              // Preview this quote at current pricing (engine + Settings). Nothing is saved until Confirm.
-              if (!activeQuote) return;
-              const after = lockQuote(recomputeQuotePricing({ ...activeQuote, pricingLock: undefined }));
-              const rows = [];
-              for (const [room, r] of Object.entries(activeQuote.rooms || {})) (r.items || []).forEach((it, i) => {
-                const a = it.pricing?.totalSellExVAT || 0, b = after.rooms[room].items[i]?.pricing?.totalSellExVAT || 0;
-                if (Math.abs(a - b) >= 0.005) rows.push({ room, desc: it.description || it.type, a, b });
-              });
-              setRepricePreview({ id: activeQuoteId, after, rows, a: quoteGrandTotal(activeQuote), b: quoteGrandTotal(after) });
-            }} title="Preview this quote at current pricing — nothing changes until you confirm" style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>Reprice…</button>
+            <button onClick={() => openRepricePreview(activeQuoteId)} title="Preview this quote at current pricing — nothing changes until you confirm" style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>Reprice…</button>
             <button onClick={() => printQuote(activeQuote, clientViewMode, clientViewRoomFilter)} style={{ padding:"6px 14px", fontSize:11, letterSpacing:"0.08em", background:"transparent", color:"#c8a96e", border:"1px solid #c8c3bc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>↓ PDF {clientViewRoomFilter ? `(${clientViewRoomFilter.size === 1 ? [...clientViewRoomFilter][0] : clientViewRoomFilter.size + " rooms"})` : ""}</button>
             <button onClick={() => { setView("quotes"); setActiveQuoteId(null); }} style={{ padding:"6px 14px", fontSize:11, background:"transparent", color:"#777777", border:"none", cursor:"pointer", fontFamily:"inherit" }}>← All</button>
             <div style={{ width:1, height:20, background:"#d8d3cc", margin:"0 4px" }} />
@@ -3112,7 +3131,7 @@ function SABQuoteTool() {
             {/* ── Fitting Estimate Panel — per-room days × per-fitter day rate ── */}
             {(() => {
               if (!window.SAB_FITTING) return null;
-              const hrsPerPersonDay = DB.settings.fittingHoursPerPersonPerDay || 7.5;
+              const hrsPerPersonDay = pricingS.fittingHoursPerPersonPerDay || 7.5;
               let est;
               try { est = window.SAB_FITTING.calculateFittingEstimate(activeQuote); }
               catch (e) { return null; }

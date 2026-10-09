@@ -47,7 +47,8 @@ function lockThenNextEngine(quote) {
   for (const [room, r] of Object.entries(locked.rooms || {})) {
     (r.items || []).forEach((it, i) => {
       const after = read.rooms[room].items[i];
-      if (priced(it)) { frozen++; if (json(after.pricing) !== json(it.pricing)) diffs.push(`${room}[${i}] pricing`); }
+      if (priced(it)) frozen++;
+      if (json(after.pricing) !== json(it.pricing)) diffs.push(`${room}[${i}] pricing`); // unpriced items stay unpriced too
       if (after.hours && after.hours.changed) hoursMoved++;
     });
   }
@@ -108,6 +109,48 @@ test('margin change on a locked quote rescales frozen costs (WRP / fixed-price u
   });
 });
 
+test('locked quote: an unpriced item is never priced on read; locking fills it once', () => {
+  const q = sampleQuote();
+  q.rooms.Kitchen.items.push({ type: 'door', qty: 1, params: { doorType: 'SHAKER_PNT', widthMm: 400, heightMm: 700 } });
+  assert.equal(NEXT.recomputeQuotePricing(P.lockQuote(q)).rooms.Kitchen.items[6].pricing, undefined);
+  const filled = P.recomputeQuotePricing(q, { onlyUnpriced: true });
+  assert.ok(priced(filled.rooms.Kitchen.items[6]));
+  assert.equal(json(filled.rooms.Kitchen.items[0].pricing), json(q.rooms.Kitchen.items[0].pricing));
+});
+
+// ─── shared settings ─────────────────────────────────────────────────────────
+test('settings are a diff from the defaults: a new engine default still applies where not overridden', () => {
+  try {
+    NEXT.applySettings({ settings: { surveyFee: 300 } });
+    assert.equal(NEXT.DB.settings.surveyFee, 300);
+    assert.equal(NEXT.DB.settings.labourRate, 40); // the next engine's own default, not a frozen copy of today's
+    assert.deepEqual(NEXT.settingsDiff(), { settings: { surveyFee: 300 } });
+  } finally { NEXT.applySettings({}); }
+  assert.deepEqual(NEXT.settingsDiff(), {});
+});
+
+test('settings diffs are validated: known keys, same type as the default, finite numbers', () => {
+  assert.deepEqual(P.validateSettings({ settings: { labourRate: 35, sprayFinish: { techLabourRate: 26 } }, materials: { MAT_MDF_FH_18: { costPerM2: 18 } } }), []);
+  for (const bad of [{ settings: { labourRate: '30' } }, { settings: { labourRate: NaN } }, { doorTypes: null },
+    { settings: { sprayFinish: null } }, { settings: { nope: 1 } }, { materials: { MAT_NOPE: { costPerM2: 1 } } }, [], null]) {
+    assert.ok(P.validateSettings(bad).length > 0, `should reject ${json(bad)}`);
+  }
+});
+
+// ─── server write guard ──────────────────────────────────────────────────────
+test('server: a locked row accepts only lock-aware writes that carry the lock', () => {
+  const { guardWrite } = require(path.join(__dirname, '..', 'server.js'));
+  const locked = P.lockQuote(sampleQuote()), lock = locked.pricingLock;
+  const loadedBeforeLock = { ...locked, pricingLock: undefined };
+  assert.ok(guardWrite(loadedBeforeLock, lock, true).reject, 'copy loaded before the lock is refused');
+  assert.ok(guardWrite(locked, lock, false).reject, 'old code (no X-Pricing-Engine) is refused even with the lock attached');
+  assert.ok(guardWrite({ ...locked, pricingLock: true }, lock, true).reject, 'a lock without settings is not a lock');
+  assert.equal(guardWrite(locked, lock, true).data, locked);
+  assert.equal(guardWrite(loadedBeforeLock, null, false).data, loadedBeforeLock, 'stored unlocked → written as sent');
+  const created = guardWrite({ id: 'QNEW', rooms: { R: { items: [{ type: 'door', qty: 1, params: { doorType: 'SHAKER_PNT', widthMm: 500, heightMm: 720 } }] } } }, undefined, false).data;
+  assert.ok(P.isPricingLock(created.pricingLock) && priced(created.rooms.R.items[0]), 'new quote → priced + locked');
+});
+
 // ─── migration dry-run helpers ───────────────────────────────────────────────
 test('settings drift: inference recovers the rates a browser priced with, and when', () => {
   const at = it => ({ ...it, pricing: P.priceItem(it) });
@@ -151,8 +194,12 @@ test('regression: every saved quote — prices + totals identical under the next
   assert.ok(hoursMoved > 0 && unlockedMoved > 0);
 });
 
-test('migration dry run on the snapshot: saved = served for every quote (it is a served snapshot)', { skip: !SNAP && 'QUOTES_SNAPSHOT not set' }, () => {
+test('migration dry run on the snapshot: saved = served for every quote, and no false settings drift', { skip: !SNAP && 'QUOTES_SNAPSHOT not set' }, () => {
   const quotes = Object.values(JSON.parse(fs.readFileSync(SNAP, 'utf8')));
   const differ = quotes.map(analyseQuote).filter(a => a.differs).map(a => a.ref);
   assert.deepEqual(differ, []);
+  // A served snapshot is priced entirely at the defaults, so nothing may read as drift
+  // (guards against rounding noise and edge-polish items with no booth time).
+  const { settings } = inferSettings(quotes.map(q => ({ data: q, updated_at: q.updated_at || q._serverUpdatedAt })));
+  for (const [key, s] of Object.entries(settings)) assert.equal(s.differsFromDefault, false, `${key}: ${json(s.values)}`);
 });
