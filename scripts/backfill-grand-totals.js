@@ -23,7 +23,7 @@
 // ───────────────────────────────────────────────────────────────────────────────
 const path = require('path');
 const { pool } = require(path.join(__dirname, '..', 'db'));
-const { recomputeQuotePricing, quoteGrandTotal } = require(path.join(__dirname, '..', 'public', 'pricing.js'));
+const { recomputeQuotePricing, quoteGrandTotal, applySettings } = require(path.join(__dirname, '..', 'public', 'pricing.js'));
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -38,6 +38,12 @@ async function main() {
     console.error('pricing.js did not export quoteGrandTotal — aborting.');
     process.exit(1);
   }
+
+  // Price with the shared Settings, exactly as the server does.
+  try {
+    const { rows } = await pool.query("SELECT data FROM settings WHERE id = 'pricing'");
+    if (rows.length) applySettings(rows[0].data);
+  } catch { /* settings table not created yet → engine defaults */ }
 
   console.log(`\n[backfill] ${DRY_RUN ? 'DRY RUN — no writes' : 'APPLYING changes'}\n`);
 

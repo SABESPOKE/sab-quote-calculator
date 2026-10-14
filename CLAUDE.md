@@ -39,7 +39,10 @@ All under `/api/`:
 - Styling uses inline React style objects + CSS with media queries for mobile (`max-width: 767px`)
 - Theme colours: `#c8a96e` (gold accent), `#1a1a1a` (dark), `#f5f5f5` (light)
 - Data persists to localStorage first, then syncs to PostgreSQL server
-- When updating the frontend, bump the service worker cache version in `sw.js`
+- When updating the frontend, bump the service worker cache version in `sw.js` — and the matching `?v=` on `/pricing.js` (index.html script tag + sw.js `STATIC_ASSETS`), so a new page never runs with an old cached engine
+- Quotes are price-locked (`quote.pricingLock`): stored item prices are final and totals use the lock's settings, so engine/Settings changes only reach new quotes, edited items and a deliberate "Reprice…". Bump `ENGINE_VERSION` in `pricing.js` with any change that can move a price; hours stay live (`item.hours.current`, `quote.hoursCheck`)
+- Settings are shared: `GET/PUT /api/settings` (Postgres `settings` table) stores only the DIFF from the engine defaults (`settingsDiff` / `applySettings` / `validateSettings`) — the browser and server price from the same values, and new engine defaults still apply where nobody overrode them
+- Writes to a locked quote must come from lock-aware code (`X-Pricing-Engine` header) and carry `pricingLock`; the server answers 409 otherwise
 
 ## Environment
 - `DATABASE_URL` — PostgreSQL connection string (set automatically on Railway; optional for local dev which uses localStorage only)
