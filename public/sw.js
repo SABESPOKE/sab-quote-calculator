@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sab-v55';
+const CACHE_NAME = 'sab-v56';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -8,9 +8,9 @@ const STATIC_ASSETS = [
   '/icons/icon-512.png'
 ];
 const CDN_ASSETS = [
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js'
+  'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
+  'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
+  'https://unpkg.com/@babel/standalone@7.29.10/babel.min.js'
 ];
 
 // Install — pre-cache static assets
