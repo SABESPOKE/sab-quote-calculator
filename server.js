@@ -316,22 +316,50 @@ function cabinetSpecErrors(spec) {
   return errs;
 }
 
-// POST /api/cabinet-cost — body: engine-native cabinet params → priceItem result
+// POST /api/endpanel-cost — body: engine-native end-panel params (calcEndPanelCost) →
+// priceItem({ type:'endpanel', qty, params }). Same contract as /api/cabinet-cost:
+// strict validation, 503 without the engine, 422 if it fails or returns no cost.
+const ENDPANEL_FIELDS = new Set(['materialKey', 'widthMm', 'heightMm', 'thicknessMm', 'faces', 'exposedEdgeCount', 'finishType', 'hasStain', 'qty']);
+function endPanelSpecErrors(spec) {
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return ['body must be a JSON object of end-panel params'];
+  const errs = [];
+  const unknown = Object.keys(spec).filter(k => !ENDPANEL_FIELDS.has(k));
+  if (unknown.length) errs.push(`unknown field(s): ${unknown.join(', ')}`);
+  for (const f of ['widthMm', 'heightMm']) {
+    if (typeof spec[f] !== 'number' || !Number.isFinite(spec[f]) || spec[f] <= 0) errs.push(`${f} must be a positive number`);
+  }
+  if (spec.thicknessMm !== undefined && (typeof spec.thicknessMm !== 'number' || !Number.isFinite(spec.thicknessMm) || spec.thicknessMm <= 0)) errs.push('thicknessMm must be a positive number');
+  if (spec.faces !== undefined && spec.faces !== 1 && spec.faces !== 2) errs.push('faces must be 1 or 2');
+  if (spec.exposedEdgeCount !== undefined && (!Number.isInteger(spec.exposedEdgeCount) || spec.exposedEdgeCount < 0 || spec.exposedEdgeCount > 4)) errs.push('exposedEdgeCount must be an integer from 0 to 4');
+  if (spec.qty !== undefined && (!Number.isInteger(spec.qty) || spec.qty < 1)) errs.push('qty must be a positive integer');
+  if (spec.materialKey === undefined) errs.push('materialKey is required');
+  else if (!Object.prototype.hasOwnProperty.call(PRICING_DB.materials, spec.materialKey)) errs.push(`unknown materialKey "${spec.materialKey}" — see GET /api/cabinet-cost/keys (materials)`);
+  if (spec.finishType !== undefined && !CARCASS_FINISHES.includes(spec.finishType)) errs.push(`finishType must be one of ${CARCASS_FINISHES.join('|')}`);
+  if (spec.hasStain !== undefined && typeof spec.hasStain !== 'boolean') errs.push('hasStain must be a boolean');
+  return errs;
+}
+
+// One handler shape for every "price this item" endpoint: validate → priceItem → result
 // ({ costPerUnit, sellPerUnit, totalCost, totalSellExVAT, totalSellIncVAT, breakdown }).
-app.post('/api/cabinet-cost', (req, res) => {
+const priceEndpoint = (type, specErrors, label) => (req, res) => {
   if (!priceItem || !PRICING_DB) return res.status(503).json({ error: 'Pricing engine not loaded' });
-  const errors = cabinetSpecErrors(req.body);
-  if (errors.length) return res.status(400).json({ error: 'Cannot price cabinet', errors });
+  const errors = specErrors(req.body);
+  if (errors.length) return res.status(400).json({ error: `Cannot price ${label}`, errors });
   const { qty = 1, ...params } = req.body;
   let result;
-  try { result = priceItem({ type: 'cabinet', qty, params }); }
+  try { result = priceItem({ type, qty, params }); }
   catch (err) {
-    console.error('POST /api/cabinet-cost error:', err.message);
+    console.error(`POST /api/${type}-cost error:`, err.message);
     return res.status(422).json({ error: 'Pricing engine failed: ' + err.message });
   }
   if (!result || !Number.isFinite(result.totalCost)) return res.status(422).json({ error: 'Pricing engine returned no cost for this spec' });
   res.json(result);
-});
+};
+
+// POST /api/cabinet-cost — body: engine-native cabinet params → priceItem result
+app.post('/api/cabinet-cost', priceEndpoint('cabinet', cabinetSpecErrors, 'cabinet'));
+// POST /api/endpanel-cost — body: engine-native end-panel params → priceItem result
+app.post('/api/endpanel-cost', priceEndpoint('endpanel', endPanelSpecErrors, 'end panel'));
 
 // GET /api/cabinet-cost/keys — valid keys (and display names) for every keyed field, so
 // the configurator can build/check its mapping without reading pricing.js.
@@ -350,6 +378,7 @@ app.get('/api/cabinet-cost/keys', (req, res) => {
     carcassFinishes: CARCASS_FINISHES,
     sprayFinishOverrides: SPRAY_OVERRIDES,
     fields: [...CABINET_FIELDS],
+    endPanel: { fields: [...ENDPANEL_FIELDS], finishTypes: CARCASS_FINISHES }, // POST /api/endpanel-cost (materials = the same table)
     settings: { margin: PRICING_DB.settings.margin, vat: PRICING_DB.settings.vat },
   });
 });
