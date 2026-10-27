@@ -350,8 +350,37 @@ test('UI: a website order shows the badge and its paid figures, is read-only, an
       assert.deepEqual([copy[1].data.locked, copy[1].data.paid, copy[1].data.source, P.isPricingLock(copy[1].data.pricingLock)], [undefined, undefined, undefined, true]);
       assert.deepEqual(copy[1].data.rooms.Utility.items.map(i => i.pricing.totalSellExVAT), [1190, 60]);
 
-      // Control: an ordinary quote is editable as before.
+      // Deleted folder: the website order can go there and come back, but has no permanent delete,
+      // and "Empty Folder" leaves it in place while the ordinary copy is deleted for good.
+      const cardButton = (label, ref) => b.js(`(() => { const card = e => { while (!e.textContent.includes('Jane Example')) e = e.parentElement; return e; };
+        const el = [...document.querySelectorAll('button')].find(e => e.textContent.trim() === ${JSON.stringify(label)} && card(e).textContent.includes(${JSON.stringify(ref)}));
+        if (!el) throw new Error(${JSON.stringify(`no "${label}" on ${ref}`)}); el.click(); return true; })()`);
+      const waitFor = async (ok, what) => { for (const t0 = Date.now(); !ok(); await settle(100)) if (Date.now() - t0 > 10000) throw new Error(`timed out: ${what}`); };
+      await b.js(`window.confirm = () => true; true`);
       await b.click('button', '← All');
+      await b.until(`${rootText}.includes('WEB-1042 ·')`);
+      await cardButton('Delete', 'WEB-1042 ·');
+      await b.click('button', 'Active (');
+      await b.until(`${rootText}.includes('WEB-1042 (copy)')`);
+      await cardButton('Delete', 'WEB-1042 (copy)');
+      await waitFor(() => pool.rows.get(ORDER.id).data.deleted && pool.rows.get(copy[0]).data.deleted, 'both moved to Deleted');
+      await b.click('button', 'Deleted (');
+      await b.until(`${rootText}.includes('WEB-1042 ·') && ${rootText}.includes('WEB-1042 (copy)')`);
+      assert.deepEqual(await b.js(`(() => { const card = e => { while (!e.textContent.includes('Jane Example')) e = e.parentElement; return e; };
+        return [...document.querySelectorAll('button')].filter(e => e.textContent.trim() === 'Delete permanently').map(e => card(e).textContent.includes('(copy)')); })()`),
+        [true], 'only the ordinary copy offers "Delete permanently"');
+      await b.shot('6-deleted-folder.png');
+      await b.click('button', 'Empty Folder');
+      await waitFor(() => !pool.rows.has(copy[0]), 'the copy permanently deleted');
+      await settle(300);
+      assert.equal(pool.rows.get(ORDER.id).data.deleted, true, 'the website order is still stored, in Deleted');
+      assert.equal(await b.js(`${rootText}.includes('WEB-1042 ·')`), true, 'and still shown there');
+      await cardButton('↩ Restore', 'WEB-1042 ·');
+      await waitFor(() => !pool.rows.get(ORDER.id).data.deleted, 'restored');
+      assert.equal(pool.rows.get(ORDER.id).data.status, 'archive');
+      assert.deepEqual(await b.js('window.__alerts'), []);
+
+      // Control: an ordinary quote is editable as before.
       await b.click('button', 'Sold (');
       await b.click('div', 'SAB-2026-101');
       await b.until(`!!document.querySelector('.sab-items-panel')`);
@@ -438,6 +467,29 @@ test('existing quotes: the engine prices, totals and annotates them exactly as b
   };
   for (const q of Object.values(REAL)) for (const [name, view] of Object.entries(views))
     assert.deepEqual(view(P)(clone(q)), view(BASE.P)(clone(q)), `${q.id}: ${name}`);
+});
+
+// ─── 6. permanent delete: never a website order ──────────────────────────────
+test('a website order can be moved to Deleted and restored, but never permanently deleted (409); ordinary quotes as before', () => {
+  const sold = REAL.Q1781000000001, legacy = REAL.Q1779000000002;
+  return withServer({ [ORDER.id]: STORED, [sold.id]: sold, [legacy.id]: legacy }, async (s, pool) => {
+    const REFUSED = { status: 409, body: { error: 'This is a paid website order — it can be moved to Deleted but not permanently deleted.' } };
+    assert.deepEqual(await s.call('DELETE', `/api/quotes/${ORDER.id}`), REFUSED);
+    // The Deleted folder still works: move it there…
+    assert.equal((await s.call('PUT', `/api/quotes/${ORDER.id}`, { ...STORED, deleted: true, deletedAt: '2026-10-27T11:00:00.000Z' })).status, 200);
+    assert.deepEqual(await s.call('DELETE', `/api/quotes/${ORDER.id}`), REFUSED);
+    // …a tombstone synced from another device doesn't delete it either (the server copy comes back)…
+    const synced = await s.call('POST', '/api/quotes/sync', { quotes: {}, deleted: [ORDER.id, legacy.id] });
+    assert.deepEqual(synced.body.deleted, [legacy.id]);
+    assert.equal(synced.body.quotes[ORDER.id].deleted, true);
+    assert.deepEqual([pool.rows.has(ORDER.id), pool.rows.has(legacy.id)], [true, false]);
+    // …and restore it.
+    assert.equal((await s.call('PUT', `/api/quotes/${ORDER.id}`, STORED)).status, 200);
+    assert.equal(pool.rows.get(ORDER.id).data.deleted, undefined);
+    // An ordinary quote is permanently deleted exactly as before.
+    assert.deepEqual(await s.call('DELETE', `/api/quotes/${sold.id}`), { status: 200, body: { ok: true } });
+    assert.equal(pool.rows.has(sold.id), false);
+  });
 });
 
 test('lock-quotes migration skips website orders', () => {

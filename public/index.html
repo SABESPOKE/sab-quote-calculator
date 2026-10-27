@@ -1988,9 +1988,10 @@ function SABQuoteTool() {
     }
   }
 
-  // Empty the Deleted folder — permanently remove every soft-deleted quote.
+  // Empty the Deleted folder — permanently remove every soft-deleted quote, except paid
+  // website orders, which are never permanently deleted (the server refuses it too).
   function emptyDeletedFolder() {
-    const ids = Object.values(quotes).filter(q => q.deleted).map(q => q.id);
+    const ids = Object.values(quotes).filter(q => q.deleted && !isLocked(q)).map(q => q.id);
     if (ids.length === 0) return;
     if (!window.confirm(`Permanently delete ${ids.length} quote${ids.length !== 1 ? 's' : ''} in the Deleted folder? This cannot be undone.`)) return;
     const updated = { ...quotes };
@@ -2550,7 +2551,7 @@ function SABQuoteTool() {
                 <button key={k} onClick={() => setQuoteStatusTab(k)} style={{ padding:"7px 16px", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", background: quoteStatusTab===k ? "#c8a96e" : "transparent", color: quoteStatusTab===k ? "#ffffff" : "#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>{l} ({count})</button>
               );
             })}
-            {quoteStatusTab === "deleted" && Object.values(quotes).some(q => q.deleted) && (
+            {quoteStatusTab === "deleted" && Object.values(quotes).some(q => q.deleted && !isLocked(q)) && (
               <button onClick={emptyDeletedFolder} style={{ marginLeft:"auto", padding:"7px 16px", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", background:"transparent", color:"#b8503e", border:"1px solid #e0a89c", borderRadius:3, cursor:"pointer", fontFamily:"inherit" }}>🗑 Empty Folder</button>
             )}
           </div>
@@ -2647,7 +2648,7 @@ function SABQuoteTool() {
                       <div style={{ marginTop:6, display:"flex", flexDirection:"column", gap:4, alignItems:"flex-end" }}>
                         {q.deletedAt && <div style={{ fontSize:9, color:"#b8503e" }}>deleted {daysAgo(q.deletedAt)}</div>}
                         <button onClick={e => { e.stopPropagation(); restoreQuote(q.id); }} style={{ background:"transparent", border:"none", color:"#6f9a5e", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>↩ Restore</button>
-                        <button onClick={e => { e.stopPropagation(); permanentlyDeleteQuote(q.id); }} style={{ background:"transparent", border:"none", color:"#b8503e", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>Delete permanently</button>
+                        {!isLocked(q) && <button onClick={e => { e.stopPropagation(); permanentlyDeleteQuote(q.id); }} style={{ background:"transparent", border:"none", color:"#b8503e", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>Delete permanently</button>}
                       </div>
                     ) : (
                       <button onClick={e => { e.stopPropagation(); deleteQuote(q.id); }} style={{ marginTop:6, background:"transparent", border:"none", color:"#999999", cursor:"pointer", fontSize:9, fontFamily:"inherit" }}>Delete</button>

@@ -580,10 +580,19 @@ app.patch('/api/quotes/:id', async (req, res) => {
   }
 });
 
+// A paid website order can go to the Deleted folder (a status-like flag) but is never
+// removed from the database — not by DELETE, not by a synced tombstone.
+const LOCKED_DELETE = 'This is a paid website order — it can be moved to Deleted but not permanently deleted.';
+async function isStoredLocked(id) {
+  const { rows } = await pool.query('SELECT data FROM quotes WHERE id = $1', [id]);
+  return rows.length > 0 && isLocked(rows[0].data);
+}
+
 // Delete a quote
 app.delete('/api/quotes/:id', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });
   try {
+    if (await isStoredLocked(req.params.id)) return res.status(409).json({ error: LOCKED_DELETE });
     await pool.query('DELETE FROM quotes WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   } catch (err) {
@@ -601,13 +610,17 @@ app.post('/api/quotes/sync', async (req, res) => {
   const clientDeleted = Array.isArray(req.body.deleted) ? req.body.deleted : [];
   const trusted = !!req.get(PRICING_CLIENT_HEADER);
   try {
-    // Honour client tombstones first so the merge below can't re-introduce them.
-    const confirmedDeleted = [];
+    // Honour client tombstones first so the merge below can't re-introduce them — all but
+    // a paid website order's, which stays (and is sent back).
+    const confirmedDeleted = [], kept = new Set();
     for (const id of clientDeleted) {
-      try { await pool.query('DELETE FROM quotes WHERE id = $1', [id]); confirmedDeleted.push(id); }
+      try {
+        if (await isStoredLocked(id)) { kept.add(id); continue; }
+        await pool.query('DELETE FROM quotes WHERE id = $1', [id]); confirmedDeleted.push(id);
+      }
       catch (e) { console.error('sync delete failed for', id, e.message); }
     }
-    const deletedSet = new Set(clientDeleted);
+    const deletedSet = new Set(clientDeleted.filter(id => !kept.has(id)));
 
     // Get all server quotes
     const { rows } = await pool.query('SELECT id, data, updated_at FROM quotes');
