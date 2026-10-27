@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 
 delete process.env.DATABASE_URL; // never touch a real DB from tests
 delete process.env.APP_PASSWORD;  // auth off, as in local dev
@@ -363,6 +363,81 @@ test('UI: a website order shows the badge and its paid figures, is read-only, an
       await b.shot('5-unlocked-control.png');
     } finally { b.close(); }
   });
+});
+
+// ─── 5. every other quote behaves exactly as before ──────────────────────────
+// test/fixtures/real-shaped-quotes.json: two SYNTHETIC quotes in the shape the calculator
+// stores them (no live data) — a price-locked sold kitchen, and a legacy unlocked quote
+// whose stored prices predate today's engine. The same API session runs on the baseline
+// (master before website orders, from git) and on this code; every answer and every
+// stored row must be identical.
+const REAL = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'real-shaped-quotes.json'), 'utf8'));
+const BASE_REF = process.env.BASE_REF || 'f46b99d';
+let BASE = null;
+try {
+  const show = f => execFileSync('git', ['show', `${BASE_REF}:${f}`], { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 24 });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sab-base-'));
+  fs.mkdirSync(path.join(dir, 'public'));
+  fs.writeFileSync(path.join(dir, 'public', 'pricing.js'), show('public/pricing.js'));
+  BASE = { dir, server: show('server.js'), P: require(path.join(dir, 'public', 'pricing.js')) };
+} catch { /* no git / unknown ref → these tests skip */ }
+const noBase = !BASE && `baseline ${BASE_REF} not loadable`;
+
+async function session(src, dir) {
+  const pool = fakePool(REAL);
+  const s = await start(pool, src, dir);
+  const ENGINE = { 'X-Pricing-Engine': P.ENGINE_VERSION };
+  const sold = REAL.Q1781000000001, legacy = REAL.Q1779000000002;
+  const edit = (q, f) => { const c = clone(q); f(c); return c; };
+  const fresh = { id: 'Q1800000000000', client: 'Sam Sample', project: 'Boot room', ref: 'SAB-2026-200', created: '27/10/2026', status: 'active',
+    rooms: { 'Boot room': { includeDesignTime: true, items: [{ type: 'door', description: 'Door', qty: 2, params: { doorType: 'SHAKER_PNT', widthMm: 500, heightMm: 720 } }] } } };
+  const steps = [
+    ['GET', '/api/quotes'],
+    ['PUT', `/api/quotes/${legacy.id}`, edit(legacy, q => { q.rooms['Main bedroom'].items[0].description += ' (edited)'; })],
+    ['PUT', `/api/quotes/${sold.id}`, edit(sold, q => { q.rooms.Kitchen.items[0].qty = 5; })],          // old code: refused
+    ['PUT', `/api/quotes/${sold.id}`, edit(sold, q => { q.rooms.Kitchen.items[0].qty = 5; }), ENGINE],  // lock-aware: accepted
+    ['PUT', `/api/quotes/${sold.id}`, edit(sold, q => { delete q.pricingLock; }), ENGINE],             // drops the lock: refused
+    ['PATCH', `/api/quotes/${legacy.id}`, { status: 'sold' }],
+    ['PATCH', `/api/quotes/${sold.id}`, { rooms: {}, marginOverride: 2.5, status: 'archive' }],
+    ['PATCH', `/api/quotes/${legacy.id}`, { pricingLock: { settings: {} }, project: 'Wardrobes' }],
+    ['PATCH', '/api/quotes/Q-missing', { status: 'sold' }],
+    ['PUT', `/api/quotes/${fresh.id}`, fresh],                                                         // new: priced + price-locked
+    ['POST', '/api/quotes/sync', { quotes: {
+      [legacy.id]: { ...legacy, updated_at: '2031-01-01T00:00:00.000Z' },
+      [sold.id]: { ...sold, updated_at: '2000-01-01T00:00:00.000Z' },
+      Q1800000000001: { ...fresh, id: 'Q1800000000001', updated_at: '2026-10-27T10:00:00.000Z' }, // else sync stamps the wall clock
+    }, deleted: [fresh.id] }, ENGINE],
+    ['DELETE', `/api/quotes/${legacy.id}`],
+    ['GET', '/api/quotes'],
+  ];
+  const out = [];
+  try { for (const [method, url, body, headers] of steps) out.push(await s.call(method, url, body, headers)); }
+  finally { await s.close(); }
+  out.push(Object.fromEntries([...pool.rows].map(([id, r]) => [id, { data: r.data, updated_at: r.updated_at.toISOString() }])));
+  return JSON.parse(JSON.stringify(out, (k, v) => k === 'lockedAt' ? '<time>' : v)); // the only wall-clock value
+}
+
+test('existing quotes: every API path answers and stores exactly as before website orders', { skip: noBase }, async () => {
+  const before = await session(BASE.server, BASE.dir);
+  const after = await session();
+  assert.deepEqual(after, before);
+  // …and the session really exercised read-time repricing, the price lock and new-quote locking.
+  assert.notEqual(before[0].body.Q1779000000002.totalSellExVAT, REAL.Q1779000000002.totalSellExVAT, 'legacy quote repriced on read');
+  assert.deepEqual(before.slice(2, 5).map(r => r.status), [409, 200, 409]);
+  assert.ok(P.isPricingLock(before.at(-1).Q1800000000001.data.pricingLock));
+});
+
+test('existing quotes: the engine prices, totals and annotates them exactly as before', { skip: noBase }, () => {
+  const views = {
+    recompute: E => q => E.recomputeQuotePricing(q),
+    totals: E => q => E.quoteTotals(q),
+    'totals after recompute': E => q => E.quoteTotals(E.recomputeQuotePricing(q)),
+    grandTotal: E => q => E.quoteGrandTotal(E.recomputeQuotePricing(q)),
+    hours: E => q => E.withPricingStatus(q),
+    bom: E => q => E.quoteMaterialsBom(E.recomputeQuotePricing(q)),
+  };
+  for (const q of Object.values(REAL)) for (const [name, view] of Object.entries(views))
+    assert.deepEqual(view(P)(clone(q)), view(BASE.P)(clone(q)), `${q.id}: ${name}`);
 });
 
 test('lock-quotes migration skips website orders', () => {
