@@ -13,13 +13,13 @@ let calcDesignHrsPerRoom = null;
 let recomputeQuotePricing = null;
 let quoteGrandTotal = null;
 let quoteMaterialsBom = null;
-let withPricingStatus = null, lockQuote = null, quoteSettings = null, applySettings = null, validateSettings = null, ENGINE_VERSION = null;
+let withPricingStatus = null, lockQuote = null, quoteSettings = null, applySettings = null, validateSettings = null, ENGINE_VERSION = null, lockedChange = null;
 let PRICING_DB = null, FRAME_MATERIALS = null, EDGEBAND_TYPES = null; // lookup tables for /api/cabinet-cost
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
   ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES,
-     withPricingStatus, lockQuote, quoteSettings, applySettings, validateSettings, ENGINE_VERSION } = require(path.join(__dirname, 'public', 'pricing.js')));
+     withPricingStatus, lockQuote, quoteSettings, applySettings, validateSettings, ENGINE_VERSION, lockedChange } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
   pricingEngineError = err.message;
@@ -100,6 +100,15 @@ function guardWrite(quote, storedLock, trusted) {
   if (isLock(storedLock)) return trusted && isLock(quote && quote.pricingLock) ? { data: quote } : { reject: true };
   if (storedLock !== undefined || !quote || !lockQuote || isLocked(quote)) return { data: quote };
   return { data: isLock(quote.pricingLock) ? quote : lockQuote(recomputeQuotePricing(quote, { onlyUnpriced: true })) };
+}
+
+// Writes to a stored website order: whoever sends it, only what pricing.js → lockedChange
+// allows (the status / Deleted folder) may change — and nothing at all without the engine.
+// null = not a website order (guardWrite applies).
+function guardLocked(quote, stored) {
+  if (!isLocked(stored)) return null;
+  const field = lockedChange ? lockedChange(stored, quote || {}) : 'any field (pricing engine not loaded)';
+  return field ? { reject: 409, error: `This quote is a paid website order and is locked — only its status can change (refused: ${field}).` } : { data: quote };
 }
 
 // Shared pricing settings (the Settings page's DB JSON), stored once in Postgres and
@@ -494,10 +503,13 @@ app.put('/api/quotes/:id', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });
   const { id } = req.params;
   try {
-    // Price-lock guard (see guardWrite), then stamp the grand total from the client's own
-    // item pricing so it matches what the UI displayed.
-    const { rows } = await pool.query("SELECT data->'pricingLock' AS lock FROM quotes WHERE id = $1", [id]);
-    const g = guardWrite(req.body, rows.length ? rows[0].lock : undefined, !!req.get(PRICING_CLIENT_HEADER));
+    // Website-order and price-lock guards (see guardLocked / guardWrite), then stamp the
+    // grand total from the client's own item pricing so it matches what the UI displayed.
+    const { rows } = await pool.query('SELECT data FROM quotes WHERE id = $1', [id]);
+    const stored = rows.length ? rows[0].data : undefined;
+    const locked = guardLocked(req.body, stored);
+    if (locked && locked.reject) return res.status(locked.reject).json({ error: locked.error });
+    const g = locked || guardWrite(req.body, rows.length ? ((stored && stored.pricingLock) ?? null) : undefined, !!req.get(PRICING_CLIENT_HEADER));
     if (g.reject) return res.status(409).json({ error: 'This quote is price-locked. Reload the calculator to edit the locked version.' });
     const data = withGrandTotal(g.data);
     await pool.query(
@@ -522,8 +534,11 @@ app.patch('/api/quotes/:id', async (req, res) => {
     // Read current data, merge patch fields into it, write back
     const { rows } = await pool.query('SELECT data FROM quotes WHERE id = $1', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    // The lock is never patchable, nor are a locked quote's priced items.
+    // The lock is never patchable, nor are a locked quote's priced items, nor anything
+    // but a website order's status.
     const { pricingLock, ...safe } = patch || {};
+    const locked = guardLocked({ ...rows[0].data, ...safe }, rows[0].data);
+    if (locked && locked.reject) return res.status(locked.reject).json({ error: locked.error });
     if (isLock(rows[0].data.pricingLock)) delete safe.rooms;
     // Re-stamp the grand total in case the patch touched pricing-affecting fields.
     const updated = withGrandTotal({ ...rows[0].data, ...safe });
@@ -582,9 +597,10 @@ app.post('/api/quotes/sync', async (req, res) => {
       const clientTime = quote.updated_at ? new Date(quote.updated_at) : new Date(0);
       const serverEntry = serverMap[id];
 
-      // Price-lock guard (see guardWrite): a refused write keeps the server copy.
+      // Website-order and price-lock guards (see guardLocked / guardWrite): a refused
+      // write keeps the server copy.
       const g = (!serverEntry || clientTime > new Date(serverEntry.updated_at))
-        ? guardWrite(quote, serverEntry ? (serverEntry.data.pricingLock || null) : undefined, trusted)
+        ? guardLocked(quote, serverEntry && serverEntry.data) || guardWrite(quote, serverEntry ? (serverEntry.data.pricingLock || null) : undefined, trusted)
         : null;
       if (g && !g.reject) {
         // Client is newer — upsert to server, stamping the grand total so the

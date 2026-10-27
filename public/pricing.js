@@ -445,6 +445,18 @@ const isPricingLock = l => !!(l && typeof l === "object" && l.settings && typeof
 // deposit, balance }. It is never priced, repriced or re-totalled — its totals ARE the
 // paid figures. See docs/configurator-quotes.md.
 const isLocked = q => !!(q && q.locked === true);
+// All a write may still change on one: its folder (the status, the Deleted folder) and
+// the timestamps the app keeps. The server refuses anything else; the UI never sends it.
+const LOCKED_EDITABLE = new Set(["status", "deleted", "deletedAt", "updated_at", "_serverUpdatedAt"]);
+// The first field `next` would change on website order `stored` that may not change, else
+// null. Key order is ignored (Postgres JSONB re-orders keys).
+function lockedChange(stored, next) {
+  const canon = v => JSON.stringify(v, (k, x) => x && typeof x === "object" && !Array.isArray(x)
+    ? Object.keys(x).sort().reduce((o, key) => (o[key] = x[key], o), {}) : x);
+  for (const k of new Set([...Object.keys(stored), ...Object.keys(next)]))
+    if (!LOCKED_EDITABLE.has(k) && canon(stored[k]) !== canon(next[k])) return k;
+  return null;
+}
 
 function lockQuote(quote) {
   return { ...quote, pricingLock: { engineVersion: ENGINE_VERSION, lockedAt: new Date().toISOString(), settings: JSON.parse(JSON.stringify(DB.settings)) } };
@@ -1539,7 +1551,7 @@ function quoteMaterialsBom(quote) {
     calcDesignHrsPerRoom, calcDesignTimePerRoom,
     getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
     recomputeQuotePricing, quoteMaterialsBom,
-    ENGINE_VERSION, applySettings, settingsDiff, validateSettings, settingsFingerprint, pricingId, isPricingLock, isLocked, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
+    ENGINE_VERSION, applySettings, settingsDiff, validateSettings, settingsFingerprint, pricingId, isPricingLock, isLocked, lockedChange, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") Object.assign(window, api);
 })();

@@ -99,6 +99,63 @@ test('PUT and sync store a new website order as sent, never priced or price-lock
   for (const q of [ORDER, other]) assert.deepEqual(pool.rows.get(q.id).data, { ...q, ...STAMPED });
 }));
 
+// ─── 2. server guard: nothing on it may change but its status ───────────────
+const STORED = { ...ORDER, ...STAMPED }; // as the server stores it
+const EDITS = {
+  'item price': q => { q.rooms.Utility.items[0].pricing.totalSellExVAT = 1; },
+  'item qty': q => { q.rooms.Utility.items[0].qty = 3; },
+  'item added': q => { q.rooms.Utility.items.push({ type: 'custom', description: 'Extra', qty: 1, params: {} }); },
+  'item deleted': q => { q.rooms.Utility.items.pop(); },
+  'margin': q => { q.marginOverride = 3; },
+  'room field': q => { q.rooms.Utility.includeDesignTime = true; },
+  'room added': q => { q.rooms.Kitchen = { items: [] }; },
+  'paid figures': q => { q.paid.exVat = 1000; },
+  'project costs': q => { q.projectCosts = P.getDefaultProjectCosts(); },
+  'unlocked': q => { delete q.locked; },
+};
+const edited = name => { const q = clone(STORED); EDITS[name](q); return q; };
+const LOCKED_409 = /paid website order and is locked — only its status can change/;
+
+test('PUT refuses any change to a website order\'s prices, items, margin, rooms or paid figures (409), even from lock-aware code', () => withServer({ [ORDER.id]: STORED }, async (s, pool) => {
+  for (const name of Object.keys(EDITS)) for (const headers of [{}, { 'X-Pricing-Engine': P.ENGINE_VERSION }]) {
+    const r = await s.call('PUT', `/api/quotes/${ORDER.id}`, edited(name), headers);
+    assert.equal(r.status, 409, name);
+    assert.match(r.body.error, LOCKED_409, name);
+  }
+  assert.deepEqual(pool.rows.get(ORDER.id).data, STORED);
+}));
+
+test('PATCH refuses the same changes (409); sync keeps the server copy', () => withServer({ [ORDER.id]: STORED }, async (s, pool) => {
+  for (const patch of [{ marginOverride: 3 }, { paid: { ...ORDER.paid, exVat: 1000 } }, { rooms: {} }, { locked: false }, { status: 'archive', projectCosts: {} }]) {
+    const r = await s.call('PATCH', `/api/quotes/${ORDER.id}`, patch);
+    assert.equal(r.status, 409, JSON.stringify(patch));
+    assert.match(r.body.error, LOCKED_409);
+  }
+  const newer = { ...edited('item price'), updated_at: '2030-01-01T00:00:00.000Z' };
+  const r = await s.call('POST', '/api/quotes/sync', { quotes: { [ORDER.id]: newer } }, { 'X-Pricing-Engine': P.ENGINE_VERSION });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.quotes[ORDER.id], STORED);
+  assert.deepEqual(pool.rows.get(ORDER.id).data, STORED);
+}));
+
+test('the status (and the Deleted folder) still changes by PUT, PATCH and sync — and nothing else moves', () => withServer({ [ORDER.id]: STORED }, async (s, pool) => {
+  // What the browser sends: its copy from GET (with _serverUpdatedAt), newly timestamped.
+  const copy = { ...clone(STORED), _serverUpdatedAt: '2026-10-27T09:00:00.000Z', updated_at: '2026-10-27T10:00:00.000Z' };
+  const engine = { 'X-Pricing-Engine': P.ENGINE_VERSION };
+  assert.equal((await s.call('PUT', `/api/quotes/${ORDER.id}`, { ...copy, status: 'archive' }, engine)).status, 200);
+  assert.equal(pool.rows.get(ORDER.id).data.status, 'archive');
+  assert.equal((await s.call('PATCH', `/api/quotes/${ORDER.id}`, { status: 'lost' })).status, 200);
+  assert.equal(pool.rows.get(ORDER.id).data.status, 'lost');
+  const deletedAt = '2026-10-27T11:00:00.000Z';
+  assert.equal((await s.call('PUT', `/api/quotes/${ORDER.id}`, { ...copy, status: 'lost', deleted: true, deletedAt })).status, 200);
+  const synced = await s.call('POST', '/api/quotes/sync', { quotes: { [ORDER.id]: { ...copy, status: 'sold', deleted: true, deletedAt, updated_at: '2030-01-01T00:00:00.000Z' } } }, engine);
+  assert.equal(synced.body.quotes[ORDER.id].status, 'sold');
+  const { status, deleted, deletedAt: at, updated_at, _serverUpdatedAt, ...rest } = pool.rows.get(ORDER.id).data;
+  assert.deepEqual([status, deleted, at], ['sold', true, deletedAt]);
+  const { status: s0, updated_at: u0, ...unchanged } = STORED;
+  assert.deepEqual(rest, unchanged);
+}));
+
 test('lock-quotes migration skips website orders', () => {
   const { analyseQuote } = require(path.join(ROOT, 'scripts', 'lock-quotes.js'));
   const a = analyseQuote(clone(ORDER));
