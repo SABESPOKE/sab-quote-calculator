@@ -9,6 +9,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
+const { spawn } = require('node:child_process');
 
 delete process.env.DATABASE_URL; // never touch a real DB from tests
 delete process.env.APP_PASSWORD;  // auth off, as in local dev
@@ -155,6 +157,162 @@ test('the status (and the Deleted folder) still changes by PUT, PATCH and sync �
   const { status: s0, updated_at: u0, ...unchanged } = STORED;
   assert.deepEqual(rest, unchanged);
 }));
+
+// ─── 3. UI: headless Chrome over the DevTools protocol ───────────────────────
+// Needs Chrome (CHROME_PATH), Node 22+ (global WebSocket) and the CDN (React / Babel).
+// SCREENSHOT_DIR=<dir> also saves screenshots of each screen.
+const CHROME = process.env.CHROME_PATH || ['C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/google-chrome',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find(p => fs.existsSync(p));
+async function browser() {
+  const proc = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', '--window-size=1440,1000', '--no-first-run',
+    `--user-data-dir=${fs.mkdtempSync(path.join(os.tmpdir(), 'sab-chrome-'))}`, 'about:blank']);
+  const port = await new Promise((resolve, reject) => {
+    let err = '';
+    proc.stderr.on('data', d => { err += d; const m = err.match(/ws:\/\/127\.0\.0\.1:(\d+)\//); if (m) resolve(m[1]); });
+    proc.on('exit', () => reject(new Error(`chrome exited: ${err}`)));
+  });
+  const [page] = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).filter(t => t.type === 'page');
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise(resolve => ws.addEventListener('open', resolve, { once: true }));
+  let n = 0;
+  const waiting = new Map();
+  ws.addEventListener('message', e => { const m = JSON.parse(e.data); if (waiting.has(m.id)) { waiting.get(m.id)(m.result); waiting.delete(m.id); } });
+  const send = (method, params = {}) => new Promise(resolve => { waiting.set(++n, resolve); ws.send(JSON.stringify({ id: n, method, params })); });
+  const js = async expr => {
+    const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });
+    if (r.exceptionDetails) throw new Error(`${r.exceptionDetails.exception?.description || r.exceptionDetails.text} in: ${expr.slice(0, 200)}`);
+    return r.result.value;
+  };
+  const until = async (expr, ms = 15000) => {
+    for (const t0 = Date.now(); Date.now() - t0 < ms; await new Promise(r => setTimeout(r, 100))) if (await js(expr)) return;
+    throw new Error(`timed out waiting for: ${expr}`);
+  };
+  // Click the LAST (deepest) element matching `sel` whose text contains every one of `texts`.
+  const click = (sel, ...texts) => js(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(sel)})]
+    .filter(e => ${JSON.stringify(texts)}.every(t => e.textContent.includes(t))).pop();
+    if (!el) throw new Error('nothing to click: ' + ${JSON.stringify(`${sel} ${texts.join(' + ')}`)}); el.click(); return true; })()`);
+  const shot = async name => {
+    if (!process.env.SCREENSHOT_DIR) return;
+    fs.mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true });
+    fs.writeFileSync(path.join(process.env.SCREENSHOT_DIR, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  };
+  return { js, until, click, shot, send, close: () => { ws.close(); proc.kill(); } };
+}
+const settle = ms => new Promise(r => setTimeout(r, ms));
+const rootText = `document.getElementById('root').textContent`; // rendered text only (body also holds the JSX source)
+const BUILD_STATE = `(() => {
+  const panel = document.querySelector('.sab-items-panel'), text = ${rootText};
+  const buttons = t => [...document.querySelectorAll('button')].filter(e => e.textContent.trim() === t);
+  const off = e => e.matches(':disabled'); // also true inside a disabled <fieldset>, unlike e.disabled
+  return {
+    badges: text.split('From website — price locked').length - 1,
+    addItem: buttons('+ Add Item').map(off),
+    edit: buttons('Edit').map(off),
+    enabledInItems: [...panel.querySelectorAll('input, select, textarea, button')].filter(e => !off(e)).length,
+  };
+})()`;
+
+test('UI: a website order shows the badge and its paid figures, is read-only, and its status still changes', {
+  skip: (!CHROME && 'Chrome not found (set CHROME_PATH)') || (typeof WebSocket === 'undefined' && 'needs Node 22+ (global WebSocket)'),
+  timeout: 180000,
+}, () => {
+  const CONTROL = P.lockQuote({ id: 'Q1790000000000', client: 'Jane Example', project: 'Kitchen', ref: 'SAB-2026-101', created: '01/10/2026', status: 'sold',
+    rooms: { Kitchen: { includeDesignTime: false, items: [{ type: 'door', description: 'Shaker door', qty: 1, params: { doorType: 'SHAKER_PNT', widthMm: 500, heightMm: 720 } }].map(it => ({ ...it, pricing: P.priceItem(it) })) } },
+    projectCosts: P.getDefaultProjectCosts() });
+  return withServer({ [ORDER.id]: STORED, [CONTROL.id]: CONTROL }, async (s, pool) => {
+    const b = await browser();
+    try {
+      await b.send('Page.navigate', { url: `${s.base}/` });
+      await b.until(`!!document.getElementById('root') && ${rootText}.includes('Sold (2)')`, 90000).catch(e => { throw new Error(`${e.message} — the app never rendered (offline? it loads React/Babel from unpkg)`); });
+      await b.js(`window.__alerts = []; window.alert = m => { window.__alerts.push(String(m)); }; true`);
+
+      // The browser's load path leaves a website order exactly as paid — even one that would trip a migration.
+      const odd = clone(STORED);
+      odd.projectCosts = { includeSurvey: false };
+      odd.rooms.Utility.items[0].params.fillerCount = 1;
+      assert.equal(await b.js(`JSON.stringify(ensurePricing({ x: ${JSON.stringify(odd)} }).x) === ${JSON.stringify(JSON.stringify(odd))}`), true, 'ensurePricing changed a website order');
+
+      // List: the badge on the website order's card.
+      await b.click('button', 'Sold (');
+      await b.click('div', 'Jane Example', '2 quotes');
+      await b.until(`${rootText}.includes('WEB-1042')`);
+      assert.equal(await b.js(`${rootText}.split('From website — price locked').length - 1`), 1, 'list badge');
+      await b.shot('1-list-badge.png');
+
+      // Build view: badge + the paid figures as entered; nothing to add, edit or delete.
+      await b.click('div', 'WEB-1042');
+      await b.until(`!!document.querySelector('.sab-items-panel')`);
+      await settle(300);
+      await b.shot('2-build-locked.png');
+      const ui = await b.js(BUILD_STATE);
+      assert.equal(ui.badges, 2, 'header badge + paid-figures panel');
+      assert.deepEqual(ui.addItem, [true, true], '+ Add Item disabled');
+      assert.deepEqual(ui.edit, [true, true], 'Edit disabled');
+      assert.equal(ui.enabledInItems, 0, 'every price / item / margin control in the items panel is disabled');
+      assert.equal(await b.js(`['£1,250.00', '£250.00', '£1,500.00', '£750.00'].every(v => ${rootText}.includes(v))`), true, 'paid figures');
+      assert.equal(await b.js(`document.querySelector('.sab-rooms-panel fieldset').disabled && !document.querySelector('input[placeholder="Room name…"]')`), true, 'rooms panel read-only');
+      assert.equal(await b.js(`[...document.querySelectorAll('button')].some(e => /^(Reprice…|⧉|⚙)$/.test(e.textContent.trim()))`), false, 'no reprice / duplicate-room / room-setup');
+      assert.equal(await b.js(`document.querySelector('input[placeholder^="Describe items"]').matches(':disabled')`), true, 'AI chat disabled');
+      // A toggle the fieldset can't disable is undone by saveQuotes and never sent.
+      await b.click('div', 'Items are alternatives');
+      await settle(900);
+      assert.equal(await b.js(`${rootText}.includes('✓Items are alternatives')`), false, 'toggle undone');
+      assert.deepEqual(pool.rows.get(ORDER.id).data, STORED);
+
+      await b.click('button', 'Margin');
+      await b.until(`${rootText}.includes('Cost & Margin Analysis')`);
+      assert.equal(await b.js(`['£1,250.00', '£250.00', '£1,500.00'].every(v => ${rootText}.includes(v))`), true, 'margin view totals = paid');
+      await b.shot('3-margin-locked.png');
+      await b.click('button', 'Client View');
+      await b.until(`${rootText}.includes('Total (inc VAT)')`);
+      assert.equal(await b.js(`${rootText}.includes('£1,500.00')`), true, 'client view total = paid gross');
+      await b.shot('4-client-view-locked.png');
+
+      // Status still changes (⋮ → Archive): the PATCH and the whole-quote PUT are both accepted.
+      await b.click('button', '← All');
+      await b.until(`${rootText}.includes('WEB-1042')`);
+      await b.js(`(() => { const card = e => { while (!e.textContent.includes('Jane Example')) e = e.parentElement; return e; };
+        [...document.querySelectorAll('button')].find(e => e.textContent.trim() === '⋮' && card(e).textContent.includes('WEB-1042')).click(); return true; })()`);
+      await b.click('div', 'Archive');
+      for (const t0 = Date.now(); !pool.rows.get(ORDER.id).data._serverUpdatedAt && Date.now() - t0 < 10000;) await settle(100);
+      const { status, updated_at, _serverUpdatedAt, ...rest } = pool.rows.get(ORDER.id).data;
+      const { status: s0, updated_at: u0, ...unchanged } = STORED;
+      assert.equal(status, 'archive');
+      assert.ok(_serverUpdatedAt, 'the whole-quote PUT landed');
+      assert.deepEqual(rest, unchanged);
+      assert.deepEqual(await b.js('window.__alerts'), []);
+
+      // ⋮ → Duplicate: the copy is an ordinary, editable quote at the order's item prices.
+      await b.click('button', 'Archive (');
+      await b.until(`${rootText}.includes('WEB-1042')`);
+      await b.click('button', '⋮');
+      await b.click('div', 'Duplicate quote');
+      await b.until(`!!document.querySelector('.sab-rooms-panel')`);
+      await b.click('div', 'Utility', '2 items');
+      await b.until(`!!document.querySelector('.sab-items-table')`);
+      const dup = await b.js(BUILD_STATE);
+      assert.equal(dup.badges, 0);
+      assert.deepEqual(dup.addItem, [false, false]);
+      let copy;
+      for (const t0 = Date.now(); !copy && Date.now() - t0 < 10000; await settle(100)) copy = [...pool.rows].find(([id]) => /^Q\d+$/.test(id) && id !== CONTROL.id);
+      assert.ok(copy, 'the copy was saved');
+      assert.deepEqual([copy[1].data.locked, copy[1].data.paid, copy[1].data.source, P.isPricingLock(copy[1].data.pricingLock)], [undefined, undefined, undefined, true]);
+      assert.deepEqual(copy[1].data.rooms.Utility.items.map(i => i.pricing.totalSellExVAT), [1190, 60]);
+
+      // Control: an ordinary quote is editable as before.
+      await b.click('button', '← All');
+      await b.click('button', 'Sold (');
+      await b.click('div', 'SAB-2026-101');
+      await b.until(`!!document.querySelector('.sab-items-panel')`);
+      await settle(300);
+      const ctl = await b.js(BUILD_STATE);
+      assert.equal(ctl.badges, 0);
+      assert.deepEqual(ctl.addItem, [false, false]);
+      assert.ok(ctl.enabledInItems > 5);
+      await b.shot('5-unlocked-control.png');
+    } finally { b.close(); }
+  });
+});
 
 test('lock-quotes migration skips website orders', () => {
   const { analyseQuote } = require(path.join(ROOT, 'scripts', 'lock-quotes.js'));
