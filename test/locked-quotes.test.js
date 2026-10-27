@@ -20,7 +20,7 @@ const P = require(path.join(ROOT, 'public', 'pricing.js'));
 const clone = o => JSON.parse(JSON.stringify(o));
 const ORDER = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'website-order.json'), 'utf8'));
 const STAMPED = { totalSellExVAT: 1250, totalSellIncVAT: 1500 }; // the paid figures, as the server stamps them
-const CREATED = q => ({ ...P.withWorkshopHours(q), ...STAMPED });  // a new order as the server stores it
+const CREATED = q => ({ ...P.onOrderCreate(q), ...STAMPED });  // a new order as the server stores it
 
 // ─── in-memory Postgres (only the statements server.js runs) ─────────────────
 // JSONB returns object keys shorter-first, then bytewise — never in the order sent.
@@ -560,6 +560,26 @@ test('re-sending the order — even after Settings change the engine — never r
     assert.deepEqual(now.rooms, first.rooms);
     assert.equal(money(now), money(first));
   } finally { paint.topCoatSprayHrsPerM2 = was; }
+}));
+
+// ─── 8. supply only: a website order has no installation ─────────────────────
+// sab-orchestrator's detectSupplyOnly reads projectCosts.installDaysByRoom (after the
+// Business API's fitting estimate). QC sets every room to 0 when the order is created.
+test('a new website order is supply only: installDaysByRoom 0 for every room, set once — money byte-identical', () => withServer({}, async (s, pool) => {
+  const order = fullOrder();
+  order.rooms.Boot = { includeDesignTime: false, items: [] };
+  order.projectCosts = { installDaysByRoom: { Utility: 3 } };  // even if the configurator sends install days
+  const before = money(order);
+  assert.equal((await s.call('PUT', `/api/quotes/${order.id}`, order)).status, 200);
+  const stored = pool.rows.get(order.id).data;
+  assert.deepEqual(stored.projectCosts.installDaysByRoom, { Utility: 0, Boot: 0 });
+  assert.equal(money(stored), before, 'money must not move');
+  // Never changed afterwards: a re-send (with or without install days) keeps it; other project costs are still refused.
+  const first = clone(stored);
+  for (const body of [order, { ...clone(order), projectCosts: undefined }, { ...clone(order), projectCosts: { installDaysByRoom: { Utility: 5 } } }])
+    assert.equal((await s.call('PUT', `/api/quotes/${order.id}`, body)).status, 200);
+  assert.deepEqual(pool.rows.get(order.id).data, first);
+  assert.equal((await s.call('PUT', `/api/quotes/${order.id}`, { ...clone(order), projectCosts: { includeInstall: true } })).status, 409);
 }));
 
 test('lock-quotes migration skips website orders', () => {

@@ -13,13 +13,13 @@ let calcDesignHrsPerRoom = null;
 let recomputeQuotePricing = null;
 let quoteGrandTotal = null;
 let quoteMaterialsBom = null;
-let withPricingStatus = null, lockQuote = null, quoteSettings = null, applySettings = null, validateSettings = null, ENGINE_VERSION = null, lockedChange = null, lockedMerge = null, withWorkshopHours = null;
+let withPricingStatus = null, lockQuote = null, quoteSettings = null, applySettings = null, validateSettings = null, ENGINE_VERSION = null, lockedChange = null, lockedMerge = null, onOrderCreate = null;
 let PRICING_DB = null, FRAME_MATERIALS = null, EDGEBAND_TYPES = null; // lookup tables for /api/cabinet-cost
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
   ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES,
-     withPricingStatus, lockQuote, quoteSettings, applySettings, validateSettings, ENGINE_VERSION, lockedChange, lockedMerge, withWorkshopHours } = require(path.join(__dirname, 'public', 'pricing.js')));
+     withPricingStatus, lockQuote, quoteSettings, applySettings, validateSettings, ENGINE_VERSION, lockedChange, lockedMerge, onOrderCreate } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
   pricingEngineError = err.message;
@@ -105,7 +105,7 @@ function guardWrite(quote, storedLock, trusted) {
 // Website orders. Stored: whoever writes, only what pricing.js → lockedChange allows (the
 // status / Deleted folder) may change, and only those fields are taken (lockedMerge) —
 // nothing at all without the engine. New: must be a valid order (lockedOrderErrors), and
-// gets its workshop hours, once (withWorkshopHours). null = not a website order.
+// gets what QC derives for it, once (onOrderCreate). null = not a website order.
 function guardLocked(quote, stored, id) {
   if (isLocked(stored)) {
     const field = lockedChange ? lockedChange(stored, quote || {}) : 'any field (pricing engine not loaded)';
@@ -114,7 +114,7 @@ function guardLocked(quote, stored, id) {
   if (!isLocked(quote)) return null;
   const errors = lockedOrderErrors(quote, id);
   if (errors.length) return { reject: 400, error: 'Not a valid website order — see docs/configurator-quotes.md', errors };
-  return withWorkshopHours ? { data: withWorkshopHours(quote) } : { reject: 503, error: 'Pricing engine not loaded — send the order again shortly' };
+  return onOrderCreate ? { data: onOrderCreate(quote) } : { reject: 503, error: 'Pricing engine not loaded — send the order again shortly' };
 }
 
 // What a new website order must carry (docs/configurator-quotes.md). Amounts in £, to the

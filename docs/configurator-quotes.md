@@ -80,6 +80,12 @@ Orchestrator schedules the workshop from.
 - A re-send never recomputes the hours, and any hour fields in a write are ignored.
 - Items the engine can't price (`custom` lines) carry no hours.
 
+### Supply only (QC sets it)
+
+A website order has no installation. When QC creates one, it sets
+`projectCosts.installDaysByRoom` to `0` for every room, replacing anything sent there.
+Like the hours, this is set once and never changed by a re-send.
+
 Why the lines must add up: the Client View and the PDF total the lines and add VAT at the
 rate in QC's Settings (20% today). When the lines sum to `exVat` and `vat` is that rate
 of it, those two views show exactly the paid figures. Build, Margin and the list always
@@ -88,7 +94,8 @@ show `paid` itself.
 ### Fields not to send
 
 Leave these out: `pricingLock`, `projectCosts`, `marginOverride`, `totalSellExVAT` and
-`totalSellIncVAT`. QC sets the last two from `paid`.
+`totalSellIncVAT`. QC sets the last two from `paid`, and sets
+`projectCosts.installDaysByRoom` itself (see Supply only).
 
 ## Responses
 

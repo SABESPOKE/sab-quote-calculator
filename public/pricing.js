@@ -452,18 +452,20 @@ const isLocked = q => !!(q && q.locked === true);
 const LOCKED_EDITABLE = new Set(["status", "deleted", "deletedAt", "updated_at", "_serverUpdatedAt", "totalSellExVAT", "totalSellIncVAT"]);
 // Workshop hours in an engine breakdown: every *Hrs / *Hours figure and the spray split.
 const isHourKey = k => /(Hrs|Hours)$/.test(k) || k === "sprayDetail";
+// Fields QC sets itself, once, when the order is created (onOrderCreate), by the key of the
+// object holding them: never compared, never taken from a write (lockedMerge).
+const QC_OWNED = { breakdown: isHourKey, projectCosts: k => k === "installDaysByRoom" };
 // The first field `next` would change on website order `stored` that may not change, else
-// null. Key order is ignored (Postgres JSONB re-orders keys), and so are the hours in an
-// item's breakdown: QC sets those itself, once (withWorkshopHours), and never takes them
-// from a write (lockedMerge).
+// null. Key order is ignored (Postgres JSONB re-orders keys), and so are QC_OWNED fields.
 function lockedChange(stored, next) {
   const canon = v => JSON.stringify(v, (k, x) => {
     if (!x || typeof x !== "object" || Array.isArray(x)) return x;
-    const keys = Object.keys(x).filter(key => !(k === "breakdown" && isHourKey(key))).sort();
-    return k === "breakdown" && !keys.length ? undefined : keys.reduce((o, key) => (o[key] = x[key], o), {}); // hours-only = none
+    const owned = QC_OWNED[k];
+    const keys = Object.keys(x).filter(key => !(owned && owned(key))).sort();
+    return owned && !keys.length && Object.keys(x).length ? undefined : keys.reduce((o, key) => (o[key] = x[key], o), {}); // only QC's own = none
   });
   for (const k of new Set([...Object.keys(stored), ...Object.keys(next)]))
-    if (!LOCKED_EDITABLE.has(k) && canon(stored[k]) !== canon(next[k])) return k;
+    if (!LOCKED_EDITABLE.has(k) && canon({ [k]: stored[k] }) !== canon({ [k]: next[k] })) return k;
   return null;
 }
 // An accepted write to a stored website order: the stored order, with only the editable
@@ -489,6 +491,15 @@ function withWorkshopHours(quote) {
     }) };
   }
   return { ...quote, rooms };
+}
+// Everything QC derives for a website order, once, when it is created: the workshop hours,
+// and supply only — 0 install days for every room (what the Orchestrator's supply-only
+// check reads; QC itself never stores an explicit 0 for an ordinary quote's room). Note:
+// that check consults the Business API's fitting estimate first, which is never 0 days.
+function onOrderCreate(quote) {
+  const q = withWorkshopHours(quote);
+  const installDaysByRoom = Object.fromEntries(Object.keys(q.rooms || {}).map(r => [r, 0]));
+  return { ...q, projectCosts: { ...(q.projectCosts || {}), installDaysByRoom } };
 }
 
 function lockQuote(quote) {
@@ -1584,7 +1595,7 @@ function quoteMaterialsBom(quote) {
     calcDesignHrsPerRoom, calcDesignTimePerRoom,
     getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
     recomputeQuotePricing, quoteMaterialsBom,
-    ENGINE_VERSION, applySettings, settingsDiff, validateSettings, settingsFingerprint, pricingId, isPricingLock, isLocked, lockedChange, lockedMerge, withWorkshopHours, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
+    ENGINE_VERSION, applySettings, settingsDiff, validateSettings, settingsFingerprint, pricingId, isPricingLock, isLocked, lockedChange, lockedMerge, withWorkshopHours, onOrderCreate, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") Object.assign(window, api);
 })();
