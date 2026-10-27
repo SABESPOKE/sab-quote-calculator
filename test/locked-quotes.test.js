@@ -582,6 +582,39 @@ test('a new website order is supply only: installDaysByRoom 0 for every room, se
   assert.equal((await s.call('PUT', `/api/quotes/${order.id}`, { ...clone(order), projectCosts: { includeInstall: true } })).status, 409);
 }));
 
+// ─── 9. materials list: built once, when the order is created ────────────────
+// What sab-orchestrator's task sync reads from GET /api/quotes → materialsBom (task-sync.js
+// → frames-scope ensureFrameTimberLines → materials-derive deriveFromBom): these groups, and
+// in each row its key plus count / target / sheets / areaM2 / linealM.
+const BOM_ROWS = { carcass: ['areaM2', 'key', 'sheets'], doors: ['areaM2', 'count', 'key'], drawerBoxes: ['count', 'key'],
+  frames: ['key', 'linealM'], edgeband: ['key', 'linealM'], hardware: ['count', 'key'], handles: ['count', 'key', 'target'] };
+
+test('a new website order carries its materials list, built once from its items as for a normal quote — money byte-identical', () => withServer({}, async (s, pool) => {
+  const order = fullOrder();
+  order.rooms.Utility.items.push({ type: 'cabinet', description: 'Framed wall cabinet', qty: 1,
+    params: { widthMm: 600, heightMm: 720, depthMm: 330, carcassMaterialKey: 'MAT_OAK_MDF_PREF_19', doorCount: 1, doorType: 'SHAKER_PNT', frameKey: 'FRAME_TIM_OAK', handleKey: 'HW_HDL_KNOB' },
+    pricing: { costPerUnit: 50, sellPerUnit: 100, totalCost: 50, totalSellExVAT: 100, totalSellIncVAT: 120 } });
+  order.paid = { exVat: 1950, vat: 390, gross: 2340, deposit: 1170, balance: 1170 };
+  const before = money(order);
+  assert.equal((await s.call('PUT', `/api/quotes/${order.id}`, order)).status, 200);
+  const stored = pool.rows.get(order.id).data;
+  assert.equal(money(stored), before, 'money must not move');
+  const normal = P.quoteMaterialsBom(P.recomputeQuotePricing({ ...clone(order), locked: false }));
+  assert.deepEqual(stored.materialsBom, normal, 'the list GET gives an ordinary quote with these items');
+  for (const [group, fields] of Object.entries(BOM_ROWS)) {
+    assert.ok(Array.isArray(stored.materialsBom[group]), `${group} present`);
+    for (const row of stored.materialsBom[group]) assert.deepEqual(Object.keys(row).sort(), fields, `${group} row fields`);
+  }
+  for (const group of ['carcass', 'doors', 'frames', 'edgeband', 'hardware', 'handles']) assert.ok(stored.materialsBom[group].length, `${group} has lines`);
+  assert.deepEqual((await s.call('GET', '/api/quotes')).body[order.id].materialsBom, stored.materialsBom, 'GET serves it');
+  // Never rebuilt: the stored list survives any re-send exactly.
+  pool.rows.get(order.id).data.materialsBom = { carcass: [{ key: 'AS_BUILT_AT_CREATE', areaM2: 1, sheets: 1 }] };
+  const asStored = clone(pool.rows.get(order.id).data);
+  for (const body of [order, { ...clone(order), materialsBom: {} }, { ...clone(order), materialsBom: null }])
+    assert.equal((await s.call('PUT', `/api/quotes/${order.id}`, body)).status, 200);
+  assert.deepEqual(pool.rows.get(order.id).data, asStored);
+}));
+
 test('lock-quotes migration skips website orders', () => {
   const { analyseQuote } = require(path.join(ROOT, 'scripts', 'lock-quotes.js'));
   const a = analyseQuote(clone(ORDER));

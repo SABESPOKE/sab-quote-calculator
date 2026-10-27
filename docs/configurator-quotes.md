@@ -86,6 +86,14 @@ A website order has no installation. When QC creates one, it sets
 `projectCosts.installDaysByRoom` to `0` for every room, replacing anything sent there.
 Like the hours, this is set once and never changed by a re-send.
 
+### Materials list (QC adds it; don't send it)
+
+When QC creates the order, it builds `materialsBom` once from the items. It's the same
+bill of materials QC serves for a normal quote: groups `carcass`, `doors`,
+`drawerBoxes`, `frames`, `edgeband`, `hardware` and `handles`, each row with a `key`
+plus `count` / `target` / `sheets` / `areaM2` / `linealM`. A re-send never rebuilds or
+changes it.
+
 Why the lines must add up: the Client View and the PDF total the lines and add VAT at the
 rate in QC's Settings (20% today). When the lines sum to `exVat` and `vat` is that rate
 of it, those two views show exactly the paid figures. Build, Margin and the list always
@@ -152,8 +160,8 @@ checked by `test/locked-quotes.test.js`).
 
 `GET /api/quotes` returns the order exactly as stored, plus `_serverUpdatedAt`,
 `totalSellExVAT = paid.exVat` and `totalSellIncVAT = paid.gross`. That includes the
-workshop hours stored when the order was created. QC never reprices a website order and
-adds no read-time annotations to it (live hours, BOM).
+workshop hours, supply-only install days and materials list stored when the order was
+created. QC never reprices a website order and adds no read-time annotations to it.
 
 A paid order can be moved to QC's Deleted folder and restored, but it can never be
 permanently deleted.

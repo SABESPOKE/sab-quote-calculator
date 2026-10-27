@@ -453,8 +453,8 @@ const LOCKED_EDITABLE = new Set(["status", "deleted", "deletedAt", "updated_at",
 // Workshop hours in an engine breakdown: every *Hrs / *Hours figure and the spray split.
 const isHourKey = k => /(Hrs|Hours)$/.test(k) || k === "sprayDetail";
 // Fields QC sets itself, once, when the order is created (onOrderCreate), by the key of the
-// object holding them: never compared, never taken from a write (lockedMerge).
-const QC_OWNED = { breakdown: isHourKey, projectCosts: k => k === "installDaysByRoom" };
+// object holding them ("" = the quote itself): never compared, never taken from a write (lockedMerge).
+const QC_OWNED = { "": k => k === "materialsBom", breakdown: isHourKey, projectCosts: k => k === "installDaysByRoom" };
 // The first field `next` would change on website order `stored` that may not change, else
 // null. Key order is ignored (Postgres JSONB re-orders keys), and so are QC_OWNED fields.
 function lockedChange(stored, next) {
@@ -492,14 +492,15 @@ function withWorkshopHours(quote) {
   }
   return { ...quote, rooms };
 }
-// Everything QC derives for a website order, once, when it is created: the workshop hours,
-// and supply only — 0 install days for every room (what the Orchestrator's supply-only
-// check reads; QC itself never stores an explicit 0 for an ordinary quote's room). Note:
-// that check consults the Business API's fitting estimate first, which is never 0 days.
+// Everything QC derives for a website order, once, when it is created: the workshop hours;
+// supply only — 0 install days for every room (what the Orchestrator's supply-only check
+// reads; QC itself never stores an explicit 0 for an ordinary quote's room — note that check
+// consults the Business API's fitting estimate first, which is never 0 days); and the
+// materials list, the same quoteMaterialsBom GET adds to an ordinary quote (none → no field).
 function onOrderCreate(quote) {
   const q = withWorkshopHours(quote);
   const installDaysByRoom = Object.fromEntries(Object.keys(q.rooms || {}).map(r => [r, 0]));
-  return { ...q, projectCosts: { ...(q.projectCosts || {}), installDaysByRoom } };
+  return { ...q, projectCosts: { ...(q.projectCosts || {}), installDaysByRoom }, materialsBom: quoteMaterialsBom(quote) || undefined };
 }
 
 function lockQuote(quote) {
