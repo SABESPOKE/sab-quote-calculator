@@ -66,6 +66,20 @@ All amounts are in £. Send them as JSON numbers, not strings, each ≥ 0 and wi
 A discount is a `custom` line with a negative `totalSellExVAT`. The lines must still add
 up to `paid.exVat`.
 
+### Workshop hours (QC adds them; don't send them)
+
+When QC stores a new order, it computes each item's workshop hours once, from the item's
+`type` and `params`, using the same engine as a normal quote. It writes them into that
+item's `pricing.breakdown`, per unit, as `totalHrs`, `assemblyHrs`, `doorHrs`,
+`drawerHrs`, `drawerFrontHrs`, `frameHrs`, `edgebandHrs`, `finishHrs`,
+`carcassFinishHrs`, `labourHours`, `panelHrs`, `shelfHrs`, `mouldingHrs` and
+`sprayDetail`. Each item type gets the fields that apply to it. These are what the
+Orchestrator schedules the workshop from.
+
+- Prices, totals and `paid` are untouched.
+- A re-send never recomputes the hours, and any hour fields in a write are ignored.
+- Items the engine can't price (`custom` lines) carry no hours.
+
 Why the lines must add up: the Client View and the PDF total the lines and add VAT at the
 rate in QC's Settings (20% today). When the lines sum to `exVat` and `vat` is that rate
 of it, those two views show exactly the paid figures. Build, Margin and the list always
@@ -84,7 +98,7 @@ Leave these out: `pricingLock`, `projectCosts`, `marginOverride`, `totalSellExVA
 | `400` | `{ "error": "Not a valid website order — see docs/configurator-quotes.md", "errors": [ … ] }` | Nothing was stored. Every problem is listed. | Fix the body, then send again. |
 | `409` | `{ "error": "This quote is a paid website order and is locked — only its status can change (refused: <field>)." }` | `cfg-<orderId>` already exists with different content. QC never changes a paid order. | Don't retry. Alert a person. |
 | `401` | `{ "error": "unauthorized" }` | The token is missing or wrong. | |
-| `503` | `{ "error": "No database" }` | QC is running without its database. | Retry later. |
+| `503` | `{ "error": "No database" }` or `{ "error": "Pricing engine not loaded — send the order again shortly" }` | QC can't store the order (with its hours) right now. | Retry later. |
 
 ## Example
 
@@ -130,5 +144,9 @@ checked by `test/locked-quotes.test.js`).
 ## Reading it back
 
 `GET /api/quotes` returns the order exactly as stored, plus `_serverUpdatedAt`,
-`totalSellExVAT = paid.exVat` and `totalSellIncVAT = paid.gross`. QC adds no repricing,
-hours or BOM annotations to a website order.
+`totalSellExVAT = paid.exVat` and `totalSellIncVAT = paid.gross`. That includes the
+workshop hours stored when the order was created. QC never reprices a website order and
+adds no read-time annotations to it (live hours, BOM).
+
+A paid order can be moved to QC's Deleted folder and restored, but it can never be
+permanently deleted.

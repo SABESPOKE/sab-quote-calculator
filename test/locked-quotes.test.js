@@ -20,6 +20,7 @@ const P = require(path.join(ROOT, 'public', 'pricing.js'));
 const clone = o => JSON.parse(JSON.stringify(o));
 const ORDER = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'website-order.json'), 'utf8'));
 const STAMPED = { totalSellExVAT: 1250, totalSellIncVAT: 1500 }; // the paid figures, as the server stamps them
+const CREATED = q => ({ ...P.withWorkshopHours(q), ...STAMPED });  // a new order as the server stores it
 
 // ─── in-memory Postgres (only the statements server.js runs) ─────────────────
 // JSONB returns object keys shorter-first, then bytewise — never in the order sent.
@@ -94,11 +95,11 @@ test('GET /api/quotes serves a website order exactly as stored: no reprice, no r
   assert.deepEqual(served, ORDER);
 }));
 
-test('PUT and sync store a new website order as sent, never priced or price-locked; totals = paid', () => withServer({}, async (s, pool) => {
+test('PUT and sync store a new website order as sent (plus its workshop hours, see 7), never priced or price-locked; totals = paid', () => withServer({}, async (s, pool) => {
   const other = { ...clone(ORDER), id: 'cfg-1043' };
   assert.equal((await s.call('PUT', `/api/quotes/${ORDER.id}`, ORDER)).status, 200);
   assert.equal((await s.call('POST', '/api/quotes/sync', { quotes: { [other.id]: other } })).status, 200);
-  for (const q of [ORDER, other]) assert.deepEqual(pool.rows.get(q.id).data, { ...q, ...STAMPED });
+  for (const q of [ORDER, other]) assert.deepEqual(pool.rows.get(q.id).data, CREATED(q));
 }));
 
 // ─── 2. server guard: nothing on it may change but its status ───────────────
@@ -162,13 +163,13 @@ test('the status (and the Deleted folder) still changes by PUT, PATCH and sync �
 test('PUT /api/quotes/cfg-<id> with the same body twice leaves one quote, both answered 200', () => withServer({}, async (s, pool) => {
   for (let i = 0; i < 2; i++) assert.deepEqual(await s.call('PUT', `/api/quotes/${ORDER.id}`, ORDER), { status: 200, body: { ok: true } }, `PUT #${i + 1}`);
   assert.deepEqual([...pool.rows.keys()], [ORDER.id]);
-  assert.deepEqual(pool.rows.get(ORDER.id).data, STORED);
+  assert.deepEqual(pool.rows.get(ORDER.id).data, CREATED(ORDER));
   const { body } = await s.call('GET', '/api/quotes');
   assert.deepEqual(Object.keys(body), [ORDER.id]);
   // A different body for the same order is refused, never merged.
   const r = await s.call('PUT', `/api/quotes/${ORDER.id}`, { ...clone(ORDER), paid: { ...ORDER.paid, exVat: 1000, gross: 1250, balance: 500 } });
   assert.equal(r.status, 409);
-  assert.deepEqual(pool.rows.get(ORDER.id).data, STORED);
+  assert.deepEqual(pool.rows.get(ORDER.id).data, CREATED(ORDER));
 }));
 
 test('a new website order is validated: 400 with every problem listed, nothing stored', () => withServer({}, async (s, pool) => {
@@ -491,6 +492,75 @@ test('a website order can be moved to Deleted and restored, but never permanentl
     assert.equal(pool.rows.has(sold.id), false);
   });
 });
+
+// ─── 7. workshop hours: computed once, when the order is created ─────────────
+// Every breakdown field sab-orchestrator's createProjectFromQuote schedules from
+// (lib/crm/index.js → scheduleFromCalcQuote; lib/scheduling/finish.js reads sprayDetail).
+const ORCHESTRATOR_HOURS = ['totalHrs', 'assemblyHrs', 'doorHrs', 'drawerHrs', 'drawerFrontHrs', 'frameHrs', 'edgebandHrs',
+  'finishHrs', 'carcassFinishHrs', 'labourHours', 'panelHrs', 'shelfHrs', 'mouldingHrs', 'sprayDetail'];
+const engineHours = it => Object.fromEntries(Object.entries(P.priceItem(it).breakdown || {}).filter(([k]) => /(Hrs|Hours)$/.test(k) || k === 'sprayDetail'));
+// Every money figure, in a fixed order (JSONB re-orders keys), as one string.
+const money = q => JSON.stringify([P.quoteTotals(q), P.quoteGrandTotal(q), ['exVat', 'vat', 'gross', 'deposit', 'balance'].map(k => q.paid[k]),
+  Object.values(q.rooms).flatMap(r => r.items.map(({ pricing: p }) => [p.costPerUnit, p.sellPerUnit, p.totalCost, p.totalSellExVAT, p.totalSellIncVAT]))]);
+// The example order plus one line of every other item type that has hours.
+const fullOrder = () => {
+  const q = clone(ORDER);
+  const line = (type, description, params) => ({ type, description, qty: 1, params, pricing: { costPerUnit: 50, sellPerUnit: 100, totalCost: 50, totalSellExVAT: 100, totalSellIncVAT: 120 } });
+  q.rooms.Utility.items.push(
+    line('door', 'Larder door', { doorType: 'SHAKER_PNT', widthMm: 500, heightMm: 720 }),
+    line('endpanel', 'End panel', { materialKey: 'MAT_BIRCH_PREF_18', widthMm: 560, heightMm: 720, finishType: 'paint' }),
+    line('shelf', 'Oak shelf', { materialKey: 'TIM_OAK', lengthMm: 900, depthMm: 250, finishType: 'lacquer' }),
+    line('moulding', 'Skirting', { mouldingKey: 'MLD_SKR_MDF_95', metres: 3 }),
+    line('frame', 'Door frame', { species: 'TIM_OAK', widthMm: 826, heightMm: 2040 }),
+    line('drawer', 'Oak drawer', { drawerType: 'DRW_SOLID_OAK', widthMm: 500 }));
+  q.paid = { exVat: 1850, vat: 370, gross: 2220, deposit: 1110, balance: 1110 };
+  return q;
+};
+
+test('a new website order gets its workshop hours from the engine, once — prices, totals and paid figures byte-identical', () => withServer({}, async (s, pool) => {
+  const order = fullOrder();
+  const before = money(order);
+  assert.equal((await s.call('PUT', `/api/quotes/${order.id}`, order)).status, 200);
+  const stored = pool.rows.get(order.id).data;
+  assert.equal(money(stored), before, 'money must not move');
+  assert.deepEqual([stored.totalSellExVAT, stored.totalSellIncVAT], [1850, 2220]);
+  const seen = new Set();
+  order.rooms.Utility.items.forEach((it, i) => {
+    const want = engineHours(it), got = stored.rooms.Utility.items[i].pricing.breakdown;
+    if (!Object.keys(want).length) return assert.equal(got, undefined, `${it.type}: no hours, pricing untouched`);
+    assert.deepEqual(got, want, `${it.type}: the engine's hours, and only hours`);
+    Object.keys(got).forEach(k => seen.add(k));
+  });
+  assert.deepEqual(ORCHESTRATOR_HOURS.filter(f => !seen.has(f)), [], 'every hour field the Orchestrator reads is present');
+  const workshopHrs = stored.rooms.Utility.items.reduce((h, it) => h + ((it.pricing.breakdown || {}).totalHrs || 0) * it.qty, 0);
+  assert.ok(workshopHrs > 10, `Σ totalHrs × qty = ${workshopHrs}`);
+  const { body } = await s.call('GET', '/api/quotes');
+  assert.deepEqual(body[order.id].rooms, stored.rooms, 'GET serves them');
+}));
+
+test('re-sending the order — even after Settings change the engine — never recomputes or changes its hours', () => withServer({}, async (s, pool) => {
+  const order = fullOrder();
+  assert.equal((await s.call('PUT', `/api/quotes/${order.id}`, order)).status, 200);
+  const first = clone(pool.rows.get(order.id).data);
+  const paint = P.DB.settings.sprayFinish.paint, was = paint.topCoatSprayHrsPerM2;
+  try {
+    paint.topCoatSprayHrsPerM2 = was * 2;
+    assert.notDeepEqual(engineHours(order.rooms.Utility.items[0]), first.rooms.Utility.items[0].pricing.breakdown, 'control: the engine now gives other hours');
+    assert.deepEqual(await s.call('PUT', `/api/quotes/${order.id}`, order), { status: 200, body: { ok: true } }, 'same body again');
+    assert.deepEqual(pool.rows.get(order.id).data, first);
+    // Hours sent with a write are never taken either; the status still changes.
+    const theirs = clone(order);
+    theirs.rooms.Utility.items[0].pricing.breakdown = { totalHrs: 99 };
+    assert.equal((await s.call('PUT', `/api/quotes/${order.id}`, theirs)).status, 200);
+    assert.equal((await s.call('PATCH', `/api/quotes/${order.id}`, { status: 'archive' })).status, 200);
+    const synced = { ...clone(order), status: 'lost', updated_at: '2030-01-01T00:00:00.000Z' };
+    assert.equal((await s.call('POST', '/api/quotes/sync', { quotes: { [order.id]: synced } })).status, 200);
+    const now = pool.rows.get(order.id).data;
+    assert.equal(now.status, 'lost');
+    assert.deepEqual(now.rooms, first.rooms);
+    assert.equal(money(now), money(first));
+  } finally { paint.topCoatSprayHrsPerM2 = was; }
+}));
 
 test('lock-quotes migration skips website orders', () => {
   const { analyseQuote } = require(path.join(ROOT, 'scripts', 'lock-quotes.js'));
