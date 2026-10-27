@@ -158,6 +158,57 @@ test('the status (and the Deleted folder) still changes by PUT, PATCH and sync �
   assert.deepEqual(rest, unchanged);
 }));
 
+// ─── 4. idempotent create, as docs/configurator-quotes.md specifies ──────────
+test('PUT /api/quotes/cfg-<id> with the same body twice leaves one quote, both answered 200', () => withServer({}, async (s, pool) => {
+  for (let i = 0; i < 2; i++) assert.deepEqual(await s.call('PUT', `/api/quotes/${ORDER.id}`, ORDER), { status: 200, body: { ok: true } }, `PUT #${i + 1}`);
+  assert.deepEqual([...pool.rows.keys()], [ORDER.id]);
+  assert.deepEqual(pool.rows.get(ORDER.id).data, STORED);
+  const { body } = await s.call('GET', '/api/quotes');
+  assert.deepEqual(Object.keys(body), [ORDER.id]);
+  // A different body for the same order is refused, never merged.
+  const r = await s.call('PUT', `/api/quotes/${ORDER.id}`, { ...clone(ORDER), paid: { ...ORDER.paid, exVat: 1000, gross: 1250, balance: 500 } });
+  assert.equal(r.status, 409);
+  assert.deepEqual(pool.rows.get(ORDER.id).data, STORED);
+}));
+
+test('a new website order is validated: 400 with every problem listed, nothing stored', () => withServer({}, async (s, pool) => {
+  const bad = (name, edit, expect) => [name, q => { edit(q); return q; }, expect];
+  const cases = [
+    bad('id ≠ URL', q => { q.id = 'cfg-9'; }, /id must equal the id in the URL/),
+    bad('no paid', q => { delete q.paid; }, /paid\.exVat, paid\.vat, paid\.gross, paid\.deposit, paid\.balance must be/),
+    bad('string amount', q => { q.paid.vat = '250.00'; }, /paid\.vat must be/),
+    bad('negative', q => { q.paid.deposit = -1; }, /paid\.deposit must be/),
+    bad('3 decimals', q => { q.paid.exVat = 1250.001; }, /paid\.exVat must be/),
+    bad('gross ≠ ex + VAT', q => { q.paid.gross = 1499.99; q.paid.balance = 749.99; }, /paid\.gross must equal paid\.exVat \+ paid\.vat/),
+    bad('deposit + balance ≠ gross', q => { q.paid.balance = 700; }, /paid\.deposit \+ paid\.balance must equal paid\.gross/),
+    bad('lines ≠ ex VAT', q => { q.rooms.Utility.items.pop(); }, /must add up to paid\.exVat/),
+    bad('unpriced line', q => { delete q.rooms.Utility.items[1].pricing; }, /every item needs pricing\.totalSellExVAT/),
+    bad('design time', q => { delete q.rooms.Utility.includeDesignTime; }, /includeDesignTime: false/),
+    bad('no rooms', q => { q.rooms = {}; }, /rooms must be/),
+  ];
+  for (const [name, edit, expect] of cases) {
+    const q = edit(clone(ORDER));
+    const r = await s.call('PUT', `/api/quotes/${ORDER.id}`, q);
+    assert.equal(r.status, 400, name);
+    assert.ok(r.body.errors.some(e => expect.test(e)), `${name}: ${JSON.stringify(r.body.errors)}`);
+  }
+  // The same rules hold however it arrives (sync, PATCH).
+  const q = { ...clone(ORDER), paid: undefined, updated_at: '2030-01-01T00:00:00.000Z' };
+  assert.deepEqual((await s.call('POST', '/api/quotes/sync', { quotes: { [ORDER.id]: q } })).body.quotes, {});
+  assert.equal(pool.rows.size, 0);
+  // A discount line (negative) is fine as long as the lines add up.
+  const discounted = clone(ORDER);
+  discounted.rooms.Utility.items.push({ type: 'custom', description: 'Discount', qty: 1, params: {}, pricing: { totalSellExVAT: -50 } });
+  discounted.paid = { exVat: 1200, vat: 240, gross: 1440, deposit: 720, balance: 720 };
+  assert.equal((await s.call('PUT', `/api/quotes/${ORDER.id}`, discounted)).status, 200);
+}));
+
+test('docs/configurator-quotes.md: its example body is exactly the order these tests use', () => {
+  const doc = fs.readFileSync(path.join(ROOT, 'docs', 'configurator-quotes.md'), 'utf8');
+  const example = doc.split('## Example')[1].match(/```json\r?\n([\s\S]*?)\r?\n```/)[1];
+  assert.deepEqual(JSON.parse(example), ORDER);
+});
+
 // ─── 3. UI: headless Chrome over the DevTools protocol ───────────────────────
 // Needs Chrome (CHROME_PATH), Node 22+ (global WebSocket) and the CDN (React / Babel).
 // SCREENSHOT_DIR=<dir> also saves screenshots of each screen.

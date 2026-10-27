@@ -445,9 +445,11 @@ const isPricingLock = l => !!(l && typeof l === "object" && l.settings && typeof
 // deposit, balance }. It is never priced, repriced or re-totalled — its totals ARE the
 // paid figures. See docs/configurator-quotes.md.
 const isLocked = q => !!(q && q.locked === true);
-// All a write may still change on one: its folder (the status, the Deleted folder) and
-// the timestamps the app keeps. The server refuses anything else; the UI never sends it.
-const LOCKED_EDITABLE = new Set(["status", "deleted", "deletedAt", "updated_at", "_serverUpdatedAt"]);
+// All a write may still change on one: its folder (the status, the Deleted folder), the
+// timestamps the app keeps, and the grand-total stamp — re-derived from `paid` on every
+// write, so a retry of the configurator's create (sent without it) is the same quote.
+// The server refuses anything else; the UI never sends it.
+const LOCKED_EDITABLE = new Set(["status", "deleted", "deletedAt", "updated_at", "_serverUpdatedAt", "totalSellExVAT", "totalSellIncVAT"]);
 // The first field `next` would change on website order `stored` that may not change, else
 // null. Key order is ignored (Postgres JSONB re-orders keys).
 function lockedChange(stored, next) {

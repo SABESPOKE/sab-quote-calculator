@@ -102,13 +102,40 @@ function guardWrite(quote, storedLock, trusted) {
   return { data: isLock(quote.pricingLock) ? quote : lockQuote(recomputeQuotePricing(quote, { onlyUnpriced: true })) };
 }
 
-// Writes to a stored website order: whoever sends it, only what pricing.js → lockedChange
-// allows (the status / Deleted folder) may change — and nothing at all without the engine.
-// null = not a website order (guardWrite applies).
-function guardLocked(quote, stored) {
-  if (!isLocked(stored)) return null;
-  const field = lockedChange ? lockedChange(stored, quote || {}) : 'any field (pricing engine not loaded)';
-  return field ? { reject: 409, error: `This quote is a paid website order and is locked — only its status can change (refused: ${field}).` } : { data: quote };
+// Website orders. Stored: whoever writes, only what pricing.js → lockedChange allows (the
+// status / Deleted folder) may change — nothing at all without the engine. New: must be a
+// valid order (lockedOrderErrors). null = not a website order (guardWrite applies).
+function guardLocked(quote, stored, id) {
+  if (isLocked(stored)) {
+    const field = lockedChange ? lockedChange(stored, quote || {}) : 'any field (pricing engine not loaded)';
+    return field ? { reject: 409, error: `This quote is a paid website order and is locked — only its status can change (refused: ${field}).` } : { data: quote };
+  }
+  if (!isLocked(quote)) return null;
+  const errors = lockedOrderErrors(quote, id);
+  return errors.length ? { reject: 400, error: 'Not a valid website order — see docs/configurator-quotes.md', errors } : { data: quote };
+}
+
+// What a new website order must carry (docs/configurator-quotes.md). Amounts in £, to the
+// penny; the lines must add up to paid.exVat because the Client View and PDF total them.
+const PAID_FIELDS = ['exVat', 'vat', 'gross', 'deposit', 'balance'];
+const pennies = v => Math.round(v * 100);
+function lockedOrderErrors(q, id) {
+  const errs = [];
+  if (q.id !== id) errs.push(`id must equal the id in the URL ("${id}")`);
+  const p = q.paid;
+  const bad = PAID_FIELDS.filter(f => !(p && typeof p[f] === 'number' && Number.isFinite(p[f]) && p[f] >= 0 && Math.abs(p[f] * 100 - pennies(p[f])) < 1e-6));
+  if (bad.length) errs.push(`${bad.map(f => `paid.${f}`).join(', ')} must be amounts in £: numbers ≥ 0 with at most 2 decimal places`);
+  else {
+    if (pennies(p.exVat) + pennies(p.vat) !== pennies(p.gross)) errs.push('paid.gross must equal paid.exVat + paid.vat');
+    if (pennies(p.deposit) + pennies(p.balance) !== pennies(p.gross)) errs.push('paid.deposit + paid.balance must equal paid.gross');
+  }
+  const rooms = q.rooms && typeof q.rooms === 'object' && !Array.isArray(q.rooms) ? Object.values(q.rooms) : [];
+  if (!rooms.length || rooms.some(r => !r || !Array.isArray(r.items))) return [...errs, 'rooms must be { "<room name>": { "includeDesignTime": false, "items": [...] } }, at least one room'];
+  if (rooms.some(r => r.includeDesignTime !== false)) errs.push('every room needs includeDesignTime: false (no design fee on a website order)');
+  const items = rooms.flatMap(r => r.items);
+  if (items.some(it => !Number.isFinite(it && it.pricing && it.pricing.totalSellExVAT))) errs.push('every item needs pricing.totalSellExVAT (a number)');
+  else if (!bad.length && pennies(items.reduce((s, it) => s + it.pricing.totalSellExVAT, 0)) !== pennies(p.exVat)) errs.push("the items' pricing.totalSellExVAT must add up to paid.exVat");
+  return errs;
 }
 
 // Shared pricing settings (the Settings page's DB JSON), stored once in Postgres and
@@ -507,8 +534,8 @@ app.put('/api/quotes/:id', async (req, res) => {
     // grand total from the client's own item pricing so it matches what the UI displayed.
     const { rows } = await pool.query('SELECT data FROM quotes WHERE id = $1', [id]);
     const stored = rows.length ? rows[0].data : undefined;
-    const locked = guardLocked(req.body, stored);
-    if (locked && locked.reject) return res.status(locked.reject).json({ error: locked.error });
+    const locked = guardLocked(req.body, stored, id);
+    if (locked && locked.reject) return res.status(locked.reject).json({ error: locked.error, errors: locked.errors });
     const g = locked || guardWrite(req.body, rows.length ? ((stored && stored.pricingLock) ?? null) : undefined, !!req.get(PRICING_CLIENT_HEADER));
     if (g.reject) return res.status(409).json({ error: 'This quote is price-locked. Reload the calculator to edit the locked version.' });
     const data = withGrandTotal(g.data);
@@ -537,8 +564,8 @@ app.patch('/api/quotes/:id', async (req, res) => {
     // The lock is never patchable, nor are a locked quote's priced items, nor anything
     // but a website order's status.
     const { pricingLock, ...safe } = patch || {};
-    const locked = guardLocked({ ...rows[0].data, ...safe }, rows[0].data);
-    if (locked && locked.reject) return res.status(locked.reject).json({ error: locked.error });
+    const locked = guardLocked({ ...rows[0].data, ...safe }, rows[0].data, id);
+    if (locked && locked.reject) return res.status(locked.reject).json({ error: locked.error, errors: locked.errors });
     if (isLock(rows[0].data.pricingLock)) delete safe.rooms;
     // Re-stamp the grand total in case the patch touched pricing-affecting fields.
     const updated = withGrandTotal({ ...rows[0].data, ...safe });
@@ -600,7 +627,7 @@ app.post('/api/quotes/sync', async (req, res) => {
       // Website-order and price-lock guards (see guardLocked / guardWrite): a refused
       // write keeps the server copy.
       const g = (!serverEntry || clientTime > new Date(serverEntry.updated_at))
-        ? guardLocked(quote, serverEntry && serverEntry.data) || guardWrite(quote, serverEntry ? (serverEntry.data.pricingLock || null) : undefined, trusted)
+        ? guardLocked(quote, serverEntry && serverEntry.data, id) || guardWrite(quote, serverEntry ? (serverEntry.data.pricingLock || null) : undefined, trusted)
         : null;
       if (g && !g.reject) {
         // Client is newer — upsert to server, stamping the grand total so the
@@ -613,8 +640,8 @@ app.post('/api/quotes/sync', async (req, res) => {
           [id, JSON.stringify(stamped), quote.updated_at || new Date().toISOString()]
         );
         merged[id] = stamped;
-      } else {
-        // Server is newer — use server version
+      } else if (serverEntry) {
+        // Server is newer (or the write was refused) — use server version
         merged[id] = serverEntry.data;
       }
       delete serverMap[id];
