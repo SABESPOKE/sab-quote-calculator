@@ -439,6 +439,13 @@ const pricingId = pw => pw ? `${pw.engine}/${pw.settings}` : "saved";
 
 const isPricingLock = l => !!(l && typeof l === "object" && l.settings && typeof l.settings === "object");
 
+// ─── WEBSITE ORDERS (locked: true) ───────────────────────────────────────────
+// A quote the configurator creates from a PAID website order: status "sold", source
+// "configurator", locked: true, and the paid figures in `paid` { exVat, vat, gross,
+// deposit, balance }. It is never priced, repriced or re-totalled — its totals ARE the
+// paid figures. See docs/configurator-quotes.md.
+const isLocked = q => !!(q && q.locked === true);
+
 function lockQuote(quote) {
   return { ...quote, pricingLock: { engineVersion: ENGINE_VERSION, lockedAt: new Date().toISOString(), settings: JSON.parse(JSON.stringify(DB.settings)) } };
 }
@@ -470,6 +477,18 @@ function rescaleMargin(quote, marginOverride) {
 // Browser calls it as a window global; the server requires it to persist the
 // total onto the quote record (see quoteGrandTotal). Keep DOM/React free.
 function quoteTotals(quote) {
+  // Website order: the paid figures, exactly — never derived from the items.
+  if (isLocked(quote)) {
+    const p = quote.paid || {};
+    let mfgCost = 0;
+    Object.values(quote.rooms || {}).forEach(room => (room.items || []).forEach(item => { mfgCost += item.pricing?.totalCost || 0; }));
+    return {
+      mfgCost, mfgSellExVAT: p.exVat, designFee: 0,
+      survey: 0, install: 0, delivery: 0, pm: 0, consumables: 0, contingency: 0, warranty: 0,
+      totalExVAT: p.exVat, vat: p.vat, totalIncVAT: p.gross,
+      margin: mfgCost > 0 ? p.exVat / mfgCost : 0,
+    };
+  }
   const s = quoteSettings(quote); // locked quotes: the settings captured at lock time
   let mfgCost = 0, mfgSellExVAT = 0, designFee = 0;
   // nonFixed* track items that participate in margin/overhead allocation
@@ -1384,14 +1403,14 @@ function priceItemUnstamped(item, effectiveMargin) {
 }
 
 // Recompute every item's `pricing` from its stored params using the canonical
-// engine — EXCEPT on a locked quote, which is returned untouched (its stored pricing
-// is final). onlyUnpriced prices just the items with no valid stored price: used when
-// a quote is being locked, never on read. Non-destructive: structure is preserved, and
+// engine — EXCEPT on a price-locked quote or a website order, which is returned
+// untouched (its stored pricing is final). onlyUnpriced prices just the items with no
+// valid stored price: used when a quote is being locked, never on read. Non-destructive: structure is preserved, and
 // if an item throws/returns null its stored pricing is kept. Shared by the server
 // (GET /api/quotes, new-quote locking), the browser load path and the scripts.
 function recomputeQuotePricing(quote, { onlyUnpriced = false } = {}) {
   if (!quote || !quote.rooms) return quote;
-  if (isPricingLock(quote.pricingLock)) return quote;
+  if (isPricingLock(quote.pricingLock) || isLocked(quote)) return quote;
   // Per-quote margin override (falls back to the engine default when unset).
   const effectiveMargin = quote.marginOverride;
   const rooms = {};
@@ -1520,7 +1539,7 @@ function quoteMaterialsBom(quote) {
     calcDesignHrsPerRoom, calcDesignTimePerRoom,
     getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
     recomputeQuotePricing, quoteMaterialsBom,
-    ENGINE_VERSION, applySettings, settingsDiff, validateSettings, settingsFingerprint, pricingId, isPricingLock, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
+    ENGINE_VERSION, applySettings, settingsDiff, validateSettings, settingsFingerprint, pricingId, isPricingLock, isLocked, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") Object.assign(window, api);
 })();

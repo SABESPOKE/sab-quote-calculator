@@ -87,16 +87,18 @@ function withHours(quote) {
 
 // Writes vs the price lock. storedLock: undefined = quote never stored, null = stored
 // unlocked, object = stored locked. Works even if the engine failed to load.
-//  • new quote → price anything unpriced and lock it;
+//  • new quote → price anything unpriced and lock it — but a new website order (locked:
+//    true) is written as sent: never priced, never price-locked;
 //  • stored unlocked → written as sent (it gets locked by scripts/lock-quotes.js);
 //  • stored locked → only lock-aware code (X-Pricing-Engine header) sending the lock may
 //    write. A tab on the old code, or a copy loaded before the lock (and so repriced on
 //    load), is refused, so it can't overwrite frozen prices.
 const PRICING_CLIENT_HEADER = 'X-Pricing-Engine';
 const isLock = l => !!(l && typeof l === 'object' && l.settings && typeof l.settings === 'object');
+const isLocked = q => !!(q && q.locked === true); // a website order (pricing.js → isLocked)
 function guardWrite(quote, storedLock, trusted) {
   if (isLock(storedLock)) return trusted && isLock(quote && quote.pricingLock) ? { data: quote } : { reject: true };
-  if (storedLock !== undefined || !quote || !lockQuote) return { data: quote };
+  if (storedLock !== undefined || !quote || !lockQuote || isLocked(quote)) return { data: quote };
   return { data: isLock(quote.pricingLock) ? quote : lockQuote(recomputeQuotePricing(quote, { onlyUnpriced: true })) };
 }
 
@@ -431,6 +433,8 @@ app.get('/api/quotes', async (req, res) => {
     const quotes = {};
     for (const row of rows) {
       const base = { ...row.data, _serverUpdatedAt: row.updated_at };
+      // A website order is served exactly as stored: its paid figures are final.
+      if (isLocked(base)) { quotes[row.id] = base; continue; }
       const recomputed = recomputeQuotePricing ? recomputeQuotePricing(base) : base;
       // Stamp the grand total from the freshly-recomputed items so the served
       // total always matches the served line items (and the calculator UI), and
