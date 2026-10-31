@@ -4,14 +4,52 @@
 //
 //   QUOTES_SNAPSHOT=/path/quotes.json node --test test/configurator-pack.test.js   (real quotes, never committed)
 'use strict';
-const { test } = require('node:test');
+const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
+process.env.APP_PASSWORD = 'test-password';
+process.env.SESSION_SECRET = 'test-secret';
+process.env.API_TOKEN = 'test-bearer-token';
+delete process.env.DATABASE_URL; // never touch a real DB from tests
+
 const P = require(path.join(__dirname, '..', 'public', 'pricing.js'));
+const app = require(path.join(__dirname, '..', 'server.js'));
+
+let server, base;
+before(async () => { await new Promise(resolve => { server = app.listen(0, '127.0.0.1', resolve); }); base = `http://127.0.0.1:${server.address().port}`; });
+after(() => new Promise(resolve => server.close(resolve)));
+// POST to the configurator's endpoints → { status, body }.
+const post = async (route, body) => {
+  const res = await fetch(`${base}${route}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.API_TOKEN}` }, body: JSON.stringify(body) });
+  return { status: res.status, body: await res.json() };
+};
+const wire = o => JSON.parse(JSON.stringify(o));
+// The API answer for a body equals priceItem for the same item (the configurator's parity contract).
+async function parity(route, type, body) {
+  const { qty = 1, ...params } = body;
+  const { status, body: got } = await post(route, body);
+  assert.equal(status, 200, JSON.stringify(got));
+  assert.deepEqual(got, wire(P.priceItem({ type, qty, params })));
+  return got;
+}
+async function refused(route, body, needle) {
+  const { status, body: got } = await post(route, body);
+  assert.equal(status, 400, JSON.stringify(got));
+  assert.ok(got.errors.some(e => e.includes(needle)), `expected an error mentioning "${needle}", got ${JSON.stringify(got.errors)}`);
+}
+
+const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
+const ER = P.er();   // bench rate £/h (labour + overhead)
+// Configurator-shaped cabinet params (quoteCalcMapping's house choices).
+const CAB = { widthMm: 600, heightMm: 770, depthMm: 560, carcassMaterialKey: 'MAT_BIRCH_PREF_18', carcassFinish: 'none', doorType: 'SLAB_PNT',
+  drawerType: 'DRW_SHEET', runnerKey: 'HW_RUN_BLUM_SM', hingeKey: 'HW_HINGE_SM', handleKey: 'HW_HDL_NONE', frameKey: 'FRAME_NONE', edgebandKey: 'EDGE_ABS_PAINT', hasStain: false, shelfCount: 1 };
+const cabinet = (o = {}, qty = 1) => P.priceItem({ type: 'cabinet', qty, params: { ...CAB, ...o } });
+const SINGLE_600  = { doorCount: 1, drawerCount: 0 };
+const DRAWER3_600 = { doorCount: 0, drawerCount: 3, shelfCount: 0 };
 
 // ─── Existing quotes: with every new field absent, nothing may change ────────
 const BASE_REF = process.env.BASE_REF || 'f46b99d';
@@ -23,8 +61,9 @@ try {
   OLD = require(tmp);
 } catch { /* no git / unknown ref → regression tests skip */ }
 
-// Every item type, across the materials, fronts, finishes and hardware the engine knows.
-function corpus() {
+// Every item type, across the materials, fronts, finishes and hardware the BASELINE engine knows (its keys only:
+// a key the pack adds, e.g. HW_HDL_PUSH, is a new field).
+function corpus(P = OLD) {
   const items = [];
   const cab = (params, qty = 1) => items.push({ type: 'cabinet', qty, params });
   const FIN = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
@@ -88,4 +127,32 @@ test('regression: every saved quote prices exactly as master', { skip: (!OLD && 
   const diffs = quotes.flatMap(q => compareQuote(q).map(d => `${q.ref || q.id}: ${d}`));
   console.log(`[configurator-pack regression] ${quotes.length} quotes, ${diffs.length} differences (baseline ${BASE_REF})`);
   assert.deepEqual(diffs, []);
+});
+
+// ─── 1. Push to open (handleKey HW_HDL_PUSH) ─────────────────────────────────
+test('push to open: per front one Tip-On (£10) + 10 min fitting at the bench rate, and no handle', () => {
+  const tipOn = 10 + (10 / 60) * ER;
+  for (const [cfg, fronts] of [[SINGLE_600, 1], [DRAWER3_600, 3]]) {
+    const push = cabinet({ ...cfg, handleKey: 'HW_HDL_PUSH' });
+    const bar = cabinet({ ...cfg, handleKey: 'HW_HDL_BAR128' });
+    const none = cabinet({ ...cfg, handleKey: 'HW_HDL_NONE' });
+    assert.ok(near(push.totalCost - none.totalCost, fronts * tipOn));
+    assert.ok(near(push.totalCost - bar.totalCost, fronts * (tipOn - 12)));   // the £12 bar handle is not charged
+    assert.ok(near(push.totalSellExVAT, push.totalCost * P.DB.settings.margin));
+    assert.ok(near(push.breakdown.hardwareFitHrs, fronts / 6, 1e-3));
+    assert.ok(near(push.breakdown.totalHrs, bar.breakdown.totalHrs + fronts / 6, 2e-3));
+    assert.equal(bar.breakdown.hardwareFitHrs, undefined);
+    // Hinges and runners as they are; one device per handle position.
+    assert.deepEqual(push.breakdown.bom.hardware, bar.breakdown.bom.hardware);
+    assert.deepEqual(push.breakdown.bom.handles, bar.breakdown.bom.handles.map(h => ({ ...h, key: 'HW_HDL_PUSH' })));
+  }
+});
+
+test('push to open: a tall door gets one device (DECISION)', () => {
+  const tall = cabinet({ widthMm: 600, heightMm: 2100, doorCount: 1, shelfCount: 4, handleKey: 'HW_HDL_PUSH' });
+  assert.ok(near(tall.breakdown.hardwareFitHrs, 1 / 6, 1e-3));
+});
+
+test('API: /api/cabinet-cost takes handleKey HW_HDL_PUSH', async () => {
+  await parity('/api/cabinet-cost', 'cabinet', { ...CAB, ...DRAWER3_600, handleKey: 'HW_HDL_PUSH', qty: 1 });
 });
