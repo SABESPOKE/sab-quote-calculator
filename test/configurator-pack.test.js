@@ -349,3 +349,57 @@ test('API: /api/cabinet-cost takes doorHeightsMm / drawerFrontHeightsMm and refu
   await refused('/api/cabinet-cost', { ...CAB, ...DBL_1000, doorHeightsMm: [736, 0] }, 'positive');
   await refused('/api/cabinet-cost', { ...CAB, ...DRAWER3_600, drawerFrontHeightsMm: [150, 226] }, 'one height per drawer');
 });
+
+// ─── 7. Soffit LED channel (item type soffit_led, POST /api/soffit-led-cost) ──
+const led = runs => P.priceItem({ type: 'soffit_led', qty: 1, params: { runs } });
+test('soffit LED: one 2.4 m run — 2 extrusion lengths, 1 reel, 30 W driver, routing per metre', () => {
+  const r = led([{ lengthMm: 2400, position: 'front' }]);
+  assert.deepEqual(r.breakdown.led, { metres: 2.4, extrusions: 2, reels: 1, wattsNeeded: 28.8, driverKey: 'DRV_24V_30W', driverCount: 1 });
+  assert.ok(near(r.totalCost, 2 * 18 + 35 + 18 + 2.4 * (10 / 60) * ER));
+  assert.ok(near(r.totalSellExVAT, r.totalCost * P.DB.settings.margin));
+  assert.ok(near(r.breakdown.totalHrs, 0.4));
+  assert.equal(led([{ lengthMm: 2400, position: 'back' }]).totalCost, r.totalCost);   // position is not priced
+});
+
+test('soffit LED: extrusion rounds up per run, tape reels per design, driver from total watts', () => {
+  assert.equal(led([{ lengthMm: 2100 }, { lengthMm: 500 }]).breakdown.led.extrusions, 3);   // 2 + 1
+  assert.equal(led([{ lengthMm: 2000 }, { lengthMm: 2000 }, { lengthMm: 2000 }]).breakdown.led.reels, 2);   // 6 m → 2 reels, not 3
+  assert.equal(led([{ lengthMm: 2400 }, { lengthMm: 2600 }]).breakdown.led.reels, 1);   // exactly 5 m
+  assert.equal(led([{ lengthMm: 4000 }]).breakdown.led.driverKey, 'DRV_24V_60W');      // 48 W
+  assert.equal(led([{ lengthMm: 12000 }]).breakdown.led.driverKey, 'DRV_24V_150W');    // 144 W
+  assert.deepEqual([led([{ lengthMm: 14000 }]).breakdown.led.driverKey, led([{ lengthMm: 14000 }]).breakdown.led.driverCount], ['DRV_24V_150W', 2]);   // 168 W
+  assert.equal(led([]), null);
+});
+
+test('soffit LED: prices on a stored quote (GET /api/quotes recompute, the cfg- path) with its hours', () => {
+  const q = P.withPricingStatus(P.recomputeQuotePricing({ rooms: { Kitchen: { items: [{ type: 'soffit_led', qty: 1, params: { runs: [{ lengthMm: 2400, position: 'front' }] } }] } } }));
+  const it = q.rooms.Kitchen.items[0];
+  assert.ok(near(it.pricing.totalCost, led([{ lengthMm: 2400 }]).totalCost));
+  assert.ok(near(it.hours.current.totalHrs, 0.4));
+});
+
+test('quote path: a stored cabinet carrying every new field prices, gets its hours and materials list', () => {
+  const params = { ...CAB, ...DRAWER3_600, handleKey: 'HW_HDL_PUSH', binFrameKey: 'HW_BIN_ECOTOP', legKey: 'HW_LEG_OAK_150', legCount: 4,
+    channelRails: RAILS(HL.drw600.rails), drawerFrontHeightsMm: [150, 226, 302], carcassMaterialKey: 'MAT_MDF_FH_18', carcassFinish: 'paint', carcassFinishOutside: true };
+  const q = P.withPricingStatus(P.recomputeQuotePricing({ rooms: { Kitchen: { items: [{ type: 'cabinet', qty: 2, params }] } } }));
+  const it = q.rooms.Kitchen.items[0];
+  const { pricedWith, ...direct } = P.priceItem({ type: 'cabinet', qty: 2, params });
+  const { pricedWith: _, ...stored } = it.pricing;
+  assert.deepEqual(stored, direct);
+  assert.ok(near(it.hours.current.totalHrs, direct.breakdown.totalHrs));
+  for (const k of ['hardwareFitHrs', 'channelRailHrs']) assert.ok(it.hours.current[k] > 0, k);
+  const bom = P.quoteMaterialsBom(q);
+  assert.deepEqual(bom.hardware.filter(h => /^HW_(BIN|LEG)/.test(h.key)), [{ key: 'HW_BIN_ECOTOP', count: 2 }, { key: 'HW_LEG_OAK_150', count: 8 }]);
+  assert.deepEqual(bom.handles, [{ key: 'HW_HDL_PUSH', target: 'drawer', count: 6 }]);
+});
+
+test('API: /api/soffit-led-cost prices runs and refuses bad ones', async () => {
+  await parity('/api/soffit-led-cost', 'soffit_led', { runs: [{ lengthMm: 2400, position: 'front' }] });
+  await refused('/api/soffit-led-cost', { runs: [] }, 'non-empty');
+  await refused('/api/soffit-led-cost', { runs: [{ lengthMm: 0 }] }, 'lengthMm');
+  await refused('/api/soffit-led-cost', { runs: [{ lengthMm: 2400, position: 'side' }] }, 'position');
+  await refused('/api/soffit-led-cost', { runs: [{ lengthMm: 2400 }], watts: 10 }, 'unknown field');
+  const keys = await (await fetch(`${base}/api/cabinet-cost/keys`, { headers: { authorization: `Bearer ${process.env.API_TOKEN}` } })).json();
+  assert.deepEqual(keys.soffitLed.positions, ['front', 'back']);
+  assert.equal((await fetch(`${base}/api/soffit-led-cost`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"runs":[{"lengthMm":2400}]}' })).status, 401);
+});

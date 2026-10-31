@@ -202,6 +202,20 @@ const DB = {
       "HW_LEG_OAK_150": { name: "Tapered oak leg 150 mm",    costEach: 18.00, fitMins: 10 },
       "HW_LEG_WAL_150": { name: "Tapered walnut leg 150 mm", costEach: 24.00, fitMins: 10 },
     },
+    // Soffit LED channel (item type soffit_led, one line per design) — every figure a DECISION, Steve to confirm.
+    soffitLed: {
+      extrusionLengthMm: 2000, extrusionCost: 18.00,  // recessed aluminium profile + opal diffuser, end caps, clips; bought in 2 m
+      reelLengthM: 5,          reelCost: 35.00,       // 24 V COB tape, 5 m reel
+      tapeWattsPerM: 10,
+      driverHeadroom: 1.2,                            // driver sized for the tape's watts + 20%
+      routeMinsPerM: 10,                              // rout the 18 × 8 groove, with set-out and clean-up
+      drivers: {
+        "DRV_24V_30W":  { name: "24 V LED driver 30 W",  watts: 30,  costEach: 18.00 },
+        "DRV_24V_60W":  { name: "24 V LED driver 60 W",  watts: 60,  costEach: 24.00 },
+        "DRV_24V_100W": { name: "24 V LED driver 100 W", watts: 100, costEach: 32.00 },
+        "DRV_24V_150W": { name: "24 V LED driver 150 W", watts: 150, costEach: 45.00 },
+      },
+    },
   },
   mouldings: {
     // Prices per linear metre — supply only (fixing labour charged separately via labourHrsPerM)
@@ -1520,6 +1534,41 @@ function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720,
   };
 }
 
+// ── SOFFIT LED CHANNEL ─────────────────────────────────────────────────────
+// One line for a design's soffit LED runs ({ lengthMm, position: front|back } — position is recorded, not priced).
+// Extrusion is bought in 2 m lengths, rounded up per run; tape in 5 m reels, rounded up for the whole design; one
+// driver from the list, the smallest that covers the tape's watts + headroom (over the largest: several of it);
+// routing labour per metre at the bench rate.
+function calcSoffitLedCost({ runs, qty = 1, margin = DB.settings.margin }) {
+  const led = DB.hardware.soffitLed;
+  const ok = Array.isArray(runs) ? runs.filter(r => r && r.lengthMm > 0) : [];
+  if (!ok.length) return null;
+  const totalMm = ok.reduce((s, r) => s + r.lengthMm, 0);
+  const metres = totalMm / 1000;
+  const extrusions = ok.reduce((s, r) => s + Math.ceil(Math.round(r.lengthMm) / led.extrusionLengthMm), 0);
+  const reels = Math.ceil(Math.round(totalMm) / (led.reelLengthM * 1000));
+  const wattsNeeded = metres * led.tapeWattsPerM * led.driverHeadroom;
+  const drivers = Object.entries(led.drivers).sort((a, b) => a[1].watts - b[1].watts);
+  const fits = drivers.find(([, d]) => d.watts >= wattsNeeded);
+  const [driverKey, driver] = fits || drivers[drivers.length - 1];
+  const driverCount = fits ? 1 : Math.ceil(wattsNeeded / driver.watts);
+  const extrusionCost = extrusions * led.extrusionCost;
+  const tapeCost = reels * led.reelCost;
+  const driverCost = driverCount * driver.costEach;
+  const routeHrs = metres * led.routeMinsPerM / 60;
+  const labourCost = routeHrs * er();
+  const costPerUnit = extrusionCost + tapeCost + driverCost + labourCost;
+  const sellExVAT = costPerUnit * margin;
+  return {
+    costPerUnit, sellPerUnit: sellExVAT,
+    totalCost: costPerUnit * qty, totalSellExVAT: sellExVAT * qty,
+    totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
+    breakdown: { extrusion: extrusionCost, tape: tapeCost, driver: driverCost, labour: labourCost,
+      routeHrs: +routeHrs.toFixed(3), totalHrs: +routeHrs.toFixed(3),
+      led: { metres: +metres.toFixed(3), extrusions, reels, wattsNeeded: +wattsNeeded.toFixed(1), driverKey, driverCount } },
+  };
+}
+
 // Every computed price records the engine + settings it came from (pricing.pricedWith).
 function priceItem(item, effectiveMargin) {
   const p = priceItemUnstamped(item, effectiveMargin);
@@ -1559,6 +1608,7 @@ function priceItemUnstamped(item, effectiveMargin) {
   if (item.type === "moulding") return calcMouldingCost({ ...item.params, qty: item.qty, margin });
   if (item.type === "wrp_moulding") return calcWRPMouldingCost({ ...item.params, qty: item.qty }); // WRP uses its own markup_pct, not margin
   if (item.type === "filler")   return calcFillerCost({ ...item.params, qty: item.qty, margin });
+  if (item.type === "soffit_led") return calcSoffitLedCost({ ...item.params, qty: item.qty, margin });
   if (item.type === "custom") {
     const cost = (item.params.unitCostExVAT || 0) * item.qty;
     const sell = cost * margin;
@@ -1700,7 +1750,7 @@ function quoteMaterialsBom(quote) {
     calcSprayFinishCost, calcDoorCost, calcFrameCost, calcDrawerCost, calcCabinetCost,
     calcEndPanelCost, calcFloatingShelfCost, calcMouldingCost, parseWRPDimensions,
     calcWRPFinishCostPerM, calcWRPMouldingCost, calcCabinetFaceFrameCost,
-    calcCabinetEdgebandCost, calcFillerCost, priceItem,
+    calcCabinetEdgebandCost, calcFillerCost, calcSoffitLedCost, priceItem,
     calcDesignHrsPerRoom, calcDesignTimePerRoom,
     getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
     recomputeQuotePricing, quoteMaterialsBom,

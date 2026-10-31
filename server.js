@@ -463,6 +463,25 @@ function endPanelSpecErrors(spec) {
   return errs;
 }
 
+// POST /api/soffit-led-cost — body: { runs: [{ lengthMm, position? }], qty? } → priceItem({ type:'soffit_led' }).
+// One line for a whole design (tape reels round up across all its runs). Same contract as the endpoints above.
+const SOFFIT_LED_FIELDS = new Set(['runs', 'qty']);
+const SOFFIT_POSITIONS = ['front', 'back'];
+function soffitLedSpecErrors(spec) {
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return ['body must be a JSON object { runs: [{ lengthMm, position }] }'];
+  const errs = [];
+  const unknown = Object.keys(spec).filter(k => !SOFFIT_LED_FIELDS.has(k));
+  if (unknown.length) errs.push(`unknown field(s): ${unknown.join(', ')}`);
+  if (spec.qty !== undefined && (!Number.isInteger(spec.qty) || spec.qty < 1)) errs.push('qty must be a positive integer');
+  if (!Array.isArray(spec.runs) || !spec.runs.length) return [...errs, 'runs must be a non-empty array of { lengthMm, position }'];
+  spec.runs.forEach((r, i) => {
+    if (!r || typeof r !== 'object' || Object.keys(r).some(k => k !== 'lengthMm' && k !== 'position')) return errs.push(`runs[${i}] must be { lengthMm, position }`);
+    if (!isPos(r.lengthMm)) errs.push(`runs[${i}].lengthMm must be a positive number`);
+    if (r.position !== undefined && !SOFFIT_POSITIONS.includes(r.position)) errs.push(`runs[${i}].position must be one of ${SOFFIT_POSITIONS.join('|')}`);
+  });
+  return errs;
+}
+
 // One handler shape for every "price this item" endpoint: validate → priceItem → result
 // ({ costPerUnit, sellPerUnit, totalCost, totalSellExVAT, totalSellIncVAT, breakdown }).
 const priceEndpoint = (type, specErrors, label) => (req, res) => {
@@ -484,6 +503,8 @@ const priceEndpoint = (type, specErrors, label) => (req, res) => {
 app.post('/api/cabinet-cost', priceEndpoint('cabinet', cabinetSpecErrors, 'cabinet'));
 // POST /api/endpanel-cost — body: engine-native end-panel params → priceItem result
 app.post('/api/endpanel-cost', priceEndpoint('endpanel', endPanelSpecErrors, 'end panel'));
+// POST /api/soffit-led-cost — body: soffit LED runs → priceItem result
+app.post('/api/soffit-led-cost', priceEndpoint('soffit_led', soffitLedSpecErrors, 'soffit LED'));
 
 // GET /api/cabinet-cost/keys — valid keys (and display names) for every keyed field, so
 // the configurator can build/check its mapping without reading pricing.js.
@@ -505,6 +526,7 @@ app.get('/api/cabinet-cost/keys', (req, res) => {
     fields: [...CABINET_FIELDS],
     endPanel: { fields: [...ENDPANEL_FIELDS], finishTypes: CARCASS_FINISHES }, // POST /api/endpanel-cost (materials = the same table)
     channelRails: { fields: CHANNEL_RAIL_FIELDS, profiles: namesOf(CHANNEL_PROFILES), finishTypes: CARCASS_FINISHES },   // cabinet param channelRails
+    soffitLed: { fields: [...SOFFIT_LED_FIELDS], positions: SOFFIT_POSITIONS, drivers: namesOf(PRICING_DB.hardware.soffitLed.drivers) },   // POST /api/soffit-led-cost
     settings: { margin: PRICING_DB.settings.margin, vat: PRICING_DB.settings.vat },
   });
 });

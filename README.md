@@ -135,6 +135,35 @@ POST /api/cabinet-cost
   "doorType": "SLAB_PNT", "shelfCount": 4, "doorHeightsMm": [1300, 742] }
 ```
 
+### Soffit LED channel — `POST /api/soffit-led-cost` (item type `soffit_led`)
+
+| Field | Values | Default |
+|---|---|---|
+| `runs[]` | `{ lengthMm, position }`, at least one; `lengthMm` > 0 | required |
+| `runs[].position` | `"front"` \| `"back"`: recorded, not priced | `"front"` |
+| `qty` | integer ≥ 1 | `1` |
+
+Built now, off by default: nothing is priced unless a design sends it. Send one line per design with all its runs,
+because tape reels round up across the whole design. Extrusion is bought in 2 m lengths at £18.00, rounded up per run.
+24 V tape (10 W/m) comes in 5 m reels at £35.00, rounded up for the design. One driver is picked from 30 / 60 / 100 /
+150 W (£18 / £24 / £32 / £45), the smallest that covers the tape's watts plus 20%; over 150 W, several 150 W drivers.
+Routing the 18 × 8 groove is 10 min per metre at the bench rate. The breakdown gives `extrusion`, `tape`, `driver`
+and `labour` (£), `routeHrs` / `totalHrs`, and the counts in `breakdown.led`. On a quote it is an item
+`{ "type": "soffit_led", "qty": 1, "params": { "runs": [...] } }`.
+
+```json
+POST /api/soffit-led-cost
+{ "runs": [{ "lengthMm": 2400, "position": "front" }] }
+```
+
+### On a quote (the `cfg-` path)
+
+A quote item's `params` are priced by the same `priceItem` as the endpoints above: on `GET /api/quotes`, and once,
+when a website order is created, for its workshop hours and materials list. So every field here works on a stored
+item exactly as on `POST /api/cabinet-cost`. The new hours (`hardwareFitHrs`, `channelRailHrs`, `routeHrs`) are
+ordinary `*Hrs` breakdown figures. The bin frame and legs appear in the materials list's `hardware`, and
+push-to-open devices in `handles`.
+
 ## WRP Mouldings price refresh
 
 The WRP Timber Mouldings catalogue at `data/wrp_catalogue.json` is the source of truth (131 profiles across 10 categories). To refresh prices:
