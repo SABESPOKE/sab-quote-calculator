@@ -196,6 +196,12 @@ const DB = {
     binFrames: {
       "HW_BIN_ECOTOP": { name: "Bin pull-out frame (Blum / LDL Ecotop)", costEach: 200.00, fitMins: 30 },
     },
+    // Freestanding legs, 150 mm high, 45 mm square tapering to 28 mm, finished, with mounting plate (cabinet params
+    // legKey + legCount). costEach and fitMins: DECISION (Steve to confirm).
+    legs: {
+      "HW_LEG_OAK_150": { name: "Tapered oak leg 150 mm",    costEach: 18.00, fitMins: 10 },
+      "HW_LEG_WAL_150": { name: "Tapered walnut leg 150 mm", costEach: 24.00, fitMins: 10 },
+    },
   },
   mouldings: {
     // Prices per linear metre — supply only (fixing labour charged separately via labourHrsPerM)
@@ -949,6 +955,7 @@ function calcCabinetCost({
   sprayFinishOverride = "",
   channelRails,     // handleless channel rails per metre: { materialKey, finishType?, thicknessMm?, rails: [{ profile, lengthMm }] }
   binFrameKey,      // bin pull-out frame (DB.hardware.binFrames), one per cabinet
+  legKey, legCount, // freestanding legs (DB.hardware.legs); count defaults to 4, 6 over 1200 wide
   qty = 1,
   margin = DB.settings.margin,
 }) {
@@ -1135,7 +1142,13 @@ function calcCabinetCost({
   const binFrameFitHrs = binFrame ? binFrame.fitMins / 60 : 0;
   const binFrameCost = binFrame ? binFrame.costEach + binFrameFitHrs * er() : 0;
 
-  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + channelRailCost + binFrameCost;
+  // ── Freestanding legs: per leg + its bench fitting (its own line, legs). The engine charges no plinth. ──
+  const leg = legKey ? DB.hardware.legs[legKey] : null;
+  const legs = leg ? (legCount ?? (widthMm > 1200 ? 6 : 4)) : 0;
+  const legFitHrs = leg ? legs * leg.fitMins / 60 : 0;
+  const legsCost = leg ? legs * leg.costEach + legFitHrs * er() : 0;
+
+  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + channelRailCost + binFrameCost + legsCost;
   const totalCost = totalCostPerUnit * qty;
   const sellExVAT = totalCost * margin;
 
@@ -1143,9 +1156,9 @@ function calcCabinetCost({
   const frameHrs    = frameResult.labourHrs || 0;     // face-frame-making labour
   const edgebandHrs = edgebandResult.labourHrs || 0;  // edgebanding labour
   const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs + railFinishHrs; // total spray finishing labour (doors + fronts + carcass shell + channel rails)
-  // Bench fitting of hardware: push-to-open devices (cost in the fronts' handle cost) and the bin frame.
+  // Bench fitting of hardware: push-to-open devices (cost in the fronts' handle cost), the bin frame and legs.
   const frontCount  = (doorCount > 0 && doorType && DB.doorTypes[doorType] ? doorCount : 0) + drawerFrontHeights.length;
-  const hardwareFitHrs = frontCount * handleFitHrs + binFrameFitHrs;
+  const hardwareFitHrs = frontCount * handleFitHrs + binFrameFitHrs + legFitHrs;
   const channelRailHrs = rail ? rail.benchHrs : 0;   // channel rail bench labour (its spray is in finishHrs)
   const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs + hardwareFitHrs + channelRailHrs).toFixed(3);
   // finishHrs split by step, and by part (carcass / door / drawerFront / channelRail) — parts present only when finished.
@@ -1190,6 +1203,7 @@ function calcCabinetCost({
   if (hingeUnits > 0 && hingeKey && hingeKey !== "HW_HINGE_NONE") bomHardware.push({ key: hingeKey, count: hingeUnits * qty });
   if (drawerCount > 0 && drawerType && DB.drawerTypes[drawerType] && runnerKey) bomHardware.push({ key: runnerKey, count: drawerCount * qty });
   if (binFrame) bomHardware.push({ key: binFrameKey, count: qty });
+  if (leg && legs > 0) bomHardware.push({ key: legKey, count: legs * qty });
   // Handles — reported as door + drawer POSITIONS regardless of whether a handle is
   // priced (handleKey is often HW_HDL_NONE: bought separately / client's choice). Split
   // by target so a different handle type can be assigned to doors vs drawers downstream.
@@ -1210,6 +1224,7 @@ function calcCabinetCost({
     breakdown: { carcassMaterial: carcassMaterialCost, carcassLabour: carcassLabourCost, carcassHardware, doors: doorsCost, drawers: drawersCost, drawerFronts: drawerFrontsCost, frame: frameResult.total, edgeband: edgebandResult.total,
       ...(rail ? { channelRail: channelRailCost, channelRailHrs: +channelRailHrs.toFixed(3) } : {}),
       ...(binFrame ? { binFrame: binFrameCost } : {}),
+      ...(leg ? { legs: legsCost } : {}),
       assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs,
       ...(hardwareFitHrs > 0 ? { hardwareFitHrs: +hardwareFitHrs.toFixed(3) } : {}), totalHrs, sprayDetail,
       bom: { carcass: bomCarcass, doors: bomDoors, drawerBoxes: bomDrawerBoxes, frames: bomFrames, edgeband: bomEdgeband, hardware: bomHardware, handles: bomHandles } },

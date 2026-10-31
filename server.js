@@ -359,7 +359,7 @@ const CABINET_FIELDS = new Set([
   'panelMaterialKey', 'frameStileWidthMm', 'doorFrameThicknessMm', 'edgebandKey', 'hasStain',
   'sprayFinishOverride', 'qty',
   'cabinetTypeKey', // informational — the engine prices from dims/counts, not the type
-  'channelRails', 'binFrameKey',   // configurator pricing pack (README "Configurator pricing fields") — all optional
+  'channelRails', 'binFrameKey', 'legKey', 'legCount',   // configurator pricing pack (README "Configurator pricing fields") — all optional
 ]);
 const CARCASS_FINISHES = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
 const SPRAY_OVERRIDES  = ['', 'primed', 'edge_polish', 'none'];
@@ -411,6 +411,11 @@ function cabinetSpecErrors(spec) {
   keyIn('hingeKey',           PRICING_DB.hardware.hinges,  'hardware.hinges');
   keyIn('handleKey',          PRICING_DB.hardware.handles, 'hardware.handles');
   keyIn('binFrameKey',        PRICING_DB.hardware.binFrames, 'hardware.binFrames');
+  keyIn('legKey',             PRICING_DB.hardware.legs, 'hardware.legs');
+  if (spec.legCount !== undefined) {
+    if (!Number.isInteger(spec.legCount) || spec.legCount < 1) errs.push('legCount must be a positive integer');
+    if (spec.legKey === undefined) errs.push('legCount needs a legKey');
+  }
   keyIn('timberSpeciesKey',   PRICING_DB.solidTimber, 'solidTimber');
   keyIn('cabinetTypeKey',     PRICING_DB.cabinetTypes, 'cabinetTypes');
   keyIn('frameKey',           FRAME_MATERIALS, 'frames');
@@ -477,7 +482,7 @@ app.get('/api/cabinet-cost/keys', (req, res) => {
     doorTypes:    namesOf(PRICING_DB.doorTypes),
     drawerTypes:  namesOf(PRICING_DB.drawerTypes),
     hardware:     { runners: namesOf(PRICING_DB.hardware.runners), hinges: namesOf(PRICING_DB.hardware.hinges), handles: namesOf(PRICING_DB.hardware.handles),
-                    binFrames: namesOf(PRICING_DB.hardware.binFrames) },
+                    binFrames: namesOf(PRICING_DB.hardware.binFrames), legs: namesOf(PRICING_DB.hardware.legs) },
     frames:       namesOf(FRAME_MATERIALS),
     edgebands:    namesOf(EDGEBAND_TYPES),
     solidTimber:  namesOf(PRICING_DB.solidTimber),

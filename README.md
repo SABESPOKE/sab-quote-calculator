@@ -79,6 +79,23 @@ POST /api/cabinet-cost
   "drawerCount": 1, "drawerType": "DRW_SHEET", "doorType": "SLAB_PNT", "shelfCount": 0, "binFrameKey": "HW_BIN_ECOTOP" }
 ```
 
+### Freestanding legs — `legKey`, `legCount`
+
+| Field | Values | Default |
+|---|---|---|
+| `legKey` | `"HW_LEG_OAK_150"` \| `"HW_LEG_WAL_150"`: tapered leg, 150 mm high, 45 mm square tapering to 28 mm | absent: no legs |
+| `legCount` | integer ≥ 1 (needs `legKey`) | 4, or 6 over 1200 mm wide |
+
+Per leg: oak £18.00 or walnut £24.00 cost, plus 10 minutes' bench fitting (`breakdown.legs`; hours in
+`breakdown.hardwareFitHrs`). Listed in `breakdown.bom.hardware`. The calculator never charges a plinth on a cabinet,
+so there is nothing to remove for a cabinet on legs.
+
+```json
+POST /api/cabinet-cost
+{ "widthMm": 600, "heightMm": 770, "depthMm": 560, "carcassMaterialKey": "MAT_BIRCH_PREF_18", "doorCount": 1,
+  "doorType": "SLAB_PNT", "shelfCount": 1, "legKey": "HW_LEG_OAK_150", "legCount": 4 }
+```
+
 ## WRP Mouldings price refresh
 
 The WRP Timber Mouldings catalogue at `data/wrp_catalogue.json` is the source of truth (131 profiles across 10 categories). To refresh prices:

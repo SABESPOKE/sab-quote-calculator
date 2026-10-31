@@ -258,3 +258,32 @@ test('API: /api/cabinet-cost takes binFrameKey and refuses an unknown one', asyn
   await parity('/api/cabinet-cost', 'cabinet', { ...CAB, ...BIN_600, binFrameKey: 'HW_BIN_ECOTOP', qty: 1 });
   await refused('/api/cabinet-cost', { ...CAB, ...BIN_600, binFrameKey: 'HW_BIN_X' }, 'binFrameKey');
 });
+
+// ─── 4. Freestanding legs (legKey, legCount) ─────────────────────────────────
+test('legs: per leg cost + 10 min fitting each, on their own line; a plinth is never charged', () => {
+  const plinth = cabinet(SINGLE_600);   // "on a plinth": the engine prices no plinth, so this is the cabinet alone
+  for (const [legKey, each] of [['HW_LEG_OAK_150', 18], ['HW_LEG_WAL_150', 24]]) {
+    const onLegs = cabinet({ ...SINGLE_600, legKey, legCount: 4 });
+    const legs = 4 * each + 4 * (10 / 60) * ER;
+    assert.ok(near(onLegs.breakdown.legs, legs));
+    assert.ok(near(onLegs.totalCost - plinth.totalCost, legs));
+    assert.ok(near(onLegs.totalSellExVAT, onLegs.totalCost * P.DB.settings.margin));
+    assert.ok(near(onLegs.breakdown.hardwareFitHrs, 4 / 6, 1e-3));
+    assert.deepEqual(onLegs.breakdown.bom.hardware.find(h => h.key === legKey), { key: legKey, count: 4 });
+  }
+  assert.ok(!Object.keys(plinth.breakdown).some(k => /plinth/i.test(k)));
+});
+
+test('legs: the count the configurator sends wins; without one, 4 (6 over 1200 wide)', () => {
+  const each = 18 + (10 / 60) * ER;
+  assert.ok(near(cabinet({ ...SINGLE_600, legKey: 'HW_LEG_OAK_150', legCount: 6 }).breakdown.legs, 6 * each));
+  assert.ok(near(cabinet({ ...SINGLE_600, legKey: 'HW_LEG_OAK_150' }).breakdown.legs, 4 * each));
+  assert.ok(near(cabinet({ widthMm: 1400, doorCount: 2, legKey: 'HW_LEG_OAK_150' }).breakdown.legs, 6 * each));
+});
+
+test('API: /api/cabinet-cost takes legKey + legCount and refuses bad ones', async () => {
+  await parity('/api/cabinet-cost', 'cabinet', { ...CAB, ...SINGLE_600, legKey: 'HW_LEG_WAL_150', legCount: 4, qty: 1 });
+  await refused('/api/cabinet-cost', { ...CAB, ...SINGLE_600, legKey: 'HW_LEG_PINE' }, 'legKey');
+  await refused('/api/cabinet-cost', { ...CAB, ...SINGLE_600, legKey: 'HW_LEG_OAK_150', legCount: 0 }, 'legCount');
+  await refused('/api/cabinet-cost', { ...CAB, ...SINGLE_600, legCount: 4 }, 'legCount needs a legKey');
+});
