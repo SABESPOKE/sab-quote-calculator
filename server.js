@@ -359,7 +359,7 @@ const CABINET_FIELDS = new Set([
   'panelMaterialKey', 'frameStileWidthMm', 'doorFrameThicknessMm', 'edgebandKey', 'hasStain',
   'sprayFinishOverride', 'qty',
   'cabinetTypeKey', // informational — the engine prices from dims/counts, not the type
-  'channelRails', 'binFrameKey', 'legKey', 'legCount',   // configurator pricing pack (README "Configurator pricing fields") — all optional
+  'channelRails', 'binFrameKey', 'legKey', 'legCount', 'carcassFinishOutside',   // configurator pricing pack (README "Configurator pricing fields") — all optional
 ]);
 const CARCASS_FINISHES = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
 const SPRAY_OVERRIDES  = ['', 'primed', 'edge_polish', 'none'];
@@ -424,6 +424,7 @@ function cabinetSpecErrors(spec) {
   if (spec.sprayFinishOverride !== undefined && !SPRAY_OVERRIDES.includes(spec.sprayFinishOverride)) errs.push(`sprayFinishOverride must be one of ""|${SPRAY_OVERRIDES.slice(1).join('|')}`);
   if (spec.hasStain !== undefined && typeof spec.hasStain !== 'boolean') errs.push('hasStain must be a boolean');
   if (spec.channelRails !== undefined) errs.push(...channelRailErrors(spec.channelRails));
+  if (spec.carcassFinishOutside !== undefined && typeof spec.carcassFinishOutside !== 'boolean') errs.push('carcassFinishOutside must be a boolean');
   return errs;
 }
 

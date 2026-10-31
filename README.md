@@ -96,6 +96,26 @@ POST /api/cabinet-cost
   "doorType": "SLAB_PNT", "shelfCount": 1, "legKey": "HW_LEG_OAK_150", "legCount": 4 }
 ```
 
+### Painted MDF carcass — `carcassMaterialKey: "MAT_MDF_FH_18"` + `carcassFinish: "paint"`, `carcassFinishOutside`
+
+| Field | Values | Default |
+|---|---|---|
+| `carcassMaterialKey` + `carcassFinish` | `"MAT_MDF_FH_18"` + `"paint"` (existing fields) | birch ply + `"none"` |
+| `carcassFinishOutside` | `true` \| `false` | `false` |
+
+A carcass in 18 mm MDF sprayed in a paint colour was already priceable with the two existing fields: the MDF board
+rate plus the existing spray rates on the inside of the shell (sides, top, bottom, back, both faces of each shelf,
+and the front edges; an open unit's shelf edges too). `carcassFinishOutside: true` also sprays the outer faces of
+the sides, top and bottom. It is for an open unit, so the configurator's "Match doors" painted carcass can be
+ordered. The back's outer face is not sprayed, since it sits against the wall. It applies to any `carcassFinish`
+except `none` and `edge_polish`.
+
+```json
+POST /api/cabinet-cost
+{ "widthMm": 600, "heightMm": 770, "depthMm": 560, "carcassMaterialKey": "MAT_MDF_FH_18", "carcassFinish": "paint",
+  "carcassFinishOutside": true, "doorCount": 0, "drawerCount": 0, "shelfCount": 2 }
+```
+
 ## WRP Mouldings price refresh
 
 The WRP Timber Mouldings catalogue at `data/wrp_catalogue.json` is the source of truth (131 profiles across 10 categories). To refresh prices:

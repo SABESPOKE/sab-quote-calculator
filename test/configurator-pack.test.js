@@ -287,3 +287,24 @@ test('API: /api/cabinet-cost takes legKey + legCount and refuses bad ones', asyn
   await refused('/api/cabinet-cost', { ...CAB, ...SINGLE_600, legKey: 'HW_LEG_OAK_150', legCount: 0 }, 'legCount');
   await refused('/api/cabinet-cost', { ...CAB, ...SINGLE_600, legCount: 4 }, 'legCount needs a legKey');
 });
+
+// ─── 5. Painted MDF carcass (carcassMaterialKey MAT_MDF_FH_18 + carcassFinish paint; carcassFinishOutside) ──
+const OPEN_600 = { doorCount: 0, drawerCount: 0, shelfCount: 2, carcassMaterialKey: 'MAT_MDF_FH_18', carcassFinish: 'paint' };
+test('painted carcass: inside is priceable today; carcassFinishOutside adds the outer sides, top and bottom', () => {
+  const inside = cabinet(OPEN_600), both = cabinet({ ...OPEN_600, carcassFinishOutside: true });
+  const W = 0.6, H = 0.77, D = 0.56, innerW = 0.564, shelfD = 0.51;
+  const shell = 2 * D * H + 2 * W * D + W * H + 2 * 2 * innerW * shelfD;   // the inside, as today
+  const perim = 2 * (W + H) + 2 * innerW;                                   // open: shelf front edges too
+  const spray = area => P.calcSprayFinishCost({ widthMm: 600, heightMm: 770, finishType: 'paint', surfaceType: 'panel', sprayAreaM2Override: area, perimMOverride: perim, doorType: 'SLAB_PNT' });
+  assert.ok(near(both.totalCost - inside.totalCost, spray(shell + 2 * D * H + 2 * W * D).costPerDoor - spray(shell).costPerDoor, 1e-6));
+  assert.equal(both.breakdown.carcassMaterial, inside.breakdown.carcassMaterial);
+  assert.ok(both.breakdown.carcassFinishHrs > inside.breakdown.carcassFinishHrs);
+  assert.ok(near(both.totalSellExVAT, both.totalCost * P.DB.settings.margin));
+  // Nothing to finish → nothing added.
+  assert.equal(cabinet({ ...OPEN_600, carcassFinish: 'none', carcassFinishOutside: true }).totalCost, cabinet({ ...OPEN_600, carcassFinish: 'none' }).totalCost);
+});
+
+test('API: /api/cabinet-cost takes carcassFinishOutside (boolean only)', async () => {
+  await parity('/api/cabinet-cost', 'cabinet', { ...CAB, ...OPEN_600, carcassFinishOutside: true, qty: 1 });
+  await refused('/api/cabinet-cost', { ...CAB, ...OPEN_600, carcassFinishOutside: 'yes' }, 'carcassFinishOutside');
+});

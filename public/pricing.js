@@ -937,6 +937,7 @@ function calcCabinetCost({
   widthMm, heightMm, depthMm,
   carcassMaterialKey = "MAT_BIRCH_UNF_18",
   carcassFinish = "none",
+  carcassFinishOutside = false,   // also finish the shell's outer faces (sides, top, bottom) — an open painted unit
   backMaterialKey,  // defaults to carcassMaterialKey below — backs match the carcass material
 
   doorCount = 2, doorType = "SLAB_PNT",
@@ -1110,6 +1111,9 @@ function calcCabinetCost({
       const backArea   = W * H;
       const shelfArea2 = (shelfCount || 0) * 2 * (innerW * shelfD);
       sprayAreaM2Override = sidesArea + topBotArea + backArea + shelfArea2;
+      // Inside and out (an open unit's "match doors" painted carcass): the outer faces of the sides, top and
+      // bottom too. Not the back's outer face, which is against the wall.
+      if (carcassFinishOutside) sprayAreaM2Override += sidesArea + topBotArea;
       let perim = 2 * (W + H);
       if (doorCount === 0) perim += (shelfCount || 0) * innerW;
       perimMOverride = perim;
