@@ -941,7 +941,9 @@ function calcCabinetCost({
   backMaterialKey,  // defaults to carcassMaterialKey below — backs match the carcass material
 
   doorCount = 2, doorType = "SLAB_PNT",
+  doorHeightsMm,          // actual height of each door leaf (doorCount leaves across, in rows); absent: carcass height − 6
   drawerCount = 0, drawerType = "DRW_BIRCH_PLY",
+  drawerFrontHeightsMm,   // actual height of each drawer front, one per drawer; absent: an equal share
   runnerKey = "HW_RUN_BLUM_SM",
   hingeKey = "HW_HINGE_SM",
   handleKey = "HW_HDL_BAR128",
@@ -994,25 +996,34 @@ function calcCabinetCost({
   let doorsCost = 0;
   let doorHrs = 0;       // door-making labour, person-hours per cabinet (all doors)
   let doorFinishHrs = 0; // spray finishing labour on doors, person-hours per cabinet
-  let doorSpray = null;  // per-door spray breakdown (sprayDetail split)
+  const doorSprays = []; // [per-door spray breakdown, leaves] per leaf height (sprayDetail split)
   // BOM quantities (per single cabinet — multiplied by qty at the return). These are
   // the SAME geometry the costing above uses, surfaced for the read-only materials BOM.
   let doorAreaM2 = 0;   // total door face area (m²)
   let hingeUnits = 0;   // hinges consumed (matches the hinges priced)
+  let doorLeaves = 0;   // door leaves priced
   if (doorCount > 0 && doorType && DB.doorTypes[doorType]) {
-    const doorW = Math.floor(widthMm / doorCount) - 2;
-    const doorH = heightMm - 6;
+    const doorW = Math.floor(widthMm / doorCount) - 2;   // doorCount leaves across
     const hinge = DB.hardware.hinges[hingeKey] || DB.hardware.hinges["HW_HINGE_SM"];
-    const hingeCostPerDoor = hingeCount(doorH) * hinge.costEach;
-    const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: doorCount, hingeCost: hingeCostPerDoor, handleCost: handleCostPerFront, hasStain, sprayFinishOverride,
-      timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey,
-      frameStileWidthMm, frameThicknessMm: doorFrameThicknessMm });
-    doorsCost = dp ? dp.totalCost : 0;
-    doorHrs = dp ? dp.breakdown.doorHrs * doorCount : 0;
-    doorFinishHrs = dp ? dp.breakdown.finishHrs * doorCount : 0;
-    doorSpray = dp ? dp.breakdown.sprayDetail : null;
-    doorAreaM2 = (doorW / 1000) * (doorH / 1000) * doorCount;
-    hingeUnits = hingeCount(doorH) * doorCount;
+    // Leaf heights: each leaf's actual height when given (doorHeightsMm — handleless fronts, a split tall's leaves
+    // one over the other), else doorCount leaves at the carcass height less 6. Leaves of one height price together.
+    const leavesByHeight = new Map();
+    const actual = Array.isArray(doorHeightsMm) && doorHeightsMm.length > 0;
+    if (actual) for (const h of doorHeightsMm) leavesByHeight.set(h, (leavesByHeight.get(h) || 0) + 1);
+    else leavesByHeight.set(heightMm - 6, doorCount);
+    doorLeaves = actual ? doorHeightsMm.length : doorCount;
+    for (const [doorH, n] of leavesByHeight) {
+      const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: n, hingeCost: hingeCount(doorH) * hinge.costEach, handleCost: handleCostPerFront, hasStain, sprayFinishOverride,
+        timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey,
+        frameStileWidthMm, frameThicknessMm: doorFrameThicknessMm });
+      if (!dp) continue;
+      doorsCost += dp.totalCost;
+      doorHrs += dp.breakdown.doorHrs * n;
+      doorFinishHrs += dp.breakdown.finishHrs * n;
+      doorSprays.push([dp.breakdown.sprayDetail, n]);
+      doorAreaM2 += (doorW / 1000) * (doorH / 1000) * n;
+      hingeUnits += hingeCount(doorH) * n;
+    }
   }
 
   // Drawers (cost only)
@@ -1033,13 +1044,17 @@ function calcCabinetCost({
   const frontSprays = [];       // [spray breakdown, 1] per drawer front (sprayDetail split)
   const drawerFrontHeights = [];
   if (drawerCount > 0 && doorType && DB.doorTypes[doorType]) {
-    const topRailMm = 32;
-    const gapMm = 3;
-    const usableHeight = heightMm - topRailMm;
-    const totalGaps = gapMm * (drawerCount - 1);
-    const availableHeight = usableHeight - totalGaps;
-    const defaultFrontH = Math.round(availableHeight / drawerCount);
-    for (let i = 0; i < drawerCount; i++) drawerFrontHeights.push(defaultFrontH);
+    // Each front's actual height when given (drawerFrontHeightsMm — handleless fronts), else an equal share.
+    if (Array.isArray(drawerFrontHeightsMm) && drawerFrontHeightsMm.length > 0) drawerFrontHeights.push(...drawerFrontHeightsMm);
+    else {
+      const topRailMm = 32;
+      const gapMm = 3;
+      const usableHeight = heightMm - topRailMm;
+      const totalGaps = gapMm * (drawerCount - 1);
+      const availableHeight = usableHeight - totalGaps;
+      const defaultFrontH = Math.round(availableHeight / drawerCount);
+      for (let i = 0; i < drawerCount; i++) drawerFrontHeights.push(defaultFrontH);
+    }
     const frontW = widthMm - 4; // drawer fronts span full cabinet width
     const effFrontW = frontW > 0 ? frontW : widthMm - 4;
     for (const fh of drawerFrontHeights) {
@@ -1161,14 +1176,14 @@ function calcCabinetCost({
   const edgebandHrs = edgebandResult.labourHrs || 0;  // edgebanding labour
   const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs + railFinishHrs; // total spray finishing labour (doors + fronts + carcass shell + channel rails)
   // Bench fitting of hardware: push-to-open devices (cost in the fronts' handle cost), the bin frame and legs.
-  const frontCount  = (doorCount > 0 && doorType && DB.doorTypes[doorType] ? doorCount : 0) + drawerFrontHeights.length;
+  const frontCount  = doorLeaves + drawerFrontHeights.length;
   const hardwareFitHrs = frontCount * handleFitHrs + binFrameFitHrs + legFitHrs;
   const channelRailHrs = rail ? rail.benchHrs : 0;   // channel rail bench labour (its spray is in finishHrs)
   const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs + hardwareFitHrs + channelRailHrs).toFixed(3);
   // finishHrs split by step, and by part (carcass / door / drawerFront / channelRail) — parts present only when finished.
   const sprayParts = {};
   if (carcassFinishHrs > 0)     sprayParts.carcass     = sprayHrsSplit(carcassFinishHrs, [[carcassSpray, 1]]);
-  if (doorFinishHrs > 0)        sprayParts.door        = sprayHrsSplit(doorFinishHrs, [[doorSpray, doorCount]]);
+  if (doorFinishHrs > 0)        sprayParts.door        = sprayHrsSplit(doorFinishHrs, doorSprays);
   if (drawerFrontFinishHrs > 0) sprayParts.drawerFront = sprayHrsSplit(drawerFrontFinishHrs, frontSprays);
   if (railFinishHrs > 0)        sprayParts.channelRail = sprayHrsSplit(railFinishHrs, rail.sprays);
   const sprayDetail = { ...sprayHrsSplit(finishHrs, Object.values(sprayParts).map(p => [p, 1])), parts: sprayParts };
@@ -1192,7 +1207,7 @@ function calcCabinetCost({
   if (backArea > 0) addCarcass(backKey, backArea * qty);
   // Doors + drawer fronts share the door type (both made & finished like doors).
   const bomDoors = [];
-  const doorPanels = doorCount + drawerFrontHeights.length;
+  const doorPanels = doorLeaves + drawerFrontHeights.length;
   const doorPanelArea = doorAreaM2 + drawerFrontAreaM2;
   if (doorType && DB.doorTypes[doorType] && doorPanels > 0) {
     bomDoors.push({ key: doorType, count: doorPanels * qty, areaM2: r4(doorPanelArea * qty) });
@@ -1214,7 +1229,7 @@ function calcCabinetCost({
   // When a real handle IS selected it's also charged in the price (calcDoorCost calls
   // above) on the same positions — one source of truth for the priced case.
   const bomHandles = [];
-  const doorHandlePositions   = (doorCount > 0 && doorType && DB.doorTypes[doorType]) ? doorCount : 0;
+  const doorHandlePositions   = doorLeaves;
   const drawerHandlePositions = drawerFrontHeights.length;
   if (doorHandlePositions > 0)   bomHandles.push({ key: handleKey, target: "door",   count: doorHandlePositions * qty });
   if (drawerHandlePositions > 0) bomHandles.push({ key: handleKey, target: "drawer", count: drawerHandlePositions * qty });

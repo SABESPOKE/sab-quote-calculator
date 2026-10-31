@@ -360,6 +360,7 @@ const CABINET_FIELDS = new Set([
   'sprayFinishOverride', 'qty',
   'cabinetTypeKey', // informational — the engine prices from dims/counts, not the type
   'channelRails', 'binFrameKey', 'legKey', 'legCount', 'carcassFinishOutside',   // configurator pricing pack (README "Configurator pricing fields") — all optional
+  'doorHeightsMm', 'drawerFrontHeightsMm',
 ]);
 const CARCASS_FINISHES = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
 const SPRAY_OVERRIDES  = ['', 'primed', 'edge_polish', 'none'];
@@ -425,6 +426,17 @@ function cabinetSpecErrors(spec) {
   if (spec.hasStain !== undefined && typeof spec.hasStain !== 'boolean') errs.push('hasStain must be a boolean');
   if (spec.channelRails !== undefined) errs.push(...channelRailErrors(spec.channelRails));
   if (spec.carcassFinishOutside !== undefined && typeof spec.carcassFinishOutside !== 'boolean') errs.push('carcassFinishOutside must be a boolean');
+  // Actual front heights: one per door leaf (whole rows of doorCount leaves across), one per drawer front.
+  const heights = v => Array.isArray(v) && v.length > 0 && v.every(isPos);
+  const doors = spec.doorCount ?? 2, drawers = spec.drawerCount ?? 0;
+  if (spec.doorHeightsMm !== undefined) {
+    if (!heights(spec.doorHeightsMm)) errs.push('doorHeightsMm must be a non-empty array of positive numbers (mm), one per door leaf');
+    else if (!(doors > 0) || spec.doorHeightsMm.length % doors) errs.push(`doorHeightsMm needs one height per door leaf, in whole rows of doorCount (${doors}) leaves`);
+  }
+  if (spec.drawerFrontHeightsMm !== undefined) {
+    if (!heights(spec.drawerFrontHeightsMm)) errs.push('drawerFrontHeightsMm must be a non-empty array of positive numbers (mm), one per drawer front');
+    else if (spec.drawerFrontHeightsMm.length !== drawers) errs.push(`drawerFrontHeightsMm needs one height per drawer (drawerCount ${drawers})`);
+  }
   return errs;
 }
 

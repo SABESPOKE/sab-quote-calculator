@@ -308,3 +308,44 @@ test('API: /api/cabinet-cost takes carcassFinishOutside (boolean only)', async (
   await parity('/api/cabinet-cost', 'cabinet', { ...CAB, ...OPEN_600, carcassFinishOutside: true, qty: 1 });
   await refused('/api/cabinet-cost', { ...CAB, ...OPEN_600, carcassFinishOutside: 'yes' }, 'carcassFinishOutside');
 });
+
+// ─── 6. Actual front heights (doorHeightsMm, drawerFrontHeightsMm) ───────────
+const DBL_1000 = { widthMm: 1000, doorCount: 2 };
+// A leaf as the cabinet prices it: soft-close hinges by its height, no handle (CAB's HW_HDL_NONE).
+const leaf = (w, h, n = 1) => P.calcDoorCost({ doorType: 'SLAB_PNT', widthMm: w, heightMm: h, qty: n, hingeCost: P.hingeCount(h) * 9.5, handleCost: 0 }).totalCost;
+test('front heights: a handleless base double prices its leaves at their true height', () => {
+  const carcass = cabinet(DBL_1000), actual = cabinet({ ...DBL_1000, doorHeightsMm: [736, 736] });
+  assert.ok(near(carcass.breakdown.doors, leaf(498, 764, 2)));   // today: carcass height − 6
+  assert.ok(near(actual.breakdown.doors, leaf(498, 736, 2)));
+  assert.ok(near(actual.totalCost - carcass.totalCost, actual.breakdown.doors - carcass.breakdown.doors));
+  assert.ok(actual.totalCost < carcass.totalCost);
+  assert.deepEqual(actual.breakdown.bom.hardware, carcass.breakdown.bom.hardware);   // same leaves, same hinges
+  assert.equal(actual.breakdown.bom.doors[0].count, 2);
+});
+
+test('front heights: a split tall prices its two leaves, one over the other, separately', () => {
+  const split = cabinet({ widthMm: 600, heightMm: 2100, doorCount: 1, shelfCount: 4, doorHeightsMm: [1300, 742] });
+  assert.ok(near(split.breakdown.doors, leaf(598, 1300) + leaf(598, 742)));   // full width each
+  assert.equal(split.breakdown.bom.doors[0].count, 2);
+  assert.deepEqual(split.breakdown.bom.hardware.find(h => h.key === 'HW_HINGE_SM'), { key: 'HW_HINGE_SM', count: 5 });   // 3 + 2
+  assert.ok(near(split.breakdown.sprayDetail.parts.door.totalHrs, split.breakdown.sprayDetail.totalHrs - (split.breakdown.carcassFinishHrs || 0)));
+  const push = cabinet({ widthMm: 600, heightMm: 2100, doorCount: 1, shelfCount: 4, doorHeightsMm: [1300, 742], handleKey: 'HW_HDL_PUSH' });
+  assert.ok(near(push.breakdown.hardwareFitHrs, 2 / 6, 1e-3));   // one device per leaf
+});
+
+test('front heights: a wall leaf 20 longer costs more; drawer fronts at their own heights', () => {
+  const wall = { widthMm: 600, heightMm: 720, depthMm: 300, doorCount: 2 };
+  assert.ok(cabinet({ ...wall, doorHeightsMm: [734, 734] }).totalCost > cabinet(wall).totalCost);
+  const fronts = cabinet({ ...DRAWER3_600, drawerFrontHeightsMm: [150, 226, 302] });
+  const expected = [150, 226, 302].reduce((s, h) => s + P.calcDoorCost({ doorType: 'SLAB_PNT', widthMm: 596, heightMm: h, qty: 1, hingeCost: 0, handleCost: 0 }).totalCost, 0);
+  assert.ok(near(fronts.breakdown.drawerFronts, expected));
+});
+
+test('API: /api/cabinet-cost takes doorHeightsMm / drawerFrontHeightsMm and refuses a mismatch', async () => {
+  await parity('/api/cabinet-cost', 'cabinet', { ...CAB, ...DBL_1000, doorHeightsMm: [736, 736], qty: 1 });
+  await parity('/api/cabinet-cost', 'cabinet', { ...CAB, widthMm: 600, heightMm: 2100, doorCount: 1, shelfCount: 4, doorHeightsMm: [1300, 742], qty: 1 });
+  await parity('/api/cabinet-cost', 'cabinet', { ...CAB, ...DRAWER3_600, drawerFrontHeightsMm: [150, 226, 302], qty: 1 });
+  await refused('/api/cabinet-cost', { ...CAB, ...DBL_1000, doorHeightsMm: [736] }, 'whole rows');
+  await refused('/api/cabinet-cost', { ...CAB, ...DBL_1000, doorHeightsMm: [736, 0] }, 'positive');
+  await refused('/api/cabinet-cost', { ...CAB, ...DRAWER3_600, drawerFrontHeightsMm: [150, 226] }, 'one height per drawer');
+});

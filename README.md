@@ -116,6 +116,25 @@ POST /api/cabinet-cost
   "carcassFinishOutside": true, "doorCount": 0, "drawerCount": 0, "shelfCount": 2 }
 ```
 
+### Actual front heights — `doorHeightsMm`, `drawerFrontHeightsMm`
+
+| Field | Values | Default |
+|---|---|---|
+| `doorHeightsMm` | array of mm, one per door leaf, in whole rows of `doorCount` leaves across | absent: `doorCount` leaves at the cabinet height − 6 |
+| `drawerFrontHeightsMm` | array of mm, one per drawer front (length = `drawerCount`) | absent: an equal share of the height − 32, 3 mm gaps |
+
+Lets handleless fronts price at their true size: base leaves 20–28 mm shorter, wall leaves 20 mm longer, and a split
+tall's two leaves priced separately. A leaf's width stays the cabinet width ÷ `doorCount` − 2, so a split tall is
+`doorCount: 1` with two heights, top and bottom (each full width), and a split tall double is `doorCount: 2` with four.
+Each leaf gets the hinge count for its own height, and one handle position (one push-to-open device). Leave the
+fields out and the fronts price as before.
+
+```json
+POST /api/cabinet-cost
+{ "widthMm": 600, "heightMm": 2100, "depthMm": 560, "carcassMaterialKey": "MAT_BIRCH_PREF_18", "doorCount": 1,
+  "doorType": "SLAB_PNT", "shelfCount": 4, "doorHeightsMm": [1300, 742] }
+```
+
 ## WRP Mouldings price refresh
 
 The WRP Timber Mouldings catalogue at `data/wrp_catalogue.json` is the source of truth (131 profiles across 10 categories). To refresh prices:
