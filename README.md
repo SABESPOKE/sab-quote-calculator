@@ -39,6 +39,31 @@ POST /api/cabinet-cost
   "drawerCount": 3, "drawerType": "DRW_SHEET", "doorType": "SLAB_PNT", "shelfCount": 0, "handleKey": "HW_HDL_PUSH" }
 ```
 
+### Handleless channel rail per metre — `channelRails`
+
+| Field | Values | Default |
+|---|---|---|
+| `channelRails` | object, below | absent: no rail line |
+| `channelRails.materialKey` | the door board, a `materials` key (e.g. `MAT_MDF_FH_22` painted/primed 22, `MAT_SHINNOKI_19`) | required |
+| `channelRails.finishType` | `none` \| `edge_polish` \| `primed` \| `paint` \| `lacquer` \| `stain_lacquer` | the board's natural finish (MDF `paint`, raw veneer `lacquer`, prefinished `none`) |
+| `channelRails.thicknessMm` | door board thickness T, mm | the board's own thickness |
+| `channelRails.rails[]` | `{ profile, lengthMm }`; `profile` `L` (top rail) \| `C` (mid-rail) \| `TALL_C` (a tall split's C) | required, at least one |
+
+Prices the configurator's handleless rails and C-channels per metre run, in place of one end panel per piece. Board girth
+per profile: L = 70 + T, C = 90 + 2T, TALL_C = 110 + 2T (mm). Each rail is priced as its board (girth × length ×
+£/m² × waste) plus its spray (girth × length, one face, at the existing spray rates), plus 15 min/m bench labour and
+one 10-minute setup per cabinet. It appears as `breakdown.channelRail` (cost) and `breakdown.channelRailHrs`; its
+spray hours join `finishHrs` as `sprayDetail.parts.channelRail`. A split tall's fixed shelves are not part of it:
+keep sending them as end panels to `POST /api/endpanel-cost`.
+
+```json
+POST /api/cabinet-cost
+{ "widthMm": 600, "heightMm": 770, "depthMm": 560, "carcassMaterialKey": "MAT_BIRCH_PREF_18", "doorCount": 0,
+  "drawerCount": 3, "drawerType": "DRW_SHEET", "doorType": "SLAB_PNT", "sprayFinishOverride": "primed", "shelfCount": 0,
+  "channelRails": { "materialKey": "MAT_MDF_FH_22", "finishType": "primed",
+    "rails": [{ "profile": "L", "lengthMm": 600 }, { "profile": "C", "lengthMm": 600 }, { "profile": "C", "lengthMm": 600 }] } }
+```
+
 ## WRP Mouldings price refresh
 
 The WRP Timber Mouldings catalogue at `data/wrp_catalogue.json` is the source of truth (131 profiles across 10 categories). To refresh prices:

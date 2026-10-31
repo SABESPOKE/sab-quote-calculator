@@ -156,3 +156,84 @@ test('push to open: a tall door gets one device (DECISION)', () => {
 test('API: /api/cabinet-cost takes handleKey HW_HDL_PUSH', async () => {
   await parity('/api/cabinet-cost', 'cabinet', { ...CAB, ...DRAWER3_600, handleKey: 'HW_HDL_PUSH', qty: 1 });
 });
+
+// ─── 2. Handleless channel rail per metre (channelRails) ─────────────────────
+// The configurator's handleless designs (Stop 55 specs): primed MDF fronts, rails in the 22 door board, primed.
+const RAILS = (rails, o = {}) => ({ materialKey: 'MAT_MDF_FH_22', finishType: 'primed', rails, ...o });
+const HL = {
+  drw600:   { cab: { ...DRAWER3_600, doorType: 'SLAB_PNT', sprayFinishOverride: 'primed' }, rails: [{ profile: 'L', lengthMm: 600 }, { profile: 'C', lengthMm: 600 }, { profile: 'C', lengthMm: 600 }] },
+  dbl1000:  { cab: { widthMm: 1000, doorCount: 2, sprayFinishOverride: 'primed' }, rails: [{ profile: 'L', lengthMm: 1000 }] },
+  tall2100: { cab: { widthMm: 600, heightMm: 2100, doorCount: 1, shelfCount: 4, sprayFinishOverride: 'primed' }, rails: [{ profile: 'TALL_C', lengthMm: 600 }] },
+};
+// Today: each channel piece is one end panel (the configurator's route): length × piece width, one face, the door board.
+const PIECES = { L: [42, 50], C: [42, 50, 42], TALL_C: [42, 70, 42] };   // T = 22: floor/flange 20 + T, upright 50 (70)
+const perPiece = rails => rails.reduce((s, r) => s + PIECES[r.profile].reduce((a, w) => a + P.priceItem({ type: 'endpanel', qty: 1,
+  params: { materialKey: 'MAT_MDF_FH_22', widthMm: r.lengthMm, heightMm: w, thicknessMm: 22, faces: 1, finishType: 'primed' } }).totalCost, 0), 0);
+
+test('channel rail: board + spray per strip, bench labour per metre, ONE setup per cabinet, on its own line', () => {
+  const mat = P.DB.materials.MAT_MDF_FH_22;
+  for (const { cab, rails } of Object.values(HL)) {
+    const without = cabinet(cab), withRail = cabinet({ ...cab, channelRails: RAILS(rails) });
+    let expected = 0, metres = 0;
+    for (const r of rails) {
+      const girth = { L: 92, C: 134, TALL_C: 154 }[r.profile];
+      metres += r.lengthMm / 1000;
+      expected += (girth / 1000) * (r.lengthMm / 1000) * mat.costPerM2 * mat.wasteFactor
+        + P.calcSprayFinishCost({ widthMm: girth, heightMm: r.lengthMm, finishType: 'primed', surfaceType: 'panel' }).costPerDoor;
+    }
+    expected += (metres * 15 + 10) / 60 * ER;
+    assert.ok(near(withRail.breakdown.channelRail, expected), `${withRail.breakdown.channelRail} vs ${expected}`);
+    assert.ok(near(withRail.totalCost - without.totalCost, expected));
+    assert.ok(near(withRail.totalSellExVAT, withRail.totalCost * P.DB.settings.margin));
+    assert.ok(near(withRail.breakdown.channelRailHrs, (metres * 15 + 10) / 60, 1e-3));
+    // Doors and drawer lines unchanged (the configurator's split-tall sub-lines read only those).
+    for (const k of ['doors', 'drawers', 'drawerFronts']) assert.equal(withRail.breakdown[k], without.breakdown[k]);
+    // Spray hours join finishHrs as their own part; the split still adds up.
+    const sd = withRail.breakdown.sprayDetail;
+    assert.ok(sd.parts.channelRail.totalHrs > 0);
+    assert.ok(near(sd.totalHrs, withRail.breakdown.finishHrs));
+    assert.ok(near(withRail.breakdown.totalHrs, without.breakdown.totalHrs + withRail.breakdown.channelRailHrs + sd.parts.channelRail.totalHrs, 2e-3));
+    // Cheaper than pricing the same pieces as end panels.
+    assert.ok(withRail.breakdown.channelRail < perPiece(rails), `rail ${withRail.breakdown.channelRail} vs pieces ${perPiece(rails)}`);
+  }
+});
+
+test('channel rail: the setup is per cabinet, not per strip', () => {
+  const one = P.calcChannelRailCost(RAILS([{ profile: 'C', lengthMm: 600 }]));
+  const two = P.calcChannelRailCost(RAILS([{ profile: 'C', lengthMm: 600 }, { profile: 'C', lengthMm: 600 }]));
+  assert.ok(near(two.cost, 2 * one.cost - (10 / 60) * ER));
+});
+
+test('channel rail: girth from the profile and T (default: the board\'s own thickness)', () => {
+  const girthM2 = (o) => P.calcChannelRailCost(RAILS([{ profile: o.profile, lengthMm: 1000 }], { materialKey: o.mat, finishType: 'none', thicknessMm: o.T })).material / (P.DB.materials[o.mat].costPerM2 * P.DB.materials[o.mat].wasteFactor);
+  assert.ok(near(girthM2({ profile: 'L', mat: 'MAT_MDF_FH_22' }), 0.092));
+  assert.ok(near(girthM2({ profile: 'C', mat: 'MAT_MDF_FH_22' }), 0.134));
+  assert.ok(near(girthM2({ profile: 'TALL_C', mat: 'MAT_MDF_FH_22' }), 0.154));
+  assert.ok(near(girthM2({ profile: 'C', mat: 'MAT_SHINNOKI_19' }), 0.128));            // T 19 from the board
+  assert.ok(near(girthM2({ profile: 'C', mat: 'MAT_MDF_FH_18', T: 22 }), 0.134));       // T given
+});
+
+test('channel rail: finish defaults to the board\'s natural finish (painted MDF sprayed, Shinnoki not)', () => {
+  const r = [{ profile: 'C', lengthMm: 600 }];
+  const mdf = P.calcChannelRailCost({ materialKey: 'MAT_MDF_FH_22', rails: r });
+  assert.ok(near(mdf.spray, P.calcChannelRailCost(RAILS(r, { finishType: 'paint' })).spray));
+  const shin = P.calcChannelRailCost({ materialKey: 'MAT_SHINNOKI_19', rails: r });
+  assert.equal(shin.spray, 0);
+  assert.equal(shin.finishHrs, 0);
+  const oak = P.calcChannelRailCost({ materialKey: 'MAT_OAK_MDF_UNF_19', rails: r });   // raw veneer → lacquer
+  assert.ok(near(oak.spray, P.calcChannelRailCost({ materialKey: 'MAT_OAK_MDF_UNF_19', finishType: 'lacquer', rails: r }).spray));
+});
+
+test('API: /api/cabinet-cost takes channelRails and refuses a bad one', async () => {
+  const body = { ...CAB, ...HL.drw600.cab, channelRails: RAILS(HL.drw600.rails), qty: 1 };
+  await parity('/api/cabinet-cost', 'cabinet', body);
+  await refused('/api/cabinet-cost', { ...body, channelRails: RAILS([{ profile: 'U', lengthMm: 600 }]) }, 'profile');
+  await refused('/api/cabinet-cost', { ...body, channelRails: RAILS([{ profile: 'C', lengthMm: 0 }]) }, 'lengthMm');
+  await refused('/api/cabinet-cost', { ...body, channelRails: RAILS([]) }, 'non-empty');
+  await refused('/api/cabinet-cost', { ...body, channelRails: RAILS(HL.drw600.rails, { materialKey: 'MAT_NOPE' }) }, 'materialKey');
+  await refused('/api/cabinet-cost', { ...body, channelRails: RAILS(HL.drw600.rails, { finishType: 'gloss' }) }, 'finishType');
+  await refused('/api/cabinet-cost', { ...body, channelRails: RAILS(HL.drw600.rails, { colour: 'red' }) }, 'unknown channelRails');
+  const keys = await (await fetch(`${base}/api/cabinet-cost/keys`, { headers: { authorization: `Bearer ${process.env.API_TOKEN}` } })).json();
+  assert.deepEqual(Object.keys(keys.channelRails.profiles), ['L', 'C', 'TALL_C']);
+  assert.ok(keys.fields.includes('channelRails'));
+});

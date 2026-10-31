@@ -14,11 +14,11 @@ let recomputeQuotePricing = null;
 let quoteGrandTotal = null;
 let quoteMaterialsBom = null;
 let withPricingStatus = null, lockQuote = null, quoteSettings = null, applySettings = null, validateSettings = null, ENGINE_VERSION = null, lockedChange = null, lockedMerge = null, onOrderCreate = null;
-let PRICING_DB = null, FRAME_MATERIALS = null, EDGEBAND_TYPES = null; // lookup tables for /api/cabinet-cost
+let PRICING_DB = null, FRAME_MATERIALS = null, EDGEBAND_TYPES = null, CHANNEL_PROFILES = null; // lookup tables for /api/cabinet-cost
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
-  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES,
+  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES, CHANNEL_PROFILES,
      withPricingStatus, lockQuote, quoteSettings, applySettings, validateSettings, ENGINE_VERSION, lockedChange, lockedMerge, onOrderCreate } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
@@ -359,9 +359,33 @@ const CABINET_FIELDS = new Set([
   'panelMaterialKey', 'frameStileWidthMm', 'doorFrameThicknessMm', 'edgebandKey', 'hasStain',
   'sprayFinishOverride', 'qty',
   'cabinetTypeKey', // informational — the engine prices from dims/counts, not the type
+  'channelRails',   // configurator pricing pack (README "Configurator pricing fields") — all optional
 ]);
 const CARCASS_FINISHES = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
 const SPRAY_OVERRIDES  = ['', 'primed', 'edge_polish', 'none'];
+const isPos = v => typeof v === 'number' && Number.isFinite(v) && v > 0;
+const has = (table, k) => !!table && Object.prototype.hasOwnProperty.call(table, k);
+
+// channelRails: { materialKey, finishType?, thicknessMm?, rails: [{ profile, lengthMm }] } — the handleless channel per metre.
+const CHANNEL_RAIL_FIELDS = ['materialKey', 'finishType', 'thicknessMm', 'rails'];
+function channelRailErrors(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return ['channelRails must be an object { materialKey, finishType?, thicknessMm?, rails: [{ profile, lengthMm }] }'];
+  const errs = [];
+  const unknown = Object.keys(v).filter(k => !CHANNEL_RAIL_FIELDS.includes(k));
+  if (unknown.length) errs.push(`unknown channelRails field(s): ${unknown.join(', ')}`);
+  if (!has(PRICING_DB.materials, v.materialKey)) errs.push(`channelRails.materialKey "${v.materialKey}" is not a material — see GET /api/cabinet-cost/keys (materials)`);
+  if (v.finishType !== undefined && !CARCASS_FINISHES.includes(v.finishType)) errs.push(`channelRails.finishType must be one of ${CARCASS_FINISHES.join('|')}`);
+  if (v.thicknessMm !== undefined && !isPos(v.thicknessMm)) errs.push('channelRails.thicknessMm must be a positive number');
+  if (!Array.isArray(v.rails) || !v.rails.length) return [...errs, 'channelRails.rails must be a non-empty array of { profile, lengthMm }'];
+  v.rails.forEach((r, i) => {
+    if (!r || typeof r !== 'object' || Object.keys(r).some(k => k !== 'profile' && k !== 'lengthMm')) errs.push(`channelRails.rails[${i}] must be { profile, lengthMm }`);
+    else {
+      if (!has(CHANNEL_PROFILES, r.profile)) errs.push(`channelRails.rails[${i}].profile must be one of ${Object.keys(CHANNEL_PROFILES).join('|')}`);
+      if (!isPos(r.lengthMm)) errs.push(`channelRails.rails[${i}].lengthMm must be a positive number`);
+    }
+  });
+  return errs;
+}
 
 // Returns a list of problems (empty = OK). Only checks what the engine would otherwise guess at.
 function cabinetSpecErrors(spec) {
@@ -393,6 +417,7 @@ function cabinetSpecErrors(spec) {
   if (spec.carcassFinish !== undefined && !CARCASS_FINISHES.includes(spec.carcassFinish)) errs.push(`carcassFinish must be one of ${CARCASS_FINISHES.join('|')}`);
   if (spec.sprayFinishOverride !== undefined && !SPRAY_OVERRIDES.includes(spec.sprayFinishOverride)) errs.push(`sprayFinishOverride must be one of ""|${SPRAY_OVERRIDES.slice(1).join('|')}`);
   if (spec.hasStain !== undefined && typeof spec.hasStain !== 'boolean') errs.push('hasStain must be a boolean');
+  if (spec.channelRails !== undefined) errs.push(...channelRailErrors(spec.channelRails));
   return errs;
 }
 
@@ -459,6 +484,7 @@ app.get('/api/cabinet-cost/keys', (req, res) => {
     sprayFinishOverrides: SPRAY_OVERRIDES,
     fields: [...CABINET_FIELDS],
     endPanel: { fields: [...ENDPANEL_FIELDS], finishTypes: CARCASS_FINISHES }, // POST /api/endpanel-cost (materials = the same table)
+    channelRails: { fields: CHANNEL_RAIL_FIELDS, profiles: namesOf(CHANNEL_PROFILES), finishTypes: CARCASS_FINISHES },   // cabinet param channelRails
     settings: { margin: PRICING_DB.settings.margin, vat: PRICING_DB.settings.vat },
   });
 });

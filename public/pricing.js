@@ -28,6 +28,9 @@ const DB = {
     carcassBaseHrs: 1,          // hrs for reference 600×720×560 cabinet
     carcassShelfHrs: 0,         // additional hrs per shelf fitted
     carcassDrawerPrepHrs: 0.5,  // additional hrs when any drawers are present
+    // ── Handleless channel rail (cabinet param channelRails) — DECISION figures, Steve to confirm ──
+    channelRailMinsPerM: 15,    // bench mins per metre of rail: cut, assemble and fix the profile
+    channelRailSetupMins: 10,   // one setup per cabinet that has any rail (not per strip)
     // ── Project-level cost defaults (all adjustable) ──────────────────────────
     surveyFee: 250,             // £ flat — site survey visit (per project)
     installDayRate: 350,        // £/day — billed PER FITTER per day on site
@@ -292,6 +295,16 @@ const FRAME_MATERIALS = {
   "FRAME_OAK_18":   { name: "Solid Oak Frame 18mm (legacy)",   pricingMode: "linear", costPerM: 8.50, labourHrsPerM: 0.22, legacy: true },
   "FRAME_ASH_18":   { name: "Solid Ash Frame 18mm (legacy)",   pricingMode: "linear", costPerM: 7.00, labourHrsPerM: 0.22, legacy: true },
   "FRAME_PINE_18":  { name: "Solid Pine Frame 18mm (legacy)",  pricingMode: "linear", costPerM: 4.50, labourHrsPerM: 0.20, legacy: true },
+};
+
+// ─── HANDLELESS CHANNEL PROFILES ──────────────────────────────────────────────
+// The configurator's channel as built (its sabChannelMm, Steve's handleless sections): every piece is cut from the
+// door board, T thick. Board girth of a rail = fixedMm + tCount × T. Floor and flange are 20 + T deep; the upright
+// is 50 tall (70 on a tall split's C, which reaches 20 under and 20 over the 30 gap).
+const CHANNEL_PROFILES = {
+  "L":      { name: "Top channel rail (L)",  fixedMm: 70,  tCount: 1 },  // floor + upright 50
+  "C":      { name: "Mid-rail C-channel",    fixedMm: 90,  tCount: 2 },  // floor + upright 50 + flange
+  "TALL_C": { name: "Tall split C-channel",  fixedMm: 110, tCount: 2 },  // floor + upright 70 + flange
 };
 
 // ─── EDGEBAND TYPES ───────────────────────────────────────────────────────────
@@ -929,6 +942,7 @@ function calcCabinetCost({
   edgebandKey = "EDGE_OAK_05",
   hasStain = false,
   sprayFinishOverride = "",
+  channelRails,     // handleless channel rails per metre: { materialKey, finishType?, thicknessMm?, rails: [{ profile, lengthMm }] }
   qty = 1,
   margin = DB.settings.margin,
 }) {
@@ -1105,23 +1119,30 @@ function calcCabinetCost({
   // Any legacy fillerCount on cabinet items is migrated to separate filler items at
   // quote-load time via migrateLegacyFillers.)
 
-  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total;
+  // ── Handleless channel rails, per metre (its own line, channelRail) ──
+  const rail = channelRails ? calcChannelRailCost(channelRails) : null;
+  const channelRailCost = rail ? rail.cost : 0;
+  const railFinishHrs   = rail ? rail.finishHrs : 0;
+
+  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + channelRailCost;
   const totalCost = totalCostPerUnit * qty;
   const sellExVAT = totalCost * margin;
 
   // ── Labour hours roll-up, person-hours per cabinet (additive, for production scheduling) ──
   const frameHrs    = frameResult.labourHrs || 0;     // face-frame-making labour
   const edgebandHrs = edgebandResult.labourHrs || 0;  // edgebanding labour
-  const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs; // total spray finishing labour (doors + fronts + carcass shell)
+  const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs + railFinishHrs; // total spray finishing labour (doors + fronts + carcass shell + channel rails)
   // Bench fitting of hardware (push-to-open devices); its cost is already in the fronts' handle cost.
   const frontCount  = (doorCount > 0 && doorType && DB.doorTypes[doorType] ? doorCount : 0) + drawerFrontHeights.length;
   const hardwareFitHrs = frontCount * handleFitHrs;
-  const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs + hardwareFitHrs).toFixed(3);
-  // finishHrs split by step, and by part (carcass / door / drawerFront) — parts present only when finished.
+  const channelRailHrs = rail ? rail.benchHrs : 0;   // channel rail bench labour (its spray is in finishHrs)
+  const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs + hardwareFitHrs + channelRailHrs).toFixed(3);
+  // finishHrs split by step, and by part (carcass / door / drawerFront / channelRail) — parts present only when finished.
   const sprayParts = {};
   if (carcassFinishHrs > 0)     sprayParts.carcass     = sprayHrsSplit(carcassFinishHrs, [[carcassSpray, 1]]);
   if (doorFinishHrs > 0)        sprayParts.door        = sprayHrsSplit(doorFinishHrs, [[doorSpray, doorCount]]);
   if (drawerFrontFinishHrs > 0) sprayParts.drawerFront = sprayHrsSplit(drawerFrontFinishHrs, frontSprays);
+  if (railFinishHrs > 0)        sprayParts.channelRail = sprayHrsSplit(railFinishHrs, rail.sprays);
   const sprayDetail = { ...sprayHrsSplit(finishHrs, Object.values(sprayParts).map(p => [p, 1])), parts: sprayParts };
 
   // ── Bill of materials (read-only, additive) ───────────────────────────────
@@ -1175,6 +1196,7 @@ function calcCabinetCost({
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
     breakdown: { carcassMaterial: carcassMaterialCost, carcassLabour: carcassLabourCost, carcassHardware, doors: doorsCost, drawers: drawersCost, drawerFronts: drawerFrontsCost, frame: frameResult.total, edgeband: edgebandResult.total,
+      ...(rail ? { channelRail: channelRailCost, channelRailHrs: +channelRailHrs.toFixed(3) } : {}),
       assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs,
       ...(hardwareFitHrs > 0 ? { hardwareFitHrs: +hardwareFitHrs.toFixed(3) } : {}), totalHrs, sprayDetail,
       bom: { carcass: bomCarcass, doors: bomDoors, drawerBoxes: bomDrawerBoxes, frames: bomFrames, edgeband: bomEdgeband, hardware: bomHardware, handles: bomHandles } },
@@ -1391,6 +1413,35 @@ function calcCabinetEdgebandCost({ edgebandKey, widthMm, heightMm, shelfCount = 
   return { costPerUnit: +costPerUnit.toFixed(2), total: +(costPerUnit * qty).toFixed(2), totalM: +totalM.toFixed(3), labourHrs: +labourHrs.toFixed(3) };
 }
 
+// ─── HANDLELESS CHANNEL RAIL (CABINET) ─────────────────────────────────────────
+// Priced per metre run, in place of pricing each channel piece as an end panel. Per rail: the strip's board
+// (girth × length × £/m² × waste) and its spray (girth × length, one face — the end-panel rule; finishType defaults
+// to the board's naturalFinish), plus bench labour per metre and ONE setup per cabinet. thicknessMm (T) defaults
+// to the board's own. Returns null when there is nothing to price.
+function calcChannelRailCost({ materialKey, finishType, thicknessMm, rails } = {}) {
+  const mat = DB.materials[materialKey];
+  if (!mat || !Array.isArray(rails)) return null;
+  const T = thicknessMm || mat.thicknessMm;
+  const finish = finishType || mat.naturalFinish || "none";
+  let material = 0, spray = 0, finishHrs = 0, metres = 0;
+  const sprays = [];
+  for (const r of rails) {
+    const p = r && CHANNEL_PROFILES[r.profile];
+    if (!p || !(r.lengthMm > 0)) continue;
+    const girthMm = p.fixedMm + p.tCount * T;
+    metres += r.lengthMm / 1000;
+    material += (girthMm / 1000) * (r.lengthMm / 1000) * mat.costPerM2 * (mat.wasteFactor || 1.12);
+    const sf = calcSprayFinishCost({ widthMm: girthMm, heightMm: r.lengthMm, qty: 1, finishType: finish, surfaceType: "panel" });
+    spray += sf.costPerDoor;
+    finishHrs += sf.breakdown.totalHrs;
+    sprays.push([sf.breakdown, 1]);
+  }
+  if (!metres) return null;
+  const benchHrs = (metres * DB.settings.channelRailMinsPerM + DB.settings.channelRailSetupMins) / 60;
+  const labour = benchHrs * er();
+  return { cost: material + spray + labour, material, spray, labour, metres, benchHrs, finishHrs, sprays };
+}
+
 // ── FILLER COST ────────────────────────────────────────────────────────────
 // Scribed strip in matching door finish. Self-contained line item (not bundled
 // inside a cabinet). Pricing scales with strip size — bench labour is flat per
@@ -1598,7 +1649,7 @@ function quoteMaterialsBom(quote) {
 
 // ─── Exports / global exposure ──────────────────────────────────────────────
 (function () {
-  const api = { DB, FRAME_MATERIALS, EDGEBAND_TYPES, NO_EDGE_MATERIALS, er, hingeCount, fmt,
+  const api = { DB, FRAME_MATERIALS, EDGEBAND_TYPES, NO_EDGE_MATERIALS, CHANNEL_PROFILES, calcChannelRailCost, er, hingeCount, fmt,
     calcSprayFinishCost, calcDoorCost, calcFrameCost, calcDrawerCost, calcCabinetCost,
     calcEndPanelCost, calcFloatingShelfCost, calcMouldingCost, parseWRPDimensions,
     calcWRPFinishCostPerM, calcWRPMouldingCost, calcCabinetFaceFrameCost,
