@@ -466,7 +466,7 @@ function totalInstallDays(pc) {
 // captured at lock time. Engine/Settings changes reach only new quotes, edited items
 // and a deliberate "Reprice to current pricing…". Hours stay live (withPricingStatus).
 // Bump ENGINE_VERSION with any pricing.js change that can move a price.
-const ENGINE_VERSION = "2026-10-09";
+const ENGINE_VERSION = "2026-10-31";
 
 // Short fingerprint (djb2) of the pricing tables + settings an item is priced with.
 function settingsFingerprint() {
