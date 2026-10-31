@@ -64,6 +64,21 @@ POST /api/cabinet-cost
     "rails": [{ "profile": "L", "lengthMm": 600 }, { "profile": "C", "lengthMm": 600 }, { "profile": "C", "lengthMm": 600 }] } }
 ```
 
+### Bin frame — `binFrameKey`
+
+| Field | Values | Default |
+|---|---|---|
+| `binFrameKey` | `"HW_BIN_ECOTOP"` — bin pull-out frame (Blum / LDL Ecotop) | absent: no frame |
+
+One frame per cabinet: £200.00 net cost plus 30 minutes' bench fitting (`breakdown.binFrame`; hours in
+`breakdown.hardwareFitHrs`). It is listed in `breakdown.bom.hardware`. Send it on the bin pull-out base unit.
+
+```json
+POST /api/cabinet-cost
+{ "widthMm": 600, "heightMm": 770, "depthMm": 560, "carcassMaterialKey": "MAT_BIRCH_PREF_18", "doorCount": 0,
+  "drawerCount": 1, "drawerType": "DRW_SHEET", "doorType": "SLAB_PNT", "shelfCount": 0, "binFrameKey": "HW_BIN_ECOTOP" }
+```
+
 ## WRP Mouldings price refresh
 
 The WRP Timber Mouldings catalogue at `data/wrp_catalogue.json` is the source of truth (131 profiles across 10 categories). To refresh prices:

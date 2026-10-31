@@ -237,3 +237,24 @@ test('API: /api/cabinet-cost takes channelRails and refuses a bad one', async ()
   assert.deepEqual(Object.keys(keys.channelRails.profiles), ['L', 'C', 'TALL_C']);
   assert.ok(keys.fields.includes('channelRails'));
 });
+
+// ─── 3. Bin frame (binFrameKey) ──────────────────────────────────────────────
+const BIN_600 = { doorCount: 0, drawerCount: 1, shelfCount: 0 };   // the bin pull-out: one pull-out front on runners
+test('bin frame: £200 frame + 30 min fitting at the bench rate, one per cabinet, its own line', () => {
+  const plain = cabinet(BIN_600), framed = cabinet({ ...BIN_600, binFrameKey: 'HW_BIN_ECOTOP' });
+  const frame = 200 + 0.5 * ER;
+  assert.ok(near(framed.breakdown.binFrame, frame));
+  assert.ok(near(framed.totalCost - plain.totalCost, frame));
+  assert.ok(near(framed.totalSellExVAT, framed.totalCost * P.DB.settings.margin));
+  assert.ok(near(framed.breakdown.hardwareFitHrs, 0.5));
+  assert.ok(near(framed.breakdown.totalHrs, plain.breakdown.totalHrs + 0.5, 2e-3));
+  assert.equal(plain.breakdown.binFrame, undefined);
+  const two = cabinet({ ...BIN_600, binFrameKey: 'HW_BIN_ECOTOP' }, 2);
+  assert.ok(near(two.totalCost, 2 * framed.totalCost, 1e-6));
+  assert.deepEqual(two.breakdown.bom.hardware.find(h => h.key === 'HW_BIN_ECOTOP'), { key: 'HW_BIN_ECOTOP', count: 2 });
+});
+
+test('API: /api/cabinet-cost takes binFrameKey and refuses an unknown one', async () => {
+  await parity('/api/cabinet-cost', 'cabinet', { ...CAB, ...BIN_600, binFrameKey: 'HW_BIN_ECOTOP', qty: 1 });
+  await refused('/api/cabinet-cost', { ...CAB, ...BIN_600, binFrameKey: 'HW_BIN_X' }, 'binFrameKey');
+});

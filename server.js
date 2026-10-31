@@ -359,7 +359,7 @@ const CABINET_FIELDS = new Set([
   'panelMaterialKey', 'frameStileWidthMm', 'doorFrameThicknessMm', 'edgebandKey', 'hasStain',
   'sprayFinishOverride', 'qty',
   'cabinetTypeKey', // informational — the engine prices from dims/counts, not the type
-  'channelRails',   // configurator pricing pack (README "Configurator pricing fields") — all optional
+  'channelRails', 'binFrameKey',   // configurator pricing pack (README "Configurator pricing fields") — all optional
 ]);
 const CARCASS_FINISHES = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
 const SPRAY_OVERRIDES  = ['', 'primed', 'edge_polish', 'none'];
@@ -410,6 +410,7 @@ function cabinetSpecErrors(spec) {
   keyIn('runnerKey',          PRICING_DB.hardware.runners, 'hardware.runners');
   keyIn('hingeKey',           PRICING_DB.hardware.hinges,  'hardware.hinges');
   keyIn('handleKey',          PRICING_DB.hardware.handles, 'hardware.handles');
+  keyIn('binFrameKey',        PRICING_DB.hardware.binFrames, 'hardware.binFrames');
   keyIn('timberSpeciesKey',   PRICING_DB.solidTimber, 'solidTimber');
   keyIn('cabinetTypeKey',     PRICING_DB.cabinetTypes, 'cabinetTypes');
   keyIn('frameKey',           FRAME_MATERIALS, 'frames');
@@ -475,7 +476,8 @@ app.get('/api/cabinet-cost/keys', (req, res) => {
     materials:    namesOf(PRICING_DB.materials),
     doorTypes:    namesOf(PRICING_DB.doorTypes),
     drawerTypes:  namesOf(PRICING_DB.drawerTypes),
-    hardware:     { runners: namesOf(PRICING_DB.hardware.runners), hinges: namesOf(PRICING_DB.hardware.hinges), handles: namesOf(PRICING_DB.hardware.handles) },
+    hardware:     { runners: namesOf(PRICING_DB.hardware.runners), hinges: namesOf(PRICING_DB.hardware.hinges), handles: namesOf(PRICING_DB.hardware.handles),
+                    binFrames: namesOf(PRICING_DB.hardware.binFrames) },
     frames:       namesOf(FRAME_MATERIALS),
     edgebands:    namesOf(EDGEBAND_TYPES),
     solidTimber:  namesOf(PRICING_DB.solidTimber),
