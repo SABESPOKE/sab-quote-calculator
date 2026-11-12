@@ -363,6 +363,7 @@ const CABINET_FIELDS = new Set([
   'doorHeightsMm', 'drawerFrontHeightsMm',
   'inframeFront',   // in-frame build { timber, thicknessMm, frameMm, hinges } (README "In-frame") — optional
   'drawerPosition', // "external" (default) | "internal": drawers behind doors, plain fronts in the carcass board (README "Internal drawers")
+  'drawerBoxMaterialKey', // the board of a sheet drawer box and of an internal front; absent: the carcass board
 ]);
 const DRAWER_POSITIONS = ['external', 'internal'];
 const CARCASS_FINISHES = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
@@ -425,6 +426,7 @@ function cabinetSpecErrors(spec) {
   keyIn('carcassMaterialKey', PRICING_DB.materials, 'materials');
   keyIn('backMaterialKey',    PRICING_DB.materials, 'materials');
   keyIn('panelMaterialKey',   PRICING_DB.materials, 'materials');
+  keyIn('drawerBoxMaterialKey', PRICING_DB.materials, 'materials');
   keyIn('doorType',           PRICING_DB.doorTypes, 'doorTypes');
   keyIn('drawerType',         PRICING_DB.drawerTypes, 'drawerTypes');
   keyIn('runnerKey',          PRICING_DB.hardware.runners, 'hardware.runners');
