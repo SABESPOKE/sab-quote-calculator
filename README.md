@@ -211,6 +211,13 @@ In the calculator, a cabinet's **In-frame** tick sets `inframeFront` from the bu
 19 in a 20 frame, butt; painted slab → 22 MDF in 22 MDF, Blum) — every value editable, and a configurator draft's
 `inframeFront` opens in the same controls.
 
+A room can be In-frame too (Room Setup ⚙ → **In-frame**, with its timber, hinges, door thickness, frame thickness and
+frame face): new cabinets in the room then start in-frame. Existing cabinets change only by **Apply in-frame to all
+cabinets in this room** (with the tick off: **Remove in-frame…**), which shows the room's price before and after and
+saves on OK. Those cabinets are repriced at today's rates, as any edited item is; nothing else in the quote moves, and
+a website order (`locked: true`) is never touched. The hanging minutes are on the Settings screen (Carcass Assembly
+Labour).
+
 End panels and fillers are not part of the cabinet: send each to `POST /api/endpanel-cost` in its board
 (`MAT_MDF_FH_18`, `MAT_MDF_FH_12`, `MAT_MDF_FH_22`). `GET /api/cabinet-cost/keys` lists the timbers and hinges
 (`inframeFront`). Tests: `test/inframe.test.js`.
