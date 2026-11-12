@@ -395,6 +395,43 @@ test('UI: a website order shows the badge and its paid figures, is read-only, an
   });
 });
 
+// ─── Quote notes: shown read-only on the quote screen (a configurator draft's design link) ───
+test('UI: a quote\'s notes show read-only under the header, links clickable; a quote without notes shows no box', {
+  skip: (!CHROME && 'Chrome not found (set CHROME_PATH)') || (typeof WebSocket === 'undefined' && 'needs Node 22+ (global WebSocket)'),
+  timeout: 180000,
+}, () => {
+  const LINK = 'https://configurator.example/design/abc123?rev=2';
+  const NOTE = `From configurator: ${LINK}, sent 12/11/2026`;
+  const quote = (id, ref, extra) => P.lockQuote({ id, client: 'Jane Example', project: 'Kitchen', ref, created: '12/11/2026', ...extra,
+    rooms: { Kitchen: { includeDesignTime: false, items: [{ type: 'door', description: 'Shaker door', qty: 1, params: { doorType: 'SHAKER_PNT', widthMm: 500, heightMm: 720 } }].map(it => ({ ...it, pricing: P.priceItem(it) })) } },
+    projectCosts: P.getDefaultProjectCosts() });
+  const DRAFT = quote('Q1790000000001', 'SAB-2026-201', { notes: NOTE }), PLAIN = quote('Q1790000000002', 'SAB-2026-202', {});
+  const NOTES = `(() => { const el = document.querySelector('.sab-quote-notes'); return el && { text: el.textContent, links: [...el.querySelectorAll('a')].map(a => a.getAttribute('href')),
+    inputs: el.querySelectorAll('input, textarea, select, button').length, inItemsPanel: !!el.closest('.sab-items-panel') }; })()`;
+  return withServer({ [DRAFT.id]: DRAFT, [PLAIN.id]: PLAIN }, async (s, pool) => {
+    const b = await browser();
+    try {
+      await b.send('Page.navigate', { url: `${s.base}/` });
+      await b.until(`!!document.getElementById('root') && ${rootText}.includes('Active (2)')`, 90000);
+      await b.click('div', 'Jane Example', '2 quotes');
+      await b.until(`${rootText}.includes('SAB-2026-201')`);
+      await b.click('div', 'SAB-2026-201');
+      await b.until(`!!document.querySelector('.sab-items-panel')`);
+      await settle(300);
+      assert.deepEqual(await b.js(NOTES), { text: `Notes${NOTE}`, links: [LINK], inputs: 0, inItemsPanel: true });
+      await b.shot('7-quote-notes.png');
+      await b.click('button', '← All');
+      await b.until(`${rootText}.includes('SAB-2026-202')`);
+      await b.click('div', 'SAB-2026-202');
+      await b.until(`!!document.querySelector('.sab-items-panel')`);
+      await settle(300);
+      assert.equal(await b.js(NOTES), null, 'no notes, no box');
+      await settle(900);   // (any sync the page does has landed)
+      assert.equal(pool.rows.get(DRAFT.id).data.notes, NOTE, 'the stored note is untouched');
+    } finally { b.close(); }
+  });
+});
+
 // ─── 5. every other quote behaves exactly as before ──────────────────────────
 // test/fixtures/real-shaped-quotes.json: two SYNTHETIC quotes in the shape the calculator
 // stores them (no live data) — a price-locked sold kitchen, and a legacy unlocked quote
