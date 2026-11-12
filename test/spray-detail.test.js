@@ -26,11 +26,12 @@ const matrix = () => {
     items.push({ type: 'endpanel', qty: 1, params: { materialKey: 'MAT_MDF_FH_18', widthMm: 560, heightMm: 900, finishType: f } });
     items.push({ type: 'shelf', qty: 2, params: { materialKey: 'TIM_OAK', lengthMm: 1200, depthMm: 250, visibleThicknessMm: 50, finishType: f } });
     items.push({ type: 'wrp_moulding', qty: 1, params: { wrp_price_per_metre: 10, linear_metres: 5.5, markup_pct: 35, dimensions: '55mm x 52mm', finishType: f } });
-    items.push({ type: 'cabinet', qty: 1, params: { widthMm: 950, heightMm: 770, depthMm: 560, doorCount: 0, drawerCount: 3, doorType: 'SHAKER_PNT', carcassMaterialKey: 'MAT_MDF_FH_18', carcassFinish: f } });
+    // (drawerType said out loud: unset it was the birch ply box, and since the internal-drawers change is the sheet box)
+    items.push({ type: 'cabinet', qty: 1, params: { widthMm: 950, heightMm: 770, depthMm: 560, doorCount: 0, drawerCount: 3, drawerType: 'DRW_BIRCH_PLY', doorType: 'SHAKER_PNT', carcassMaterialKey: 'MAT_MDF_FH_18', carcassFinish: f } });
   }
   for (const o of ['', 'primed', 'edge_polish', 'none']) {
     items.push({ type: 'door', qty: 2, params: { doorType: 'SHAKER_PNT', widthMm: 598, heightMm: 764, sprayFinishOverride: o } });
-    items.push({ type: 'cabinet', qty: 1, params: { widthMm: 800, heightMm: 770, depthMm: 560, doorCount: 2, drawerCount: 1, doorType: 'SHAKER_PNT', carcassMaterialKey: 'MAT_OAK_MDF_UNF_19', carcassFinish: 'lacquer', sprayFinishOverride: o } });
+    items.push({ type: 'cabinet', qty: 1, params: { widthMm: 800, heightMm: 770, depthMm: 560, doorCount: 2, drawerCount: 1, drawerType: 'DRW_BIRCH_PLY', doorType: 'SHAKER_PNT', carcassMaterialKey: 'MAT_OAK_MDF_UNF_19', carcassFinish: 'lacquer', sprayFinishOverride: o } });
   }
   for (const doorType of ['SLAB_VEN', 'SHAKER_VEN', 'SHAKER_TIM_OIL', 'SLAB_PNT'])
     items.push({ type: 'cabinet', qty: 3, params: { widthMm: 600, heightMm: 720, depthMm: 560, doorCount: 1, doorType, hasStain: doorType === 'SHAKER_VEN', timberSpeciesKey: 'TIM_OAK', carcassMaterialKey: 'MAT_BIRCH_UNF_18' } });

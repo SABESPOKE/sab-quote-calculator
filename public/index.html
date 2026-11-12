@@ -633,7 +633,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script src="/pricing.js?v=sab-v60"></script>
+  <script src="/pricing.js?v=sab-v61"></script>
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useMemo } = React;
 
@@ -766,7 +766,10 @@ ITEM TYPES AND PARAMS:
 
 TYPE: "cabinet" — full bespoke cabinet with carcass, doors, drawers
   params: widthMm, heightMm, depthMm, carcassMaterialKey, doorCount, doorType, drawerCount (default 0),
-          drawerType (null if 0 drawers), runnerKey, hingeKey, handleKey, shelfCount (default 1)
+          drawerType (null if 0 drawers), drawerPosition, runnerKey, hingeKey, handleKey, shelfCount (default 1)
+  drawerType: DRW_SHEET (default — sheet box in the carcass material)|DRW_BIRCH_PLY|DRW_SOLID_OAK|DRW_SOLID_TUL|DRW_SOLID_WAL
+  drawerPosition: "external" (default — each drawer has a front in the door finish) | "internal" (drawers BEHIND doors,
+          e.g. inside a wardrobe or tall cupboard — a plain front in the carcass material, no door-finish front)
   carcassMaterialKey: MAT_BIRCH_UNF_18|MAT_BIRCH_PREF_18|MAT_OAK_MDF_UNF_19|MAT_WAL_MDF_UNF_19|MAT_MDF_FH_18
   Default carcass: MAT_BIRCH_UNF_18. For wet rooms: MAT_MDF_FH_18. For veneered look: MAT_OAK_MDF_PREF_19
   doorType: SLAB_PNT|SLAB_VEN|SLAB_CUST_VEN|SHAKER_PNT|SHAKER_VEN|J_GROOVE|FRAMED_INSET
@@ -842,7 +845,7 @@ TYPE: "frame" — solid timber door frame
   params: species (TIM_OAK|TIM_TUL|TIM_MAPLE|TIM_WAL|TIM_ASH), heightMm, widthMm, labourHrs (default 3)
 
 TYPE: "drawer" — standalone drawer box
-  params: drawerType (DRW_BIRCH_PLY|DRW_SOLID_OAK|DRW_SOLID_TUL|DRW_SOLID_WAL), widthMm, heightMm (default 200), depthMm (default 500), runnerCostOverride (optional)
+  params: drawerType (DRW_SHEET default|DRW_BIRCH_PLY|DRW_SOLID_OAK|DRW_SOLID_TUL|DRW_SOLID_WAL), carcassMaterialKey (the sheet box's board), widthMm, heightMm (default 200), depthMm (default 500), runnerCostOverride (optional)
 
 TYPE: "custom" — custom item or subcontract
   params: unitCostExVAT (cost before margin), notes
@@ -1376,7 +1379,7 @@ function printQuote(quote, viewMode, roomFilter) {
 
 // ─── ADD ITEM FORM DEFAULTS ───────────────────────────────────────────────────
 const ITEM_DEFAULTS = {
-  cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:770, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", carcassFinish:"none", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, drawerCount:0, drawerType:"DRW_SHEET", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", frameThicknessMm:22, frameMemberWidthMm:30, frameCustomSpeciesName:"", frameCustomPricePerM3:0, timberSpeciesKey:"TIM_OAK", timberCustomSpeciesName:"", timberCustomPricePerM3:0, panelMaterialKey:"", frameStileWidthMm:70, doorFrameThicknessMm:22, edgebandKey:"EDGE_OAK_05", qty:1, description:"" },
+  cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:770, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", carcassFinish:"none", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, drawerCount:0, drawerType:"DRW_SHEET", drawerPosition:"external", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", frameThicknessMm:22, frameMemberWidthMm:30, frameCustomSpeciesName:"", frameCustomPricePerM3:0, timberSpeciesKey:"TIM_OAK", timberCustomSpeciesName:"", timberCustomPricePerM3:0, panelMaterialKey:"", frameStileWidthMm:70, doorFrameThicknessMm:22, edgebandKey:"EDGE_OAK_05", qty:1, description:"" },
   door:    { type:"door", widthMm:726, heightMm:2040, doorType:"SLAB_PNT", doorProfile:"slab", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", timberSpeciesKey:"TIM_OAK", timberCustomSpeciesName:"", timberCustomPricePerM3:0, panelMaterialKey:"", frameStileWidthMm:70, frameThicknessMm:22, qty:1, description:"" },
   frame:    { type:"frame", species:"TIM_OAK", widthMm:826, heightMm:2040, labourHrs:3, qty:1, description:"" },
   drawer:  { type:"drawer", drawerType:"DRW_SHEET", carcassMaterialKey:"MAT_BIRCH_UNF_18", widthMm:500, heightMm:200, depthMm:500, runnerKey:"HW_RUN_BLUM_SM", qty:1, description:"" },
@@ -1443,7 +1446,7 @@ function doorItemParams(f) {
 // A new cabinet's form in a room: the cabinet defaults with EVERY room default that is a cabinet field over them
 // ("New cabinets inherit these settings") — the solid-timber door's species and thickness, the face frame and the
 // edgebanding included — and, in a room set In-frame, the room's in-frame build and frame face.
-const ROOM_CABINET_FIELDS = ["carcassMaterialKey", "carcassFinish", "doorProfile", "doorFinish", "hasStain", "hingeKey", "handleKey", "runnerKey",
+const ROOM_CABINET_FIELDS = ["carcassMaterialKey", "carcassFinish", "doorProfile", "doorFinish", "hasStain", "hingeKey", "handleKey", "runnerKey", "drawerPosition",
   "frameKey", "frameThicknessMm", "frameMemberWidthMm", "frameCustomSpeciesName", "frameCustomPricePerM3", "edgebandKey",
   "timberSpeciesKey", "timberCustomSpeciesName", "timberCustomPricePerM3", "panelMaterialKey", "frameStileWidthMm", "doorFrameThicknessMm"];
 function cabinetFormFromRoom(rd) {
@@ -1491,6 +1494,7 @@ const DEFAULT_ROOM_SETTINGS = {
   drawerType: "DRW_SHEET",
   solidDrawerType: "DRW_SOLID_OAK",
   useSolidDrawers: false,
+  drawerPosition: "external", // drawers behind doors: "external" fronts in the door finish | "internal" plain fronts in the carcass board
   runnerKey: "HW_RUN_BLUM_SM",
   frameKey: "FRAME_NONE",
   edgebandKey: "EDGE_OAK_05",
@@ -2135,6 +2139,9 @@ function SABQuoteTool() {
     if (field === "panelMaterialKey")        propagateToAllCabinets("panelMaterialKey", val);
     if (field === "frameStileWidthMm")       propagateToAllCabinets("frameStileWidthMm", val);
     if (field === "doorFrameThicknessMm")    propagateToAllCabinets("doorFrameThicknessMm", val);
+    // Drawers behind doors: only cabinets that have both, and only those not already so (an untouched cabinet is
+    // never repriced).
+    if (field === "drawerPosition") propagateToAllCabinets("drawerPosition", val, item => hasDoors(item) && Number(item.params?.drawerCount) > 0 && (item.params.drawerPosition || "external") !== val);
     if (field === "hingeKey")    propagateToAllCabinets("hingeKey",  val, hasDoors);
     if (field === "handleKey")   propagateToAllCabinets("handleKey", val, hasDoors);
     if (field === "carcassFinish") propagateToAllCabinets("carcassFinish", val);
@@ -2428,6 +2435,10 @@ function SABQuoteTool() {
       if (updated.type === "cabinet" && updated.doorCount !== f.doorCount) {
         if (updated.doorCount === 0) updated.hingeKey = "HW_HINGE_NONE";
         else if (f.doorCount === 0 && (!updated.hingeKey || updated.hingeKey === "HW_HINGE_NONE")) updated.hingeKey = "HW_HINGE_SM";
+        // Internal drawers are drawers behind doors: with no doors the fronts are external again; with doors back,
+        // as the room has them.
+        if (updated.doorCount === 0) updated.drawerPosition = "external";
+        else if (f.doorCount === 0) updated.drawerPosition = activeQuote?.rooms?.[activeRoom]?.defaults?.drawerPosition || "external";
       }
       // Keep the auto-description in sync with the current fields for EVERY item type,
       // unless the user has manually edited it. Fixes stale descriptions when e.g. an
@@ -3036,6 +3047,13 @@ function SABQuoteTool() {
                               <span style={{ fontSize:9, color:"#777777" }}>Matches carcass</span>
                             )}
                           </div>
+                        </div>
+                        <div>
+                          <label style={miniLbl}>Drawers behind doors</label>
+                          <select value={rd.drawerPosition || "external"} onChange={e => upd("drawerPosition", e.target.value)} style={miniSel} title="Cabinets with doors and drawers. External: each drawer has a front in the door finish. Internal: a plain front in the carcass board.">
+                            <option value="external">External fronts (door finish)</option>
+                            <option value="internal">Internal (plain, carcass board)</option>
+                          </select>
                         </div>
                         <div>
                           <label style={miniLbl}>Runner</label>
@@ -3860,6 +3878,19 @@ function SABQuoteTool() {
                           {Object.entries(DB.hardware.runners).map(([k,v]) => <option key={k} value={k}>{v.name} — {fmt(v.costPair)}</option>)}
                         </select>
                       </div>
+                    </div>
+                    {/* External: a front in the door finish per drawer. Internal (behind doors): a plain front in the carcass board. */}
+                    <div style={{ marginTop:8 }}>
+                      <label style={lbl}>Drawer fronts</label>
+                      <select value={addItemForm.drawerPosition || "external"} onChange={e => updateForm("drawerPosition", e.target.value)} style={{ ...sel, width:"100%" }} disabled={addItemForm.drawerCount === 0}>
+                        <option value="external">External — a front in the door finish</option>
+                        <option value="internal">Internal — behind doors, plain front in the carcass board</option>
+                      </select>
+                      {addItemForm.drawerCount > 0 && formPreview?.breakdown && (
+                        <div style={{ fontSize:10, color:"#999999", marginTop:4 }}>
+                          Boxes + runners {fmt(formPreview.breakdown.drawers || 0)} · fronts {fmt(formPreview.breakdown.drawerFronts || 0)} — cost, in the total
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -4954,6 +4985,7 @@ function SABQuoteTool() {
                 <Field label="Per shelf (additional)" path={["settings","carcassShelfHrs"]} unit="hrs/shelf" hint="Time to drill holes, cut and fit each adjustable shelf" step={0.05} min={0} />
                 <Field label="Drawer prep (additional)" path={["settings","carcassDrawerPrepHrs"]} unit="hrs" hint="Extra setup time when a cabinet includes drawers" step={0.25} min={0} />
                 <Field label="Hanging an in-frame door on butt hinges" path={["settings","buttHingeHangMins"]} unit="mins/door" hint="Bench time to hang one in-frame door on butt hinges, at the bench rate. In-frame cabinets only (not Blum hinges)" step={5} min={0} />
+                <Field label="CNC cutting (× the sheet's cost)" path={["settings","cncPerSheetCost"]} unit="× sheet" hint="Cutting charged on top of a sheet part, as a multiple of its material cost: 1 = the cut costs the sheet again (sheet × 2 in total). Applies to an internal drawer's plain front only" step={0.1} min={0} />
                 {(() => {
                   const hrs = s.carcassBaseHrs + s.carcassShelfHrs; // 1 shelf ref
                   return <Field label="Reference cabinet labour cost (1 shelf)" path={[]} readOnly calcVal={`£${(hrs * effectiveRate).toFixed(0)}`} hint="carcassBaseHrs + 1×shelfHrs — at current effective rate" />;

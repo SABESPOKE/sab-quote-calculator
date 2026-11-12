@@ -49,7 +49,9 @@ try {
 
 test('regression: every cabinet without inframeFront prices exactly as the baseline engine', { skip: !OLD && 'baseline engine unavailable (git)' }, () => {
   const items = [];
-  const cab = (params, qty = 1) => items.push({ type: 'cabinet', qty, params });
+  // (a cabinet with drawers and no drawerType was the birch ply box, and is the sheet box since the internal-drawers
+  // change — test/internal-drawers.test.js; the old default is said out loud so this still compares everything else)
+  const cab = (params, qty = 1) => items.push({ type: 'cabinet', qty, params: params.drawerCount && !params.drawerType ? { ...params, drawerType: 'DRW_BIRCH_PLY' } : params });
   for (const doorType of Object.keys(OLD.DB.doorTypes)) for (const frameKey of Object.keys(OLD.FRAME_MATERIALS)) for (const hingeKey of Object.keys(OLD.DB.hardware.hinges))
     cab({ ...CAB, doorType, frameKey, hingeKey, drawerCount: 1, timberSpeciesKey: 'TIM_TUL', frameThicknessMm: 28, frameMemberWidthMm: 32, frameCustomPricePerM3: 3000 });
   for (const sprayFinishOverride of ['', 'primed', 'edge_polish', 'none']) for (const carcassFinish of ['none', 'paint', 'lacquer'])
