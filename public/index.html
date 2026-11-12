@@ -633,7 +633,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script src="/pricing.js?v=sab-v59"></script>
+  <script src="/pricing.js?v=sab-v60"></script>
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useMemo } = React;
 
@@ -1377,7 +1377,7 @@ function printQuote(quote, viewMode, roomFilter) {
 // ─── ADD ITEM FORM DEFAULTS ───────────────────────────────────────────────────
 const ITEM_DEFAULTS = {
   cabinet: { type:"cabinet", cabinetTypeKey:"B_STD_2D", widthMm:600, heightMm:770, depthMm:560, carcassMaterialKey:"MAT_BIRCH_UNF_18", carcassFinish:"none", doorCount:2, doorType:"SHAKER_PNT", doorProfile:"shaker", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, drawerCount:0, drawerType:"DRW_SHEET", runnerKey:"HW_RUN_BLUM_SM", hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", shelfCount:1, frameKey:"FRAME_NONE", frameThicknessMm:22, frameMemberWidthMm:30, frameCustomSpeciesName:"", frameCustomPricePerM3:0, timberSpeciesKey:"TIM_OAK", timberCustomSpeciesName:"", timberCustomPricePerM3:0, panelMaterialKey:"", frameStileWidthMm:70, doorFrameThicknessMm:22, edgebandKey:"EDGE_OAK_05", qty:1, description:"" },
-  door:    { type:"door", widthMm:726, heightMm:2040, doorType:"SLAB_PNT", doorProfile:"slab", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", qty:1, description:"" },
+  door:    { type:"door", widthMm:726, heightMm:2040, doorType:"SLAB_PNT", doorProfile:"slab", doorFinish:"painted", sprayFinishOverride:"", hasStain:false, hingeKey:"HW_HINGE_SM", handleKey:"HW_HDL_BAR128", timberSpeciesKey:"TIM_OAK", timberCustomSpeciesName:"", timberCustomPricePerM3:0, panelMaterialKey:"", frameStileWidthMm:70, frameThicknessMm:22, qty:1, description:"" },
   frame:    { type:"frame", species:"TIM_OAK", widthMm:826, heightMm:2040, labourHrs:3, qty:1, description:"" },
   drawer:  { type:"drawer", drawerType:"DRW_SHEET", carcassMaterialKey:"MAT_BIRCH_UNF_18", widthMm:500, heightMm:200, depthMm:500, runnerKey:"HW_RUN_BLUM_SM", qty:1, description:"" },
   endpanel: { type:"endpanel", materialKey:"MAT_BIRCH_UNF_18", widthMm:560, heightMm:720, thicknessMm:18, faces:1, exposedEdgeCount:2, finishType:"paint", hasStain:false, qty:1, description:"" },
@@ -1417,6 +1417,68 @@ const TYPE_TO_PROFILE_FINISH = Object.fromEntries(
   })
 );
 
+// In-frame on a cabinet form: what the build is made of, from the build rules (pricing.js inframeDefaults) — a
+// painted shaker is tulipwood, a painted slab the one-piece MDF, a lacquered or oiled door its timber (oak unless
+// one is already picked). Pass a timber to take that one's rules.
+const INFRAME_TIMBER_LABELS = { tulipwood: "Tulipwood (painted)", oak: "Oak", walnut: "Walnut", maple: "Maple", mdf: "MDF, one piece (painted slab)" };
+function inframeForForm(f, timber) {
+  const dt = DB.doorTypes[f.doorType] || {};
+  const slab = !dt.hasQuirk, painted = (dt.finishType || "paint") === "paint";
+  const cur = f.inframeFront && f.inframeFront.timber;
+  const t = timber || (painted ? (slab ? "mdf" : "tulipwood") : (["oak", "walnut", "maple"].includes(cur) ? cur : "oak"));
+  return inframeDefaults(slab, t);
+}
+
+// A Door item's engine params from the form — ONE builder for the price preview and the saved item, so the two agree.
+// A solid-timber shaker door carries its species, thickness, stile and panel: without them the engine prices its
+// timber at nothing (the form shows oak, 22 and 70 when blank, so those are what is sent).
+function doorItemParams(f) {
+  const timber = DB.doorTypes[f.doorType]?.pricingMode === "timber_frame_mdf_panel";
+  return { doorType: f.doorType, widthMm: +f.widthMm, heightMm: +f.heightMm, hasStain: !!f.hasStain, sprayFinishOverride: f.sprayFinishOverride || "",
+    hingeCost: DB.hardware.hinges[f.hingeKey]?.costEach * hingeCount(+f.heightMm) || 0, handleCost: DB.hardware.handles[f.handleKey]?.costEach || 0,
+    ...(timber ? { timberSpeciesKey: f.timberSpeciesKey || "TIM_OAK", timberCustomSpeciesName: f.timberCustomSpeciesName || "", timberCustomPricePerM3: +f.timberCustomPricePerM3 || 0,
+      panelMaterialKey: f.panelMaterialKey || "", frameStileWidthMm: f.frameStileWidthMm ?? 70, frameThicknessMm: f.frameThicknessMm ?? 22 } : {}) };
+}
+
+// A new cabinet's form in a room: the cabinet defaults with EVERY room default that is a cabinet field over them
+// ("New cabinets inherit these settings") — the solid-timber door's species and thickness, the face frame and the
+// edgebanding included — and, in a room set In-frame, the room's in-frame build and frame face.
+const ROOM_CABINET_FIELDS = ["carcassMaterialKey", "carcassFinish", "doorProfile", "doorFinish", "hasStain", "hingeKey", "handleKey", "runnerKey",
+  "frameKey", "frameThicknessMm", "frameMemberWidthMm", "frameCustomSpeciesName", "frameCustomPricePerM3", "edgebandKey",
+  "timberSpeciesKey", "timberCustomSpeciesName", "timberCustomPricePerM3", "panelMaterialKey", "frameStileWidthMm", "doorFrameThicknessMm"];
+function cabinetFormFromRoom(rd) {
+  rd = rd || {};
+  const f = { ...ITEM_DEFAULTS.cabinet, descriptionTouched: false };
+  for (const k of ROOM_CABINET_FIELDS) if (rd[k] !== undefined && rd[k] !== null && rd[k] !== "") f[k] = rd[k];
+  f.drawerType = rd.useSolidDrawers ? (rd.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET";
+  // The door type and its spray follow the room's profile and finish (primed / edge polish / none carry an override).
+  f.sprayFinishOverride = FINISH_TO_SPRAY_OVERRIDE[f.doorFinish] || "";
+  f.doorType = PROFILE_FINISH_TO_TYPE[`${f.doorProfile}+${f.doorFinish}`] || "SHAKER_PNT";
+  if (rd.inframeFront) { f.inframeFront = { ...rd.inframeFront }; f.frameMemberWidthMm = rd.inframeFaceMm ?? f.frameMemberWidthMm; }
+  return f;
+}
+
+// "Apply in-frame to all cabinets in this room": every cabinet takes the room's in-frame default (the build and the
+// frame face) — or, with the room's In-frame off, loses it — and is repriced at today's rates, as any edited item is.
+// A cabinet already as the room has it is not touched; nor is anything else in the quote. A website order (locked)
+// comes back exactly as it was.
+function applyRoomInframe(quote, roomName) {
+  const room = quote && quote.rooms && quote.rooms[roomName];
+  if (!room || isLocked(quote)) return quote;
+  const rd = room.defaults || {}, inf = rd.inframeFront || null, TAG = " — In-frame";
+  const items = (room.items || []).map(item => {
+    if (item.type !== "cabinet" || !item.params) return item;
+    const face = inf ? (rd.inframeFaceMm ?? item.params.frameMemberWidthMm) : item.params.frameMemberWidthMm;
+    if (JSON.stringify(item.params.inframeFront || null) === JSON.stringify(inf) && item.params.frameMemberWidthMm === face) return item;
+    const next = { ...item, params: { ...item.params, inframeFront: inf ? { ...inf } : undefined, frameMemberWidthMm: face } };
+    next.pricing = priceItem(next, quote.marginOverride);
+    const plain = (item.description || "").replace(TAG, "");
+    next.description = inf ? plain + TAG : plain;
+    return next;
+  });
+  return { ...quote, rooms: { ...quote.rooms, [roomName]: { ...room, items } } };
+}
+
 const DEFAULT_ROOM_SETTINGS = {
   carcassMaterialKey: "MAT_BIRCH_UNF_18",
   carcassFinish: "none",      // none | edge_polish — applied to cabinet carcass exposed front edges
@@ -1445,6 +1507,9 @@ const DEFAULT_ROOM_SETTINGS = {
   panelMaterialKey: "",              // optional panel material override; blank → inferred from species+finish
   frameStileWidthMm: 70,             // door frame stile/rail width
   doorFrameThicknessMm: 22,          // door frame thickness
+  // In-frame (the room's In-frame tick): inframeFront { timber, thicknessMm, frameMm, hinges } once ticked, absent
+  // otherwise. New cabinets start with it; existing ones take it only by "Apply in-frame to all cabinets in this room".
+  inframeFaceMm: 30,                 // the in-frame face frame's face width
 };
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
@@ -2082,6 +2147,8 @@ function SABQuoteTool() {
       propagateToAllCabinets("sprayFinishOverride", derivedSpray);
       propagateToAllCabinets("doorProfile", defs.doorProfile);
       propagateToAllCabinets("doorFinish", defs.doorFinish);
+      // The room's in-frame default follows its door (the build rules); cabinets take it only by the Apply action.
+      if (defs.inframeFront && newDoorType) defs.inframeFront = inframeForForm({ doorType: newDoorType, inframeFront: defs.inframeFront });
     }
     if (field === "useSolidDrawers" || field === "solidDrawerType") {
       const defs = room.defaults;
@@ -2180,24 +2247,23 @@ function SABQuoteTool() {
   function openAddItemForm() {
     const roomDefs = (activeQuote?.rooms?.[activeRoom]?.defaults) || {};
     setEditingItem(null);
-    setAddItemForm({
-      ...ITEM_DEFAULTS.cabinet,
-      descriptionTouched: false,
-      carcassMaterialKey: roomDefs.carcassMaterialKey || ITEM_DEFAULTS.cabinet.carcassMaterialKey,
-      doorProfile: roomDefs.doorProfile || ITEM_DEFAULTS.cabinet.doorProfile,
-      doorFinish:  roomDefs.doorFinish  || ITEM_DEFAULTS.cabinet.doorFinish,
-      hasStain:    roomDefs.hasStain    || false,
-      hingeKey:    roomDefs.hingeKey    || ITEM_DEFAULTS.cabinet.hingeKey,
-      handleKey:   roomDefs.handleKey   || ITEM_DEFAULTS.cabinet.handleKey,
-      drawerType:  roomDefs.useSolidDrawers ? (roomDefs.solidDrawerType || "DRW_SOLID_OAK") : "DRW_SHEET",
-      runnerKey:   roomDefs.runnerKey   || ITEM_DEFAULTS.cabinet.runnerKey,
-      carcassFinish: roomDefs.carcassFinish || "none",
-      // Derive sprayFinishOverride from the room-level doorFinish so consolidated finish
-      // picks (edge_polish / primed / none) propagate to new cabinets.
-      sprayFinishOverride: FINISH_TO_SPRAY_OVERRIDE[roomDefs.doorFinish] || "",
-      doorType: PROFILE_FINISH_TO_TYPE[`${roomDefs.doorProfile||"shaker"}+${roomDefs.doorFinish||"painted"}`] || "SHAKER_PNT",
-    });
+    setAddItemForm(cabinetFormFromRoom(roomDefs));
     setShowAddItem(true);
+  }
+
+  // Room Setup's "Apply in-frame to all cabinets in this room" (or, with the room's In-frame off, "Remove…"): shows
+  // what it will do to the room's price, and saves only on OK. Never a website order.
+  function applyInframeToRoom(roomName) {
+    const q = quotes[activeQuoteId];
+    if (!q || isLocked(q)) return;
+    const next = applyRoomInframe(q, roomName);
+    const was = q.rooms[roomName].items, now = next.rooms[roomName].items;
+    const n = now.filter((it, i) => it !== was[i]).length;
+    const on = !!(q.rooms[roomName].defaults || {}).inframeFront;
+    if (!n) return window.alert(`Every cabinet in ${roomName} is already ${on ? "in-frame as the room has it" : "without in-frame"}.`);
+    const sum = items => items.reduce((t, it) => t + (it.pricing?.totalSellExVAT || 0), 0);
+    if (!window.confirm(`${on ? "Apply in-frame to" : "Remove in-frame from"} ${n} cabinet${n !== 1 ? "s" : ""} in ${roomName}?\n\n${n !== 1 ? "They are" : "It is"} repriced at today's rates — the room goes from ${fmt(sum(was))} to ${fmt(sum(now))} ex VAT. Nothing else in the quote changes.`)) return;
+    saveQuotes({ ...quotes, [activeQuoteId]: next });
   }
 
   function updateProjectCost(field, val) {
@@ -2295,7 +2361,7 @@ function SABQuoteTool() {
         const ct = DB.cabinetTypes[f.cabinetTypeKey];
         const baseName = ct ? ct.name : "Cabinet";
         const dimStr = (w && h) ? ` ${w}×${h}×${d}mm` : "";
-        return `${baseName}${dimStr} — ${DB.doorTypes[f.doorType]?.name || ""}`;
+        return `${baseName}${dimStr} — ${DB.doorTypes[f.doorType]?.name || ""}${f.inframeFront ? " — In-frame" : ""}`;
       }
       case "door":
         return `${DB.doorTypes[f.doorType]?.name} ${w}×${h}${f.hasStain?" + Stain":""}${f.sprayFinishOverride==="none"?" (no spray)":f.sprayFinishOverride==="edge_polish"?" (edge polish)":f.sprayFinishOverride==="primed"?" (primed only)":""}`;
@@ -2352,6 +2418,8 @@ function SABQuoteTool() {
         // primed / edge_polish / none → matching override. Anything else → no override
         // (use the doorType's natural finishType).
         updated.sprayFinishOverride = FINISH_TO_SPRAY_OVERRIDE[safeFinish] || "";
+        // An in-frame cabinet follows its door: the build rules for the new profile and finish.
+        if (updated.inframeFront) updated.inframeFront = inframeForForm(updated);
       }
       // Pure drawer cabinet (no doors) → default hinge to "No Hinge". When doors are
       // added back to a previously door-less cabinet, restore a real default hinge so
@@ -2376,7 +2444,7 @@ function SABQuoteTool() {
       const item = addItemForm.type === "cabinet"
         ? { type:"cabinet", qty: addItemForm.qty, params: addItemForm }
         : addItemForm.type === "door"
-        ? { type:"door", qty: addItemForm.qty, params: { doorType: addItemForm.doorType, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, hingeCost: addItemForm.hingeCost, handleCost: addItemForm.handleCost, hasStain: !!addItemForm.hasStain, sprayFinishOverride: addItemForm.sprayFinishOverride || "" } }
+        ? { type:"door", qty: addItemForm.qty, params: doorItemParams(addItemForm) }
         : addItemForm.type === "frame"
         ? { type:"frame", qty: addItemForm.qty, params: { species: addItemForm.species, widthMm: addItemForm.widthMm, heightMm: addItemForm.heightMm, labourHrs: addItemForm.labourHrs } }
         : addItemForm.type === "drawer"
@@ -2399,9 +2467,9 @@ function SABQuoteTool() {
   function submitAddItem() {
     if (!activeRoom || !activeQuoteId) return;
     const item = addItemForm.type === "cabinet"
-      ? { type:"cabinet", description: addItemForm.description || `${addItemForm.widthMm}×${addItemForm.heightMm}×${addItemForm.depthMm} — ${DB.doorTypes[addItemForm.doorType]?.name || ""}${addItemForm.hasStain?" + Stain":""}`, qty: Number(addItemForm.qty), params: addItemForm }
+      ? { type:"cabinet", description: addItemForm.description || `${addItemForm.widthMm}×${addItemForm.heightMm}×${addItemForm.depthMm} — ${DB.doorTypes[addItemForm.doorType]?.name || ""}${addItemForm.hasStain?" + Stain":""}${addItemForm.inframeFront?" — In-frame":""}`, qty: Number(addItemForm.qty), params: addItemForm }
       : addItemForm.type === "door"
-      ? { type:"door", description: addItemForm.description || `${DB.doorTypes[addItemForm.doorType]?.name} ${addItemForm.widthMm}×${addItemForm.heightMm}${addItemForm.hasStain?" + Stain":""}${addItemForm.sprayFinishOverride==="none"?" (no spray)":addItemForm.sprayFinishOverride==="edge_polish"?" (edge polish)":addItemForm.sprayFinishOverride==="primed"?" (primed only)":""}`, qty: Number(addItemForm.qty), params: { doorType:addItemForm.doorType, widthMm:+addItemForm.widthMm, heightMm:+addItemForm.heightMm, hasStain:!!addItemForm.hasStain, sprayFinishOverride: addItemForm.sprayFinishOverride || "", hingeCost: DB.hardware.hinges[addItemForm.hingeKey]?.costEach * hingeCount(+addItemForm.heightMm) || 0, handleCost: DB.hardware.handles[addItemForm.handleKey]?.costEach || 0 } }
+      ? { type:"door", description: addItemForm.description || `${DB.doorTypes[addItemForm.doorType]?.name} ${addItemForm.widthMm}×${addItemForm.heightMm}${addItemForm.hasStain?" + Stain":""}${addItemForm.sprayFinishOverride==="none"?" (no spray)":addItemForm.sprayFinishOverride==="edge_polish"?" (edge polish)":addItemForm.sprayFinishOverride==="primed"?" (primed only)":""}`, qty: Number(addItemForm.qty), params: doorItemParams(addItemForm) }
       : addItemForm.type === "frame"
       ? { type:"frame", description: addItemForm.description || `${DB.solidTimber[addItemForm.species]?.name} Frame ${addItemForm.widthMm}w`, qty: Number(addItemForm.qty), params: { species:addItemForm.species, widthMm:+addItemForm.widthMm, heightMm:+addItemForm.heightMm, labourHrs:+addItemForm.labourHrs } }
       : addItemForm.type === "drawer"
@@ -2436,6 +2504,41 @@ function SABQuoteTool() {
   const sel = { ...inp, cursor:"pointer" };
   const lbl = { fontSize:9, letterSpacing:"0.12em", color:"#555555", textTransform:"uppercase", marginBottom:4, display:"block" };
   const row = { marginBottom:10 };
+
+  // The solid-timber shaker door's controls (species, panel, stile, thickness), shared by the cabinet form and the
+  // Door form. thkField: where that form keeps the door's thickness — doorFrameThicknessMm on a cabinet (its
+  // frameThicknessMm is the face frame's), frameThicknessMm on a Door item (the engine's own name).
+  const solidTimberControls = thkField => (
+    <div style={{ padding:"10px 12px", background:"#fbfaf8", border:"1px solid #e0d8cc", borderRadius:4, marginBottom:8 }}>
+      <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Solid Timber Frame</div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:6 }}>
+        <div>
+          <label style={lbl}>Species</label>
+          <select value={addItemForm.timberSpeciesKey || "TIM_OAK"} onChange={e => updateForm("timberSpeciesKey", e.target.value)} style={{ ...sel, width:"100%" }}>
+            {Object.entries(DB.solidTimber).map(([k,v]) => <option key={k} value={k}>{v.name} — £{v.effectivePerM3}/m³</option>)}
+            <option value="TIM_CUSTOM">Custom species (specify…)</option>
+          </select>
+        </div>
+        <div>
+          <label style={lbl}>Panel material (optional)</label>
+          <select value={addItemForm.panelMaterialKey || ""} onChange={e => updateForm("panelMaterialKey", e.target.value)} style={{ ...sel, width:"100%" }}>
+            <option value="">Auto (match finish + species)</option>
+            {Object.entries(DB.materials).filter(([k])=>!k.startsWith("MAT_BACK")).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
+          </select>
+        </div>
+      </div>
+      {addItemForm.timberSpeciesKey === "TIM_CUSTOM" && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:6 }}>
+          <div><label style={lbl}>Species name</label><input type="text" value={addItemForm.timberCustomSpeciesName || ""} onChange={e => updateForm("timberCustomSpeciesName", e.target.value)} placeholder="e.g. Cherry" style={inp} /></div>
+          <div><label style={lbl}>£ per m³</label><input type="number" min="0" step="50" value={addItemForm.timberCustomPricePerM3 || ""} onChange={e => updateForm("timberCustomPricePerM3", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+        </div>
+      )}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        <div><label style={lbl}>Stile/rail width (mm)</label><input type="number" min="40" step="5" value={addItemForm.frameStileWidthMm ?? 70} onChange={e => updateForm("frameStileWidthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+        <div><label style={lbl}>Frame thickness (mm)</label><input type="number" min="15" step="2" value={addItemForm[thkField] ?? 22} onChange={e => updateForm(thkField, e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+      </div>
+    </div>
+  );
   const lockedBadge = { display:"inline-block", fontSize:9, letterSpacing:"0.1em", textTransform:"uppercase", color:"#1a1a1a", background:"#c8a96e", borderRadius:3, padding:"3px 8px", whiteSpace:"nowrap" };
 
   // ─── RENDER ─────────────────────────────────────────────────────────────────
@@ -2868,6 +2971,45 @@ function SABQuoteTool() {
                             )}
                           </div>
                         )}
+                        {/* In-frame: a room default — new cabinets start in-frame; existing ones only by the button. */}
+                        <div style={{ gridColumn:"1 / -1", padding:"6px 8px", background:"#fbfaf8", border:"1px solid #e0d8cc", borderRadius:4 }}>
+                          {(() => {
+                            const inf = rd.inframeFront;
+                            const setInf = patch => upd("inframeFront", { ...inf, ...patch });
+                            const cabs = (activeQuote.rooms[showRoomSetup].items || []).filter(it => it.type === "cabinet");
+                            const anyInframe = cabs.some(it => it.params?.inframeFront);
+                            const actBtn = { ...miniSel, width:"auto", cursor:"pointer", background:"#c8a96e", color:"#1a1a1a", border:"none", padding:"5px 10px", fontWeight:600 };
+                            return (<>
+                              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+                                <label style={{ fontSize:10, color: inf ? "#c8a96e" : "#555555", cursor:"pointer" }}>
+                                  <input type="checkbox" checked={!!inf} onChange={e => upd("inframeFront", e.target.checked ? inframeForForm({ doorType: pf }) : undefined)} style={{ accentColor:"#c8a96e", marginRight:4 }} />
+                                  In-frame <span style={{ color:"#999999" }}>— new cabinets in this room start in-frame</span>
+                                </label>
+                                {cabs.length > 0 && (inf || anyInframe) && (
+                                  <button onClick={() => applyInframeToRoom(showRoomSetup)} style={actBtn}>{inf ? "Apply in-frame to all cabinets in this room" : "Remove in-frame from all cabinets in this room"}</button>
+                                )}
+                              </div>
+                              {inf && (
+                                <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6, marginTop:6 }}>
+                                  <div><label style={miniLbl}>Timber</label>
+                                    <select value={inf.timber} onChange={e => upd("inframeFront", inframeForForm({ doorType: pf }, e.target.value))} style={miniSel}>
+                                      {Object.entries(INFRAME_TIMBER_LABELS).map(([k, name]) => <option key={k} value={k}>{name}</option>)}
+                                    </select>
+                                  </div>
+                                  <div><label style={miniLbl}>Hinges</label>
+                                    <select value={inf.hinges} onChange={e => setInf({ hinges: e.target.value })} style={miniSel}>
+                                      <option value="butt">Butt hinges</option>
+                                      <option value="blum">Blum (the hinge picked)</option>
+                                    </select>
+                                  </div>
+                                  <div><label style={miniLbl}>Door thickness (mm)</label><input type="number" min="15" step="1" value={inf.thicknessMm || ""} onChange={e => setInf({ thicknessMm: e.target.value === "" ? 0 : +e.target.value })} style={miniSel} /></div>
+                                  <div><label style={miniLbl}>Frame thickness (mm)</label><input type="number" min="15" step="1" value={inf.frameMm || ""} onChange={e => setInf({ frameMm: e.target.value === "" ? 0 : +e.target.value })} style={miniSel} /></div>
+                                  <div><label style={miniLbl}>Frame face (mm)</label><input type="number" min="10" step="1" value={rd.inframeFaceMm ?? DEFAULT_ROOM_SETTINGS.inframeFaceMm} onChange={e => upd("inframeFaceMm", e.target.value === "" ? 0 : +e.target.value)} style={miniSel} /></div>
+                                </div>
+                              )}
+                            </>);
+                          })()}
+                        </div>
                         <div>
                           <label style={miniLbl}>Hinge</label>
                           <select value={rd.hingeKey} onChange={e => upd("hingeKey", e.target.value)} style={miniSel}>
@@ -3500,7 +3642,7 @@ function SABQuoteTool() {
             <div className="sab-type-tabs" style={{ display:"flex", gap:4, marginBottom:20 }}>
               {["cabinet","door","frame","drawer","endpanel","shelf","filler","moulding","wrp_moulding","custom"].map(t => {
                 const typeLabels = { wrp_moulding: "WRP Moulding", endpanel: "End Panel" };
-                return <button key={t} onClick={() => { setAddItemForm({ ...ITEM_DEFAULTS[t] }); }} style={{ padding:"6px 14px", background:addItemForm.type===t?"#c8a96e":"#f5f5f5", color:addItemForm.type===t?"#ffffff":"#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontSize:10, letterSpacing:"0.08em", textTransform:"capitalize", fontFamily:"inherit" }}>{typeLabels[t] || t}</button>;
+                return <button key={t} onClick={() => { setAddItemForm(t === "cabinet" ? cabinetFormFromRoom(activeQuote?.rooms?.[activeRoom]?.defaults) : { ...ITEM_DEFAULTS[t] }); }} style={{ padding:"6px 14px", background:addItemForm.type===t?"#c8a96e":"#f5f5f5", color:addItemForm.type===t?"#ffffff":"#777777", border:"1px solid #d8d3cc", borderRadius:3, cursor:"pointer", fontSize:10, letterSpacing:"0.08em", textTransform:"capitalize", fontFamily:"inherit" }}>{typeLabels[t] || t}</button>;
               })}
             </div>
 
@@ -3548,7 +3690,52 @@ function SABQuoteTool() {
                     </select>
                   </div>
 
-                  {/* Face Frame selector */}
+                  {/* In-frame: the whole build (frame, doors in the opening, hinges, frame finish) from the build rules —
+                      the engine's inframeFront. Takes the place of the Face Frame pick below. */}
+                  <div style={{ marginBottom:14 }}>
+                    <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:11, color: addItemForm.inframeFront ? "#c8a96e" : "#555555" }}>
+                      <input type="checkbox" checked={!!addItemForm.inframeFront} onChange={e => updateForm("inframeFront", e.target.checked ? inframeForForm(addItemForm) : undefined)} style={{ accentColor:"#c8a96e" }} />
+                      In-frame <span style={{ color:"#999999" }}>— face frame, doors inside it, frame finished as the doors</span>
+                    </label>
+                    {addItemForm.inframeFront && (() => {
+                      const inf = addItemForm.inframeFront, bd = formPreview?.breakdown || {};
+                      const setInf = patch => updateForm("inframeFront", { ...inf, ...patch });
+                      const num = k => e => setInf({ [k]: e.target.value === "" ? 0 : +e.target.value });
+                      return (
+                        <div style={{ marginTop:6, padding:"10px 12px", background:"#fbfaf8", border:"1px solid #e0d8cc", borderRadius:4 }}>
+                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:6 }}>
+                            <div>
+                              <label style={lbl}>Timber</label>
+                              <select value={inf.timber} onChange={e => updateForm("inframeFront", inframeForForm(addItemForm, e.target.value))} style={{ ...sel, width:"100%" }}>
+                                {Object.entries(INFRAME_TIMBER_LABELS).map(([k, name]) => <option key={k} value={k}>{name}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label style={lbl}>Hinges</label>
+                              <select value={inf.hinges} onChange={e => setInf({ hinges: e.target.value })} style={{ ...sel, width:"100%" }}>
+                                <option value="butt">Butt hinges</option>
+                                <option value="blum">Blum (the hinge picked)</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+                            <div><label style={lbl}>Door thickness (mm)</label><input type="number" min="15" step="1" value={inf.thicknessMm || ""} onChange={num("thicknessMm")} style={inp} /></div>
+                            <div><label style={lbl}>Frame thickness (mm)</label><input type="number" min="15" step="1" value={inf.frameMm || ""} onChange={num("frameMm")} style={inp} /></div>
+                            <div><label style={lbl}>Frame face (mm)</label><input type="number" min="10" step="1" value={addItemForm.frameMemberWidthMm ?? 30} onChange={e => updateForm("frameMemberWidthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                          </div>
+                          {inf.timber === "mdf" && !FRAME_MATERIALS[`FRAME_MDF_${inf.frameMm}`] && (
+                            <div style={{ fontSize:10, color:"#b04a3a", marginTop:6 }}>An MDF frame is priced at 18 or 22 mm — at {inf.frameMm || 0} mm the frame is not priced.</div>
+                          )}
+                          <div style={{ fontSize:10, color:"#999999", marginTop:6 }}>
+                            Frame {fmt(bd.frame || 0)} · frame finish {fmt(bd.frameFinish || 0)} · hanging {fmt(bd.hanging || 0)}{inf.hinges === "butt" ? ` (${DB.settings.buttHingeHangMins} min a door)` : ""} — cost, in the total
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Face Frame selector (lay-on cabinets; an in-frame cabinet's frame is set above) */}
+                  {!addItemForm.inframeFront && (
                   <div style={{ marginBottom:14 }}>
                     <label style={{ fontSize:11, color:"#555555", display:"block", marginBottom:3 }}>Face Frame</label>
                     <select value={addItemForm.frameKey||"FRAME_NONE"} onChange={e=>updateForm("frameKey",e.target.value)}
@@ -3570,12 +3757,13 @@ function SABQuoteTool() {
                       </div>
                     )}
                     {addItemForm.frameKey && addItemForm.frameKey!=="FRAME_NONE" && (
-                      <div style={{fontSize:10,color:"#c8a96e",marginTop:2}}>Butt hinges used · frame covers front edges</div>
+                      <div style={{fontSize:10,color:"#c8a96e",marginTop:2}}>Adds the frame's timber and making only — doors, hinges and finish stay as they are. For the whole in-frame build tick In-frame above.</div>
                     )}
                   </div>
+                  )}
 
                   {/* Edgeband selector (only shown when frame is FRAME_NONE and material isn't birch ply) */}
-                  {(!addItemForm.frameKey || addItemForm.frameKey==="FRAME_NONE") && !NO_EDGE_MATERIALS.has(addItemForm.carcassMaterialKey||"MAT_BIRCH_UNF_18") && (
+                  {!addItemForm.inframeFront && (!addItemForm.frameKey || addItemForm.frameKey==="FRAME_NONE") && !NO_EDGE_MATERIALS.has(addItemForm.carcassMaterialKey||"MAT_BIRCH_UNF_18") && (
                     <div style={{ marginBottom:14 }}>
                       <label style={{ fontSize:11, color:"#555555", display:"block", marginBottom:3 }}>Edgebanding</label>
                       <select value={addItemForm.edgebandKey||"EDGE_OAK_05"} onChange={e=>updateForm("edgebandKey",e.target.value)}
@@ -3623,37 +3811,7 @@ function SABQuoteTool() {
                       </div>
                     </div>
                     {/* Solid timber shaker controls — only shown when shaker_timber profile is picked */}
-                    {addItemForm.doorProfile === "shaker_timber" && (
-                      <div style={{ padding:"10px 12px", background:"#fbfaf8", border:"1px solid #e0d8cc", borderRadius:4, marginBottom:8 }}>
-                        <div style={{ fontSize:9, color:"#c8a96e", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Solid Timber Frame</div>
-                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:6 }}>
-                          <div>
-                            <label style={lbl}>Species</label>
-                            <select value={addItemForm.timberSpeciesKey || "TIM_OAK"} onChange={e => updateForm("timberSpeciesKey", e.target.value)} style={{ ...sel, width:"100%" }}>
-                              {Object.entries(DB.solidTimber).map(([k,v]) => <option key={k} value={k}>{v.name} — £{v.effectivePerM3}/m³</option>)}
-                              <option value="TIM_CUSTOM">Custom species (specify…)</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label style={lbl}>Panel material (optional)</label>
-                            <select value={addItemForm.panelMaterialKey || ""} onChange={e => updateForm("panelMaterialKey", e.target.value)} style={{ ...sel, width:"100%" }}>
-                              <option value="">Auto (match finish + species)</option>
-                              {Object.entries(DB.materials).filter(([k])=>!k.startsWith("MAT_BACK")).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
-                            </select>
-                          </div>
-                        </div>
-                        {addItemForm.timberSpeciesKey === "TIM_CUSTOM" && (
-                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:6 }}>
-                            <div><label style={lbl}>Species name</label><input type="text" value={addItemForm.timberCustomSpeciesName || ""} onChange={e => updateForm("timberCustomSpeciesName", e.target.value)} placeholder="e.g. Cherry" style={inp} /></div>
-                            <div><label style={lbl}>£ per m³</label><input type="number" min="0" step="50" value={addItemForm.timberCustomPricePerM3 || ""} onChange={e => updateForm("timberCustomPricePerM3", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
-                          </div>
-                        )}
-                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                          <div><label style={lbl}>Stile/rail width (mm)</label><input type="number" min="40" step="5" value={addItemForm.frameStileWidthMm ?? 70} onChange={e => updateForm("frameStileWidthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
-                          <div><label style={lbl}>Frame thickness (mm)</label><input type="number" min="15" step="2" value={addItemForm.doorFrameThicknessMm ?? 22} onChange={e => updateForm("doorFrameThicknessMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
-                        </div>
-                      </div>
-                    )}
+                    {addItemForm.doorProfile === "shaker_timber" && solidTimberControls("doorFrameThicknessMm")}
                     {/* Stain option — only available with lacquer finish */}
                     {(addItemForm.doorFinish === "veneered" || addItemForm.doorFinish === "custom_ven") && (
                       <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:11, color: addItemForm.hasStain ? "#c8a96e" : "#777777", padding:"6px 10px", background: addItemForm.hasStain ? "#f0eeeb" : "transparent", border:`1px solid ${addItemForm.hasStain?"#c8a96e":"#d8d3cc"}`, borderRadius:4 }}>
@@ -3785,6 +3943,8 @@ function SABQuoteTool() {
                         Custom stain before lacquer
                       </label>
                     )}
+                    {/* Solid timber shaker: the same species / thickness controls as a cabinet's doors */}
+                    {addItemForm.doorProfile === "shaker_timber" && solidTimberControls("frameThicknessMm")}
                     <div style={{ fontSize:9, color:"#999999", marginTop:4 }}>
                       {DB.doorTypes[addItemForm.doorType] ? `→ ${DB.doorTypes[addItemForm.doorType].name}${addItemForm.hasStain?" + Stain":""}${addItemForm.sprayFinishOverride==="none"?" · NO spray":addItemForm.sprayFinishOverride==="edge_polish"?" · Edge polish only":addItemForm.sprayFinishOverride==="primed"?" · Primed only":""}` : ""}
                     </div>
@@ -4793,6 +4953,7 @@ function SABQuoteTool() {
                 <Field label="Base assembly hours (reference cabinet)" path={["settings","carcassBaseHrs"]} unit="hrs" hint="Hours to make a 600×720×560mm carcass. Scales up/down for larger/smaller cabinets. 2.5hrs = cut, assemble, back panel, edge band." step={0.25} min={0.5} />
                 <Field label="Per shelf (additional)" path={["settings","carcassShelfHrs"]} unit="hrs/shelf" hint="Time to drill holes, cut and fit each adjustable shelf" step={0.05} min={0} />
                 <Field label="Drawer prep (additional)" path={["settings","carcassDrawerPrepHrs"]} unit="hrs" hint="Extra setup time when a cabinet includes drawers" step={0.25} min={0} />
+                <Field label="Hanging an in-frame door on butt hinges" path={["settings","buttHingeHangMins"]} unit="mins/door" hint="Bench time to hang one in-frame door on butt hinges, at the bench rate. In-frame cabinets only (not Blum hinges)" step={5} min={0} />
                 {(() => {
                   const hrs = s.carcassBaseHrs + s.carcassShelfHrs; // 1 shelf ref
                   return <Field label="Reference cabinet labour cost (1 shelf)" path={[]} readOnly calcVal={`£${(hrs * effectiveRate).toFixed(0)}`} hint="carcassBaseHrs + 1×shelfHrs — at current effective rate" />;

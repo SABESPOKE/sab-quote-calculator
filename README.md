@@ -182,3 +182,42 @@ git add data/wrp_catalogue.json
 The scraper does NOT run on Railway (Puppeteer/cheerio require local network access). Run locally and commit the result.
 
 Per-quote price entries made via the "Learn as you go" prompt in the WRP picker also persist back to `data/wrp_catalogue.json` via `PUT /api/wrp-catalogue/price/:id`. On Railway these writes are ephemeral (the filesystem resets on deploy), so accumulate prices in local development and commit periodically.
+
+## In-frame — `inframeFront`
+
+An optional cabinet param (`POST /api/cabinet-cost`, and `params.inframeFront` on a cabinet item). Absent, a cabinet
+prices exactly as before. Every part is priced from the tables already in `pricing.js`; the one figure it adds is the
+time to hang a door on butt hinges (`DB.settings.buttHingeHangMins`, 30 — Steve, 12 Nov 2026).
+
+```json
+"inframeFront": { "timber": "tulipwood", "thicknessMm": 28, "frameMm": 28, "hinges": "butt" }
+```
+
+| Field | Values | What it prices |
+|---|---|---|
+| `timber` | `tulipwood` \| `oak` \| `walnut` \| `maple` \| `mdf` | The face frame: solid timber by volume at the `DB.solidTimber` rate (`FRAME_TIM_*`), or `mdf` → `FRAME_MDF_<frameMm>` per metre. A shaker `doorType` is priced as the solid-timber shaker in that timber (`SHAKER_TIM_PNT` painted, `SHAKER_TIM_LAC` lacquered); a slab `doorType` stays as sent. |
+| `thicknessMm` | number | The solid-timber shaker door's thickness (28). |
+| `frameMm` | number (`mdf`: 18 or 22) | The face frame's thickness (28; 20 round a veneered slab; 22 MDF). |
+| `hinges` | `butt` \| `blum` | `butt` → `HW_HINGE_BUTT` (£ per hinge × the hinges on the door) and each door hung at `buttHingeHangMins` at the bench rate (`breakdown.hanging`, `hangHrs`); `blum` → the `hingeKey` sent, no hanging time. |
+
+Also in-frame: doors and drawer fronts are sized to the frame's opening (the cabinet less `frameMemberWidthMm`, 30
+unless sent, on each side; `doorHeightsMm` / `drawerFrontHeightsMm`, when sent, are taken as they are); the frame is
+finished as the doors are (`breakdown.frameFinish`, hours in `frameFinishHrs` and `finishHrs`); no edgebanding; no
+centre mullion on a pair of doors. `frameKey`, `hingeKey` (butt), `timberSpeciesKey`, `frameThicknessMm` and
+`doorFrameThicknessMm` are set from `inframeFront`, whatever is sent beside it.
+
+In the calculator, a cabinet's **In-frame** tick sets `inframeFront` from the build rules (`inframeDefaults` in
+`pricing.js`: painted shaker → tulipwood 28 in 28, butt; lacquered shaker → the timber 28 in 28, butt; veneered slab →
+19 in a 20 frame, butt; painted slab → 22 MDF in 22 MDF, Blum) — every value editable, and a configurator draft's
+`inframeFront` opens in the same controls.
+
+A room can be In-frame too (Room Setup ⚙ → **In-frame**, with its timber, hinges, door thickness, frame thickness and
+frame face): new cabinets in the room then start in-frame. Existing cabinets change only by **Apply in-frame to all
+cabinets in this room** (with the tick off: **Remove in-frame…**), which shows the room's price before and after and
+saves on OK. Those cabinets are repriced at today's rates, as any edited item is; nothing else in the quote moves, and
+a website order (`locked: true`) is never touched. The hanging minutes are on the Settings screen (Carcass Assembly
+Labour).
+
+End panels and fillers are not part of the cabinet: send each to `POST /api/endpanel-cost` in its board
+(`MAT_MDF_FH_18`, `MAT_MDF_FH_12`, `MAT_MDF_FH_22`). `GET /api/cabinet-cost/keys` lists the timbers and hinges
+(`inframeFront`). Tests: `test/inframe.test.js`.
