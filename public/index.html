@@ -633,7 +633,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script src="/pricing.js?v=sab-v61"></script>
+  <script src="/pricing.js?v=sab-v62"></script>
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useMemo } = React;
 
@@ -3080,7 +3080,7 @@ function SABQuoteTool() {
                           )}
                         </div>
                         <div>
-                          <label style={miniLbl}>Edgebanding</label>
+                          <label style={miniLbl} title="The edge Cutlist applies to the parts. A specification for the materials list: edging is inside the Cutlist cut, so the choice does not change the price.">Edge finish (by Cutlist)</label>
                           <select value={rd.edgebandKey||"EDGE_OAK_05"} onChange={e => upd("edgebandKey", e.target.value)} style={miniSel}>
                             {Object.entries(EDGEBAND_TYPES).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
                           </select>
@@ -3464,7 +3464,7 @@ function SABQuoteTool() {
                   options: Object.entries(DB.hardware.hinges).map(([k,v]) => [k, v.name]) },
                 { key:"handleKey",         label:"Handle",
                   options: Object.entries(DB.hardware.handles).map(([k,v]) => [k, v.name]) },
-                { key:"edgebandKey",       label:"Edgeband",
+                { key:"edgebandKey",       label:"Edge finish (by Cutlist)",
                   options: Object.entries(EDGEBAND_TYPES).map(([k,v]) => [k, v.name]) },
               ];
               // Summary chip — shows current door profile + finish + material
@@ -3783,13 +3783,14 @@ function SABQuoteTool() {
                   {/* Edgeband selector (only shown when frame is FRAME_NONE and material isn't birch ply) */}
                   {!addItemForm.inframeFront && (!addItemForm.frameKey || addItemForm.frameKey==="FRAME_NONE") && !NO_EDGE_MATERIALS.has(addItemForm.carcassMaterialKey||"MAT_BIRCH_UNF_18") && (
                     <div style={{ marginBottom:14 }}>
-                      <label style={{ fontSize:11, color:"#555555", display:"block", marginBottom:3 }}>Edgebanding</label>
+                      <label style={{ fontSize:11, color:"#555555", display:"block", marginBottom:3 }}>Edge finish (by Cutlist)</label>
                       <select value={addItemForm.edgebandKey||"EDGE_OAK_05"} onChange={e=>updateForm("edgebandKey",e.target.value)}
                         style={{ ...sel, width:"100%" }}>
                         {Object.entries(EDGEBAND_TYPES).map(([k,v])=>(
                           <option key={k} value={k}>{v.name}</option>
                         ))}
                       </select>
+                      <div style={{ fontSize:10, color:"#999999", marginTop:2 }}>The edge Cutlist applies — for the materials list. No charge: edging is inside the Cutlist cut.</div>
                     </div>
                   )}
 
@@ -3879,13 +3880,24 @@ function SABQuoteTool() {
                         </select>
                       </div>
                     </div>
-                    {/* External: a front in the door finish per drawer. Internal (behind doors): a plain front in the carcass board. */}
-                    <div style={{ marginTop:8 }}>
-                      <label style={lbl}>Drawer fronts</label>
-                      <select value={addItemForm.drawerPosition || "external"} onChange={e => updateForm("drawerPosition", e.target.value)} style={{ ...sel, width:"100%" }} disabled={addItemForm.drawerCount === 0}>
-                        <option value="external">External — a front in the door finish</option>
-                        <option value="internal">Internal — behind doors, plain front in the carcass board</option>
-                      </select>
+                    {/* External: a front in the door finish per drawer. Internal (behind doors): a plain front in the box's board. */}
+                    <div style={{ marginTop:8, display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                      <div>
+                        <label style={lbl}>Drawer fronts</label>
+                        <select value={addItemForm.drawerPosition || "external"} onChange={e => updateForm("drawerPosition", e.target.value)} style={{ ...sel, width:"100%" }} disabled={addItemForm.drawerCount === 0}>
+                          <option value="external">External — a front in the door finish</option>
+                          <option value="internal">Internal — behind doors, plain front</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={lbl}>Box board (sheet box, plain front)</label>
+                        <select value={addItemForm.drawerBoxMaterialKey || ""} onChange={e => updateForm("drawerBoxMaterialKey", e.target.value || undefined)} style={{ ...sel, width:"100%" }} disabled={addItemForm.drawerCount === 0}>
+                          <option value="">Matches carcass</option>
+                          {Object.entries(DB.materials).filter(([k]) => !k.startsWith("MAT_BACK")).map(([k,v]) => <option key={k} value={k}>{v.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
                       {addItemForm.drawerCount > 0 && formPreview?.breakdown && (
                         <div style={{ fontSize:10, color:"#999999", marginTop:4 }}>
                           Boxes + runners {fmt(formPreview.breakdown.drawers || 0)} · fronts {fmt(formPreview.breakdown.drawerFronts || 0)} — cost, in the total
@@ -3911,7 +3923,7 @@ function SABQuoteTool() {
                         <div><div style={{ fontSize:9, color:"#999999", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:3 }}>Sell inc VAT</div><div style={{ fontSize:15, color:"#1a1a1a" }}>{fmt(formPreview.totalSellIncVAT)}</div></div>
                       </div>
                       {formPreview.breakdown && (
-                        <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:6, paddingTop:10, borderTop:"1px solid #f0eeeb" }}>
+                        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:6, paddingTop:10, borderTop:"1px solid #f0eeeb" }}>
                           {[
                             ["Carcass mat", formPreview.breakdown.carcassMaterial],
                             ["Assembly", formPreview.breakdown.carcassLabour],
@@ -3919,6 +3931,7 @@ function SABQuoteTool() {
                             ["Doors", formPreview.breakdown.doors],
                             ["Drw Fronts", formPreview.breakdown.drawerFronts],
                             ["Drawers", formPreview.breakdown.drawers],
+                            ["Cutlist cut", formPreview.breakdown.cnc],
                           ].map(([label, val]) => (
                             <div key={label}>
                               <div style={{ fontSize:8, color:"#999999", letterSpacing:"0.08em", marginBottom:2 }}>{label.toUpperCase()}</div>
@@ -4980,12 +4993,15 @@ function SABQuoteTool() {
 
               {/* Carcass Labour */}
               <div style={{ background:"#f0eeeb", borderRadius:8, padding:"20px 22px", marginBottom:24, border:"1px solid #d8d3cc" }}>
-                <SectionHead title="Carcass Assembly Labour" sub="Hours to build and assemble the box — scaled by cabinet surface area vs. the 600×720×560 reference" />
-                <Field label="Base assembly hours (reference cabinet)" path={["settings","carcassBaseHrs"]} unit="hrs" hint="Hours to make a 600×720×560mm carcass. Scales up/down for larger/smaller cabinets. 2.5hrs = cut, assemble, back panel, edge band." step={0.25} min={0.5} />
-                <Field label="Per shelf (additional)" path={["settings","carcassShelfHrs"]} unit="hrs/shelf" hint="Time to drill holes, cut and fit each adjustable shelf" step={0.05} min={0} />
-                <Field label="Drawer prep (additional)" path={["settings","carcassDrawerPrepHrs"]} unit="hrs" hint="Extra setup time when a cabinet includes drawers" step={0.25} min={0} />
+                <SectionHead title="Carcass Assembly Labour" sub="Hours to assemble the box from Cutlist's ready-cut parts — scaled by cabinet surface area vs. the 600×720×560 reference" />
+                <Field label="Base assembly hours (reference cabinet)" path={["settings","carcassBaseHrs"]} unit="hrs" hint="Hours for a 600×720×560mm carcass: assemble ready-cut, edged, drilled parts; fit back panel. Scales up/down for larger/smaller cabinets." step={0.25} min={0.5} />
+                <Field label="Per shelf (additional)" path={["settings","carcassShelfHrs"]} unit="hrs/shelf" hint="Time to fit each adjustable shelf (it arrives cut, edged and drilled)" step={0.05} min={0} />
+                <Field label="Drawer prep (additional)" path={["settings","carcassDrawerPrepHrs"]} unit="hrs" hint="Per cabinet with drawers: fitting the runners and the drawer fronts" step={0.25} min={0} />
                 <Field label="Hanging an in-frame door on butt hinges" path={["settings","buttHingeHangMins"]} unit="mins/door" hint="Bench time to hang one in-frame door on butt hinges, at the bench rate. In-frame cabinets only (not Blum hinges)" step={5} min={0} />
-                <Field label="CNC cutting (× the sheet's cost)" path={["settings","cncPerSheetCost"]} unit="× sheet" hint="Cutting charged on top of a sheet part, as a multiple of its material cost: 1 = the cut costs the sheet again (sheet × 2 in total). Applies to an internal drawer's plain front only" step={0.1} min={0} />
+                <Field label="Cutlist cut (× sheet cost)" path={["settings","cutlistCut"]} unit="× sheet" hint="Cutlist cuts, edges, drills and joints every part: charged on top of the board they supply (with its waste), as its own Cutlist cut line. 1 = the sheet price again; 0 = no cut. Carcass, drawer boxes, internal fronts, end panels, fillers, sheet shelves — not doors, drawer fronts, face frames or solid timber. Edging is included: no tape or edging labour is charged" step={0.1} min={0} />
+                <Field label="End panel bench time" path={["settings","endPanelBenchHrs"]} unit="hrs/panel" hint="Sand, fit and finish prep on a panel that arrives cut and edged (was 0.5 h + edge banding time)" step={0.05} min={0} />
+                <Field label="Floating shelf bench time" path={["settings","shelfBenchHrs"]} unit="hrs/shelf" hint="Sand, fit and finish prep on a sheet shelf that arrives cut and edged (was 0.5 h). A solid-timber shelf, cut in-house, stays at 0.5 h + 0.3 h" step={0.05} min={0} />
+                <Field label="Filler bench time" path={["settings","fillerBenchHrs"]} unit="hrs/filler" hint="Sand, fit and finish prep on a filler that arrives cut and edged (was 0.2 h)" step={0.05} min={0} />
                 {(() => {
                   const hrs = s.carcassBaseHrs + s.carcassShelfHrs; // 1 shelf ref
                   return <Field label="Reference cabinet labour cost (1 shelf)" path={[]} readOnly calcVal={`£${(hrs * effectiveRate).toFixed(0)}`} hint="carcassBaseHrs + 1×shelfHrs — at current effective rate" />;
@@ -5116,7 +5132,7 @@ function SABQuoteTool() {
                 <Field label="Fitting hrs / fitter / day" path={["settings","fittingHoursPerPersonPerDay"]} unit="hrs" hint="Effective fitting hours per fitter per day (8h working - 0.5h clean-down). Drives the labour-days estimate." step={0.5} />
                 <Field label="Delivery fee" path={["settings","deliveryFee"]} unit="£ flat" hint="Van hire / courier to deliver to site" step={25} />
                 <Field label="Project management" path={["settings","pmPercent"]} unit="% of mfg sell" hint="Client liaison, ordering, supplier management" step={0.5} />
-                <Field label="Consumables per item" path={["settings","consumablesPerItem"]} unit="£/item" hint="Screws, glue, edge tape, abrasives — per cabinet line" step={5} />
+                <Field label="Consumables per item" path={["settings","consumablesPerItem"]} unit="£/item" hint="Screws, glue, abrasives — per cabinet line" step={5} />
                 <Field label="Contingency" path={["settings","contingencyPercent"]} unit="% of subtotal" hint="Buffer for access issues, unknowns, late revisions" step={0.5} />
                 <Field label="Warranty & aftercare" path={["settings","warrantyPercent"]} unit="% of total" hint="Call-backs and adjustments within warranty period" step={0.5} />
               </div>

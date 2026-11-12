@@ -235,8 +235,10 @@ A cabinet's drawers are priced as two separate lines: the boxes with their runne
   its handle).
 - **Internal** (drawers behind doors — a wardrobe, a tall cupboard): the same box, and a plain front in the cabinet's
   **carcass board**: the board (opening wide, the box's 180 mm high unless `drawerFrontHeightsMm` is sent, with the
-  board's waste) plus the CNC cut of it (`DB.settings.cncPerSheetCost`, 1 = the cut costs the sheet again). No door
-  finish, no spray, no handle, no making labour. In the materials list the plain fronts are carcass board.
+  board's waste), its Cutlist cut on the cabinet's `cnc` line like the carcass board's. No door finish, no spray, no
+  handle, no making labour. In the materials list the plain fronts are carcass board.
+- `drawerBoxMaterialKey` (optional, a `materials` key): the board of a sheet drawer box and of an internal front when
+  it is not the carcass board (melamine boxes in a veneered cabinet).
 
 The box, the runner (`runnerKey`) and the box's assembly time are the existing ones either way. A cabinet with drawers
 and no `drawerType` is priced with the sheet box in its own carcass board (`DRW_SHEET`; it was the birch ply box), and a
@@ -245,3 +247,32 @@ standalone `drawer` item with no `drawerType` is the sheet box too (it had no pr
 In the calculator: **Drawer fronts** on a cabinet, and **Drawers behind doors** in Room Setup, which new cabinets in
 the room start with and which is applied to the room's cabinets that have both doors and drawers. `POST
 /api/cabinet-cost` takes the field (`drawerPositions` in `/api/cabinet-cost/keys`). Tests: `test/internal-drawers.test.js`.
+
+## Cutlist cut — `breakdown.cnc`
+
+All sheet cutting is outsourced. Cutlist delivers every part cut, edged, drilled and jointed, ready to assemble, and
+charges about the sheet price again for it. So every board Cutlist supplies carries a cut on top of its sheet:
+`cut = sheet cost (board + waste) × DB.settings.cutlistCut`. The figure is 1 by default (the sheet again); 0 is no cut.
+It is on the Settings screen ("Cutlist cut (× sheet cost)").
+
+- **Carries the cut:** carcass panels, backs and shelves; sheet and birch-ply drawer boxes; an internal drawer's plain
+  front; end panels; sheet floating shelves; fillers; channel-rail board.
+- **Never:** doors and external drawer fronts (made in-house, whatever their board), face frames, solid timber (solid
+  drawer boxes, timber shelves), veneer premiums, spray finishing, hardware or labour.
+
+The cut is its own cost line, never inside a material line: one `breakdown.cnc` per cabinet for all its Cutlist board
+(so `drawers`, `drawerFronts` and `channelRail` are each without it), and a `cnc` line on a standalone drawer, end
+panel, shelf or filler. The margin applies to it as to every other cost.
+
+What came out, because Cutlist does it:
+
+- **Edging.** No edging tape or labour is charged anywhere (`EDGEBAND_TYPES` rates are 0). The edge choice stays as a
+  specification — "Edge finish (by Cutlist)" — and its run still goes in the materials list.
+- **Bench time** on a part that arrives cut and edged is sand, fit and finish prep only: end panel 0.25 h (was 0.5 h
+  plus 0.04 h per metre of exposed edge), sheet floating shelf 0.25 h (was 0.5 h), filler 0.10 h (was 0.20 h) — all in
+  Settings (`endPanelBenchHrs`, `shelfBenchHrs`, `fillerBenchHrs`). A solid-timber shelf is made in-house, as before.
+- `cncPerSheetCost` (the old double charge on an internal drawer's plain front).
+
+Carcass assembly (1 h), drawer prep (0.5 h) and board waste (12%) are unchanged. Price-locked quotes do not move.
+Tests: `test/cnc-cut.test.js`; the other files' regression tests put the cut, edging and bench times back as they were
+(`test/as-before.js`) and still match their baselines, so nothing else changed.

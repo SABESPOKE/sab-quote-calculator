@@ -454,9 +454,13 @@ async function session(src, dir) {
   return sameEngine(out);
 }
 
+// The Cutlist change moved the cut, edging and three bench times by design (test/as-before.js), so anything priced
+// afresh differs from the baseline. Put back as they were, everything must be exactly as before.
+const noCnc = fn => require('./as-before.js')(P, BASE.P, fn);
+
 test('existing quotes: every API path answers and stores exactly as before website orders', { skip: noBase }, async () => {
   const before = await session(BASE.server, BASE.dir);
-  const after = await session();
+  const after = await noCnc(() => session());
   assert.deepEqual(after, before);
   // …and the session really exercised read-time repricing, the price lock and new-quote locking.
   assert.notEqual(before[0].body.Q1779000000002.totalSellExVAT, REAL.Q1779000000002.totalSellExVAT, 'legacy quote repriced on read');
@@ -464,7 +468,7 @@ test('existing quotes: every API path answers and stores exactly as before websi
   assert.ok(P.isPricingLock(before.at(-1).Q1800000000001.data.pricingLock));
 });
 
-test('existing quotes: the engine prices, totals and annotates them exactly as before', { skip: noBase }, () => {
+test('existing quotes: the engine prices, totals and annotates them exactly as before', { skip: noBase }, () => noCnc(() => {
   const views = {
     recompute: E => q => E.recomputeQuotePricing(q),
     totals: E => q => E.quoteTotals(q),
@@ -475,7 +479,7 @@ test('existing quotes: the engine prices, totals and annotates them exactly as b
   };
   for (const q of Object.values(REAL)) for (const [name, view] of Object.entries(views))
     assert.deepEqual(sameEngine(view(P)(clone(q))), sameEngine(view(BASE.P)(clone(q))), `${q.id}: ${name}`);
-});
+}));
 
 // ─── 6. permanent delete: never a website order ──────────────────────────────
 test('a website order can be moved to Deleted and restored, but never permanently deleted (409); ordinary quotes as before', () => {

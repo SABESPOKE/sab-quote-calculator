@@ -23,7 +23,7 @@ const NEXT_EDITS = [
   ['vat: 0.20,', 'vat: 0.25,'],                                              // Settings: VAT
   ['topCoatSprayHrsPerM2:   0.21', 'topCoatSprayHrsPerM2:   0.30'],          // finishing rate → hours move
   ['const cornerHrs = 4 * 0.10;', 'const cornerHrs = 4 * 0.25;'],            // engine code: face-frame labour
-  ['const labourHrs  = 0.5 + (exposedEdgeCount', 'const labourHrs  = 0.9 + (exposedEdgeCount'], // engine code: end panels
+  ['const labourHrs  = DB.settings.endPanelBenchHrs + (exposedEdgeCount', 'const labourHrs  = 0.9 + (exposedEdgeCount'], // engine code: end panels
 ];
 let nextSrc = fs.readFileSync(SRC, 'utf8');
 for (const [from, to] of NEXT_EDITS) {

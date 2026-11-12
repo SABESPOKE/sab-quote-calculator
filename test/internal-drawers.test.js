@@ -44,7 +44,11 @@ try {
 } catch { /* no git / unknown ref → the regression tests skip */ }
 const priced = (E, item) => { const { pricedWith, ...p } = E.priceItem(item) || {}; return p; };   // (the engine stamp moves by design)
 
-test('regression: external is the default — every cabinet that names its drawer box prices exactly as before', { skip: !OLD && 'baseline engine unavailable (git)' }, () => {
+// The Cutlist change moved the cut, edging and three bench times by design (test/as-before.js). Put back as they
+// were, the engine must still price exactly as the baseline: nothing else moved.
+const noCnc = fn => require('./as-before.js')(P, OLD, fn);
+
+test('regression: external is the default — every cabinet that names its drawer box prices exactly as before', { skip: !OLD && 'baseline engine unavailable (git)' }, () => noCnc(() => {
   let n = 0;
   for (const drawerType of Object.keys(OLD.DB.drawerTypes)) for (const doorType of Object.keys(OLD.DB.doorTypes)) for (const carcassMaterialKey of ['MAT_MEL_EGGER_18', 'MAT_BIRCH_UNF_18', 'MAT_MDF_FH_18'])
     for (const [doorCount, drawerCount] of [[2, 3], [0, 3], [1, 1], [2, 0]]) for (const extra of [{}, { drawerPosition: 'external' }]) {
@@ -58,40 +62,42 @@ test('regression: external is the default — every cabinet that names its drawe
     assert.deepStrictEqual(priced(P, item), priced(OLD, item));
   }
   assert.ok(n > 500);
-});
+}));
 
 // ─── Internal drawers ────────────────────────────────────────────────────────
 test('internal: the same boxes, and a plain front in the carcass board — its sheet and the CNC cut only', () => {
   const ext = cabinet(), int = cabinet({ drawerPosition: 'internal' }), e = ext.breakdown, i = int.breakdown;
   // The boxes, runners, carcass, doors and edgebanding are untouched.
   for (const k of ['drawers', 'drawerHrs', 'carcassMaterial', 'carcassLabour', 'carcassHardware', 'doors', 'doorHrs', 'edgeband', 'assemblyHrs']) assert.equal(i[k], e[k], k);
-  // The front: opening wide (950 − 2 × 18 − 4) × the box's height, in the carcass board with its waste, × (1 + CNC).
-  assert.equal(P.DB.settings.cncPerSheetCost, 1);
+  // The front: opening wide (950 − 2 × 18 − 4) × the box's height, in the carcass board with its waste — the sheet
+  // only on this line; its CNC cut is on the cabinet's cnc line with every other sheet part's (test/cnc-cut.test.js).
   const sheetM2 = 3 * 0.910 * 0.180 * MEL.wasteFactor;
-  assert.ok(near(i.drawerFronts, sheetM2 * MEL.costPerM2 * 2));
+  assert.ok(near(i.drawerFronts, sheetM2 * MEL.costPerM2));
   // No making labour, no spray and no handle on it.
   assert.equal(i.drawerFrontHrs, 0);
   assert.equal(i.finishHrs, i.sprayDetail.parts.door.totalHrs);
   assert.equal(i.sprayDetail.parts.drawerFront, undefined);
   assert.deepEqual(i.bom.handles, [{ key: 'HW_HDL_BAR128', target: 'door', count: 2 }]);
   // The total is its lines, and the saving is exactly the door-finish fronts less the plain ones.
-  assert.ok(near(int.totalCost, i.carcassMaterial + i.carcassLabour + i.carcassHardware + i.doors + i.drawers + i.drawerFronts + i.edgeband));
-  assert.ok(near(ext.totalCost - int.totalCost, e.drawerFronts - i.drawerFronts));
-  assert.ok(i.drawerFronts < 30 && e.drawerFronts > 500, `plain ${i.drawerFronts} vs door-finish ${e.drawerFronts}`);
+  assert.ok(near(int.totalCost, i.carcassMaterial + i.carcassLabour + i.carcassHardware + i.doors + i.drawers + i.drawerFronts + i.edgeband + i.cnc));
+  assert.ok(near(ext.totalCost - int.totalCost, (e.drawerFronts - i.drawerFronts) + (e.cnc - i.cnc)));
+  assert.ok(i.drawerFronts < 15 && e.drawerFronts > 500, `plain ${i.drawerFronts} vs door-finish ${e.drawerFronts}`);
   assert.ok(near(int.totalSellExVAT, int.totalCost * P.DB.settings.margin) && near(int.totalSellIncVAT, int.totalSellExVAT * (1 + P.DB.settings.vat)));
   // The materials list: the plain fronts are carcass board to order; only the doors are door-finish panels.
   assert.deepEqual(i.bom.doors.map(d => d.count), [2]);
   assert.ok(near(i.bom.carcass[0].areaM2 - e.bom.carcass[0].areaM2, sheetM2, 1e-3));
 });
 
-test('internal: a front takes its own height when sent, the board is the cabinet\'s own, the CNC multiple is a setting, qty scales', () => {
+test('internal: a front takes its own height when sent, the board is the cabinet\'s own (or the box board named), qty scales', () => {
   const a = cabinet({ drawerPosition: 'internal' }), b = cabinet({ drawerPosition: 'internal', drawerFrontHeightsMm: [150, 200, 250] });
   assert.ok(near(b.breakdown.drawerFronts / a.breakdown.drawerFronts, 600 / 540));
   const birch = cabinet({ drawerPosition: 'internal', carcassMaterialKey: 'MAT_BIRCH_UNF_18' }), B = P.DB.materials.MAT_BIRCH_UNF_18;
-  assert.ok(near(birch.breakdown.drawerFronts, 3 * 0.910 * 0.180 * B.wasteFactor * B.costPerM2 * 2));
-  P.DB.settings.cncPerSheetCost = 0;
-  try { assert.ok(near(cabinet({ drawerPosition: 'internal' }).breakdown.drawerFronts, a.breakdown.drawerFronts / 2)); }
-  finally { P.DB.settings.cncPerSheetCost = 1; }
+  assert.ok(near(birch.breakdown.drawerFronts, 3 * 0.910 * 0.180 * B.wasteFactor * B.costPerM2));
+  // drawerBoxMaterialKey: the boxes and the plain fronts in a board of their own (melamine boxes in a birch carcass).
+  const mel = cabinet({ drawerPosition: 'internal', carcassMaterialKey: 'MAT_BIRCH_UNF_18', drawerBoxMaterialKey: 'MAT_MEL_EGGER_18' });
+  assert.ok(near(mel.breakdown.drawerFronts, a.breakdown.drawerFronts) && near(mel.breakdown.drawers, a.breakdown.drawers));
+  assert.equal(mel.breakdown.carcassMaterial, birch.breakdown.carcassMaterial);
+  assert.deepEqual(mel.breakdown.bom.carcass.map(c => c.key), ['MAT_BIRCH_UNF_18', 'MAT_MEL_EGGER_18']);
   assert.ok(near(cabinet({ drawerPosition: 'internal' }, 4).totalCost, 4 * a.totalCost));
   // No drawers: the field changes nothing.
   assert.equal(cabinet({ drawerCount: 0, drawerPosition: 'internal' }).totalCost, cabinet({ drawerCount: 0 }).totalCost);
