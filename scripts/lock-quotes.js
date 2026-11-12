@@ -49,7 +49,8 @@ function analyseQuote(data) {
   const storedStamp = data.totalSellExVAT ?? null;
   return {
     id: data.id, ref: data.ref || data.id, client: data.client || '', status: data.status || 'active',
-    alreadyLocked: P.isPricingLock(data.pricingLock), savedTotal, servedTotal, storedStamp, itemsDiffer, itemsFilled,
+    alreadyLocked: P.isPricingLock(data.pricingLock) || P.isLocked(data), // website orders are never touched
+    savedTotal, servedTotal, storedStamp, itemsDiffer, itemsFilled,
     differs: itemsDiffer > 0 || savedTotal.totalSellExVAT !== servedTotal.totalSellExVAT,
     // The total it would lock at ≠ the total stamped at its last save: catches Settings
     // drift on project-level costs (survey, design rate…) that item prices can't show.

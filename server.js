@@ -13,13 +13,13 @@ let calcDesignHrsPerRoom = null;
 let recomputeQuotePricing = null;
 let quoteGrandTotal = null;
 let quoteMaterialsBom = null;
-let withPricingStatus = null, lockQuote = null, quoteSettings = null, applySettings = null, validateSettings = null, ENGINE_VERSION = null;
+let withPricingStatus = null, lockQuote = null, quoteSettings = null, applySettings = null, validateSettings = null, ENGINE_VERSION = null, lockedChange = null, lockedMerge = null, onOrderCreate = null;
 let PRICING_DB = null, FRAME_MATERIALS = null, EDGEBAND_TYPES = null; // lookup tables for /api/cabinet-cost
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
   ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES,
-     withPricingStatus, lockQuote, quoteSettings, applySettings, validateSettings, ENGINE_VERSION } = require(path.join(__dirname, 'public', 'pricing.js')));
+     withPricingStatus, lockQuote, quoteSettings, applySettings, validateSettings, ENGINE_VERSION, lockedChange, lockedMerge, onOrderCreate } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
   pricingEngineError = err.message;
@@ -87,17 +87,57 @@ function withHours(quote) {
 
 // Writes vs the price lock. storedLock: undefined = quote never stored, null = stored
 // unlocked, object = stored locked. Works even if the engine failed to load.
-//  • new quote → price anything unpriced and lock it;
+//  • new quote → price anything unpriced and lock it — but a new website order (locked:
+//    true) is written as sent: never priced, never price-locked;
 //  • stored unlocked → written as sent (it gets locked by scripts/lock-quotes.js);
 //  • stored locked → only lock-aware code (X-Pricing-Engine header) sending the lock may
 //    write. A tab on the old code, or a copy loaded before the lock (and so repriced on
 //    load), is refused, so it can't overwrite frozen prices.
 const PRICING_CLIENT_HEADER = 'X-Pricing-Engine';
 const isLock = l => !!(l && typeof l === 'object' && l.settings && typeof l.settings === 'object');
+const isLocked = q => !!(q && q.locked === true); // a website order (pricing.js → isLocked)
 function guardWrite(quote, storedLock, trusted) {
   if (isLock(storedLock)) return trusted && isLock(quote && quote.pricingLock) ? { data: quote } : { reject: true };
-  if (storedLock !== undefined || !quote || !lockQuote) return { data: quote };
+  if (storedLock !== undefined || !quote || !lockQuote || isLocked(quote)) return { data: quote };
   return { data: isLock(quote.pricingLock) ? quote : lockQuote(recomputeQuotePricing(quote, { onlyUnpriced: true })) };
+}
+
+// Website orders. Stored: whoever writes, only what pricing.js → lockedChange allows (the
+// status / Deleted folder) may change, and only those fields are taken (lockedMerge) —
+// nothing at all without the engine. New: must be a valid order (lockedOrderErrors), and
+// gets what QC derives for it, once (onOrderCreate). null = not a website order.
+function guardLocked(quote, stored, id) {
+  if (isLocked(stored)) {
+    const field = lockedChange ? lockedChange(stored, quote || {}) : 'any field (pricing engine not loaded)';
+    return field ? { reject: 409, error: `This quote is a paid website order and is locked — only its status can change (refused: ${field}).` } : { data: lockedMerge(stored, quote) };
+  }
+  if (!isLocked(quote)) return null;
+  const errors = lockedOrderErrors(quote, id);
+  if (errors.length) return { reject: 400, error: 'Not a valid website order — see docs/configurator-quotes.md', errors };
+  return onOrderCreate ? { data: onOrderCreate(quote) } : { reject: 503, error: 'Pricing engine not loaded — send the order again shortly' };
+}
+
+// What a new website order must carry (docs/configurator-quotes.md). Amounts in £, to the
+// penny; the lines must add up to paid.exVat because the Client View and PDF total them.
+const PAID_FIELDS = ['exVat', 'vat', 'gross', 'deposit', 'balance'];
+const pennies = v => Math.round(v * 100);
+function lockedOrderErrors(q, id) {
+  const errs = [];
+  if (q.id !== id) errs.push(`id must equal the id in the URL ("${id}")`);
+  const p = q.paid;
+  const bad = PAID_FIELDS.filter(f => !(p && typeof p[f] === 'number' && Number.isFinite(p[f]) && p[f] >= 0 && Math.abs(p[f] * 100 - pennies(p[f])) < 1e-6));
+  if (bad.length) errs.push(`${bad.map(f => `paid.${f}`).join(', ')} must be amounts in £: numbers ≥ 0 with at most 2 decimal places`);
+  else {
+    if (pennies(p.exVat) + pennies(p.vat) !== pennies(p.gross)) errs.push('paid.gross must equal paid.exVat + paid.vat');
+    if (pennies(p.deposit) + pennies(p.balance) !== pennies(p.gross)) errs.push('paid.deposit + paid.balance must equal paid.gross');
+  }
+  const rooms = q.rooms && typeof q.rooms === 'object' && !Array.isArray(q.rooms) ? Object.values(q.rooms) : [];
+  if (!rooms.length || rooms.some(r => !r || !Array.isArray(r.items))) return [...errs, 'rooms must be { "<room name>": { "includeDesignTime": false, "items": [...] } }, at least one room'];
+  if (rooms.some(r => r.includeDesignTime !== false)) errs.push('every room needs includeDesignTime: false (no design fee on a website order)');
+  const items = rooms.flatMap(r => r.items);
+  if (items.some(it => !Number.isFinite(it && it.pricing && it.pricing.totalSellExVAT))) errs.push('every item needs pricing.totalSellExVAT (a number)');
+  else if (!bad.length && pennies(items.reduce((s, it) => s + it.pricing.totalSellExVAT, 0)) !== pennies(p.exVat)) errs.push("the items' pricing.totalSellExVAT must add up to paid.exVat");
+  return errs;
 }
 
 // Shared pricing settings (the Settings page's DB JSON), stored once in Postgres and
@@ -431,6 +471,8 @@ app.get('/api/quotes', async (req, res) => {
     const quotes = {};
     for (const row of rows) {
       const base = { ...row.data, _serverUpdatedAt: row.updated_at };
+      // A website order is served exactly as stored: its paid figures are final.
+      if (isLocked(base)) { quotes[row.id] = base; continue; }
       const recomputed = recomputeQuotePricing ? recomputeQuotePricing(base) : base;
       // Stamp the grand total from the freshly-recomputed items so the served
       // total always matches the served line items (and the calculator UI), and
@@ -490,10 +532,13 @@ app.put('/api/quotes/:id', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });
   const { id } = req.params;
   try {
-    // Price-lock guard (see guardWrite), then stamp the grand total from the client's own
-    // item pricing so it matches what the UI displayed.
-    const { rows } = await pool.query("SELECT data->'pricingLock' AS lock FROM quotes WHERE id = $1", [id]);
-    const g = guardWrite(req.body, rows.length ? rows[0].lock : undefined, !!req.get(PRICING_CLIENT_HEADER));
+    // Website-order and price-lock guards (see guardLocked / guardWrite), then stamp the
+    // grand total from the client's own item pricing so it matches what the UI displayed.
+    const { rows } = await pool.query('SELECT data FROM quotes WHERE id = $1', [id]);
+    const stored = rows.length ? rows[0].data : undefined;
+    const locked = guardLocked(req.body, stored, id);
+    if (locked && locked.reject) return res.status(locked.reject).json({ error: locked.error, errors: locked.errors });
+    const g = locked || guardWrite(req.body, rows.length ? ((stored && stored.pricingLock) ?? null) : undefined, !!req.get(PRICING_CLIENT_HEADER));
     if (g.reject) return res.status(409).json({ error: 'This quote is price-locked. Reload the calculator to edit the locked version.' });
     const data = withGrandTotal(g.data);
     await pool.query(
@@ -518,11 +563,14 @@ app.patch('/api/quotes/:id', async (req, res) => {
     // Read current data, merge patch fields into it, write back
     const { rows } = await pool.query('SELECT data FROM quotes WHERE id = $1', [id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    // The lock is never patchable, nor are a locked quote's priced items.
+    // The lock is never patchable, nor are a locked quote's priced items, nor anything
+    // but a website order's status.
     const { pricingLock, ...safe } = patch || {};
+    const locked = guardLocked({ ...rows[0].data, ...safe }, rows[0].data, id);
+    if (locked && locked.reject) return res.status(locked.reject).json({ error: locked.error, errors: locked.errors });
     if (isLock(rows[0].data.pricingLock)) delete safe.rooms;
     // Re-stamp the grand total in case the patch touched pricing-affecting fields.
-    const updated = withGrandTotal({ ...rows[0].data, ...safe });
+    const updated = withGrandTotal(locked ? locked.data : { ...rows[0].data, ...safe });
     await pool.query(
       'UPDATE quotes SET data = $1, updated_at = NOW() WHERE id = $2',
       [JSON.stringify(updated), id]
@@ -534,10 +582,19 @@ app.patch('/api/quotes/:id', async (req, res) => {
   }
 });
 
+// A paid website order can go to the Deleted folder (a status-like flag) but is never
+// removed from the database — not by DELETE, not by a synced tombstone.
+const LOCKED_DELETE = 'This is a paid website order — it can be moved to Deleted but not permanently deleted.';
+async function isStoredLocked(id) {
+  const { rows } = await pool.query('SELECT data FROM quotes WHERE id = $1', [id]);
+  return rows.length > 0 && isLocked(rows[0].data);
+}
+
 // Delete a quote
 app.delete('/api/quotes/:id', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });
   try {
+    if (await isStoredLocked(req.params.id)) return res.status(409).json({ error: LOCKED_DELETE });
     await pool.query('DELETE FROM quotes WHERE id = $1', [req.params.id]);
     res.json({ ok: true });
   } catch (err) {
@@ -555,13 +612,17 @@ app.post('/api/quotes/sync', async (req, res) => {
   const clientDeleted = Array.isArray(req.body.deleted) ? req.body.deleted : [];
   const trusted = !!req.get(PRICING_CLIENT_HEADER);
   try {
-    // Honour client tombstones first so the merge below can't re-introduce them.
-    const confirmedDeleted = [];
+    // Honour client tombstones first so the merge below can't re-introduce them — all but
+    // a paid website order's, which stays (and is sent back).
+    const confirmedDeleted = [], kept = new Set();
     for (const id of clientDeleted) {
-      try { await pool.query('DELETE FROM quotes WHERE id = $1', [id]); confirmedDeleted.push(id); }
+      try {
+        if (await isStoredLocked(id)) { kept.add(id); continue; }
+        await pool.query('DELETE FROM quotes WHERE id = $1', [id]); confirmedDeleted.push(id);
+      }
       catch (e) { console.error('sync delete failed for', id, e.message); }
     }
-    const deletedSet = new Set(clientDeleted);
+    const deletedSet = new Set(clientDeleted.filter(id => !kept.has(id)));
 
     // Get all server quotes
     const { rows } = await pool.query('SELECT id, data, updated_at FROM quotes');
@@ -578,9 +639,10 @@ app.post('/api/quotes/sync', async (req, res) => {
       const clientTime = quote.updated_at ? new Date(quote.updated_at) : new Date(0);
       const serverEntry = serverMap[id];
 
-      // Price-lock guard (see guardWrite): a refused write keeps the server copy.
+      // Website-order and price-lock guards (see guardLocked / guardWrite): a refused
+      // write keeps the server copy.
       const g = (!serverEntry || clientTime > new Date(serverEntry.updated_at))
-        ? guardWrite(quote, serverEntry ? (serverEntry.data.pricingLock || null) : undefined, trusted)
+        ? guardLocked(quote, serverEntry && serverEntry.data, id) || guardWrite(quote, serverEntry ? (serverEntry.data.pricingLock || null) : undefined, trusted)
         : null;
       if (g && !g.reject) {
         // Client is newer — upsert to server, stamping the grand total so the
@@ -593,8 +655,8 @@ app.post('/api/quotes/sync', async (req, res) => {
           [id, JSON.stringify(stamped), quote.updated_at || new Date().toISOString()]
         );
         merged[id] = stamped;
-      } else {
-        // Server is newer — use server version
+      } else if (serverEntry) {
+        // Server is newer (or the write was refused) — use server version
         merged[id] = serverEntry.data;
       }
       delete serverMap[id];

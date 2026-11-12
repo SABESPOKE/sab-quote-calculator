@@ -439,6 +439,70 @@ const pricingId = pw => pw ? `${pw.engine}/${pw.settings}` : "saved";
 
 const isPricingLock = l => !!(l && typeof l === "object" && l.settings && typeof l.settings === "object");
 
+// ─── WEBSITE ORDERS (locked: true) ───────────────────────────────────────────
+// A quote the configurator creates from a PAID website order: status "sold", source
+// "configurator", locked: true, and the paid figures in `paid` { exVat, vat, gross,
+// deposit, balance }. It is never priced, repriced or re-totalled — its totals ARE the
+// paid figures. See docs/configurator-quotes.md.
+const isLocked = q => !!(q && q.locked === true);
+// All a write may still change on one: its folder (the status, the Deleted folder), the
+// timestamps the app keeps, and the grand-total stamp — re-derived from `paid` on every
+// write, so a retry of the configurator's create (sent without it) is the same quote.
+// The server refuses anything else; the UI never sends it.
+const LOCKED_EDITABLE = new Set(["status", "deleted", "deletedAt", "updated_at", "_serverUpdatedAt", "totalSellExVAT", "totalSellIncVAT"]);
+// Workshop hours in an engine breakdown: every *Hrs / *Hours figure and the spray split.
+const isHourKey = k => /(Hrs|Hours)$/.test(k) || k === "sprayDetail";
+// Fields QC sets itself, once, when the order is created (onOrderCreate), by the key of the
+// object holding them ("" = the quote itself): never compared, never taken from a write (lockedMerge).
+const QC_OWNED = { "": k => k === "materialsBom", breakdown: isHourKey, projectCosts: k => k === "installDaysByRoom" };
+// The first field `next` would change on website order `stored` that may not change, else
+// null. Key order is ignored (Postgres JSONB re-orders keys), and so are QC_OWNED fields.
+function lockedChange(stored, next) {
+  const canon = v => JSON.stringify(v, (k, x) => {
+    if (!x || typeof x !== "object" || Array.isArray(x)) return x;
+    const owned = QC_OWNED[k];
+    const keys = Object.keys(x).filter(key => !(owned && owned(key))).sort();
+    return owned && !keys.length && Object.keys(x).length ? undefined : keys.reduce((o, key) => (o[key] = x[key], o), {}); // only QC's own = none
+  });
+  for (const k of new Set([...Object.keys(stored), ...Object.keys(next)]))
+    if (!LOCKED_EDITABLE.has(k) && canon({ [k]: stored[k] }) !== canon({ [k]: next[k] })) return k;
+  return null;
+}
+// An accepted write to a stored website order: the stored order, with only the editable
+// fields taken from `next` — so everything else, its hours included, stays as stored.
+function lockedMerge(stored, next) {
+  const out = { ...stored };
+  for (const k of LOCKED_EDITABLE) if (k in next) out[k] = next[k]; else delete out[k];
+  return out;
+}
+// Once, when a website order is created: each item's workshop hours from the engine — the
+// same breakdown figures a normal quote's items carry, and what the Orchestrator schedules
+// from — written into item.pricing.breakdown. Prices are untouched; items with no hours
+// (custom lines, fillers) are left exactly as sent.
+function withWorkshopHours(quote) {
+  const rooms = {};
+  for (const [name, room] of Object.entries(quote.rooms || {})) {
+    rooms[name] = { ...room, items: (room.items || []).map(item => {
+      let bd = null;
+      try { bd = (priceItemUnstamped(item) || {}).breakdown; } catch {}
+      const hours = Object.fromEntries(Object.entries(bd || {}).filter(([k]) => isHourKey(k)));
+      if (!Object.keys(hours).length || !item.pricing) return item;
+      return { ...item, pricing: { ...item.pricing, breakdown: { ...(item.pricing.breakdown || {}), ...hours } } };
+    }) };
+  }
+  return { ...quote, rooms };
+}
+// Everything QC derives for a website order, once, when it is created: the workshop hours;
+// supply only — 0 install days for every room (what the Orchestrator's supply-only check
+// reads; QC itself never stores an explicit 0 for an ordinary quote's room — note that check
+// consults the Business API's fitting estimate first, which is never 0 days); and the
+// materials list, the same quoteMaterialsBom GET adds to an ordinary quote (none → no field).
+function onOrderCreate(quote) {
+  const q = withWorkshopHours(quote);
+  const installDaysByRoom = Object.fromEntries(Object.keys(q.rooms || {}).map(r => [r, 0]));
+  return { ...q, projectCosts: { ...(q.projectCosts || {}), installDaysByRoom }, materialsBom: quoteMaterialsBom(quote) || undefined };
+}
+
 function lockQuote(quote) {
   return { ...quote, pricingLock: { engineVersion: ENGINE_VERSION, lockedAt: new Date().toISOString(), settings: JSON.parse(JSON.stringify(DB.settings)) } };
 }
@@ -470,6 +534,18 @@ function rescaleMargin(quote, marginOverride) {
 // Browser calls it as a window global; the server requires it to persist the
 // total onto the quote record (see quoteGrandTotal). Keep DOM/React free.
 function quoteTotals(quote) {
+  // Website order: the paid figures, exactly — never derived from the items.
+  if (isLocked(quote)) {
+    const p = quote.paid || {};
+    let mfgCost = 0;
+    Object.values(quote.rooms || {}).forEach(room => (room.items || []).forEach(item => { mfgCost += item.pricing?.totalCost || 0; }));
+    return {
+      mfgCost, mfgSellExVAT: p.exVat, designFee: 0,
+      survey: 0, install: 0, delivery: 0, pm: 0, consumables: 0, contingency: 0, warranty: 0,
+      totalExVAT: p.exVat, vat: p.vat, totalIncVAT: p.gross,
+      margin: mfgCost > 0 ? p.exVat / mfgCost : 0,
+    };
+  }
   const s = quoteSettings(quote); // locked quotes: the settings captured at lock time
   let mfgCost = 0, mfgSellExVAT = 0, designFee = 0;
   // nonFixed* track items that participate in margin/overhead allocation
@@ -1384,14 +1460,14 @@ function priceItemUnstamped(item, effectiveMargin) {
 }
 
 // Recompute every item's `pricing` from its stored params using the canonical
-// engine — EXCEPT on a locked quote, which is returned untouched (its stored pricing
-// is final). onlyUnpriced prices just the items with no valid stored price: used when
-// a quote is being locked, never on read. Non-destructive: structure is preserved, and
+// engine — EXCEPT on a price-locked quote or a website order, which is returned
+// untouched (its stored pricing is final). onlyUnpriced prices just the items with no
+// valid stored price: used when a quote is being locked, never on read. Non-destructive: structure is preserved, and
 // if an item throws/returns null its stored pricing is kept. Shared by the server
 // (GET /api/quotes, new-quote locking), the browser load path and the scripts.
 function recomputeQuotePricing(quote, { onlyUnpriced = false } = {}) {
   if (!quote || !quote.rooms) return quote;
-  if (isPricingLock(quote.pricingLock)) return quote;
+  if (isPricingLock(quote.pricingLock) || isLocked(quote)) return quote;
   // Per-quote margin override (falls back to the engine default when unset).
   const effectiveMargin = quote.marginOverride;
   const rooms = {};
@@ -1520,7 +1596,7 @@ function quoteMaterialsBom(quote) {
     calcDesignHrsPerRoom, calcDesignTimePerRoom,
     getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
     recomputeQuotePricing, quoteMaterialsBom,
-    ENGINE_VERSION, applySettings, settingsDiff, validateSettings, settingsFingerprint, pricingId, isPricingLock, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
+    ENGINE_VERSION, applySettings, settingsDiff, validateSettings, settingsFingerprint, pricingId, isPricingLock, isLocked, lockedChange, lockedMerge, withWorkshopHours, onOrderCreate, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") Object.assign(window, api);
 })();

@@ -1,0 +1,33 @@
+{
+  "id": "cfg-1042",
+  "source": "configurator",
+  "status": "sold",
+  "locked": true,
+  "client": "Jane Example",
+  "project": "Website order #1042 — utility run",
+  "ref": "WEB-1042",
+  "created": "26/10/2026",
+  "updated_at": "2026-10-26T14:05:00.000Z",
+  "paid": { "exVat": 1250.00, "vat": 250.00, "gross": 1500.00, "deposit": 750.00, "balance": 750.00 },
+  "rooms": {
+    "Utility": {
+      "includeDesignTime": false,
+      "items": [
+        {
+          "type": "cabinet",
+          "description": "Base cabinet 600×720×560 — Shaker painted, 2 doors",
+          "qty": 2,
+          "params": { "widthMm": 600, "heightMm": 720, "depthMm": 560, "carcassMaterialKey": "MAT_BIRCH_PREF_18", "carcassFinish": "none", "doorCount": 2, "doorType": "SHAKER_PNT", "shelfCount": 1, "hingeKey": "HW_HINGE_SM", "handleKey": "HW_HDL_NONE" },
+          "pricing": { "costPerUnit": 297.50, "sellPerUnit": 595.00, "totalCost": 595.00, "totalSellExVAT": 1190.00, "totalSellIncVAT": 1428.00 }
+        },
+        {
+          "type": "custom",
+          "description": "Delivery",
+          "qty": 1,
+          "params": {},
+          "pricing": { "costPerUnit": 60.00, "sellPerUnit": 60.00, "totalCost": 60.00, "totalSellExVAT": 60.00, "totalSellIncVAT": 72.00 }
+        }
+      ]
+    }
+  }
+}

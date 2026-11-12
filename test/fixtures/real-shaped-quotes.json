@@ -1,0 +1,1673 @@
+{
+  "Q1781000000001": {
+    "id": "Q1781000000001",
+    "client": "Harper Household",
+    "project": "Kitchen & utility",
+    "ref": "SAB-2026-041",
+    "created": "02/09/2026",
+    "status": "sold",
+    "continuousNumbering": true,
+    "spec": {
+      "doorFinish": "Painted — client colour"
+    },
+    "rooms": {
+      "Kitchen": {
+        "items": [
+          {
+            "type": "cabinet",
+            "description": "Base 600 — 2 door",
+            "qty": 4,
+            "params": {
+              "type": "cabinet",
+              "cabinetTypeKey": "B_STD_2D",
+              "widthMm": 600,
+              "heightMm": 770,
+              "depthMm": 560,
+              "carcassMaterialKey": "MAT_BIRCH_UNF_18",
+              "carcassFinish": "none",
+              "doorCount": 2,
+              "doorType": "SHAKER_PNT",
+              "doorProfile": "shaker",
+              "doorFinish": "painted",
+              "sprayFinishOverride": "",
+              "hasStain": false,
+              "drawerCount": 0,
+              "drawerType": "DRW_SHEET",
+              "runnerKey": "HW_RUN_BLUM_SM",
+              "hingeKey": "HW_HINGE_SM",
+              "handleKey": "HW_HDL_BAR128",
+              "shelfCount": 1,
+              "frameKey": "FRAME_NONE",
+              "frameThicknessMm": 22,
+              "frameMemberWidthMm": 30,
+              "frameCustomSpeciesName": "",
+              "frameCustomPricePerM3": 0,
+              "timberSpeciesKey": "TIM_OAK",
+              "timberCustomSpeciesName": "",
+              "timberCustomPricePerM3": 0,
+              "panelMaterialKey": "",
+              "frameStileWidthMm": 70,
+              "doorFrameThicknessMm": 22,
+              "edgebandKey": "EDGE_OAK_05",
+              "qty": 4,
+              "description": "Base 600 — 2 door",
+              "descriptionTouched": false
+            },
+            "pricing": {
+              "costPerUnit": 445.0981569131483,
+              "sellPerUnit": 890.1963138262965,
+              "totalCost": 1780.392627652593,
+              "totalSellExVAT": 3560.785255305186,
+              "totalSellIncVAT": 4272.942306366223,
+              "breakdown": {
+                "carcassMaterial": 88.22903914000001,
+                "carcassLabour": 68.49146072781494,
+                "carcassHardware": 9.5,
+                "doors": 278.8776570453333,
+                "drawers": 0,
+                "drawerFronts": 0,
+                "frame": 0,
+                "edgeband": 0,
+                "assemblyHrs": 1.022260607877835,
+                "doorHrs": 1.227672,
+                "drawerHrs": 0,
+                "drawerFrontHrs": 0,
+                "frameHrs": 0,
+                "edgebandHrs": 0,
+                "carcassFinishHrs": 0,
+                "finishHrs": 3.908,
+                "totalHrs": 6.158,
+                "sprayDetail": {
+                  "caulkHrs": 0.406,
+                  "primerHrs": 0.882,
+                  "topCoatHrs": 2.452,
+                  "handlingHrs": 0.168,
+                  "totalHrs": 3.908,
+                  "parts": {
+                    "door": {
+                      "caulkHrs": 0.406,
+                      "primerHrs": 0.882,
+                      "topCoatHrs": 2.452,
+                      "handlingHrs": 0.168,
+                      "totalHrs": 3.908
+                    }
+                  }
+                },
+                "bom": {
+                  "carcass": [
+                    {
+                      "key": "MAT_BIRCH_UNF_18",
+                      "areaM2": 10.5066
+                    }
+                  ],
+                  "doors": [
+                    {
+                      "key": "SHAKER_PNT",
+                      "count": 8,
+                      "areaM2": 1.8214
+                    }
+                  ],
+                  "drawerBoxes": [],
+                  "frames": [],
+                  "edgeband": [],
+                  "hardware": [
+                    {
+                      "key": "HW_HINGE_SM",
+                      "count": 16
+                    }
+                  ],
+                  "handles": [
+                    {
+                      "key": "HW_HDL_BAR128",
+                      "target": "door",
+                      "count": 8
+                    }
+                  ]
+                }
+              },
+              "pricedWith": {
+                "engine": "2026-10-09",
+                "settings": "efb500b3"
+              }
+            },
+            "hours": {
+              "priced": {
+                "assemblyHrs": 1.022260607877835,
+                "doorHrs": 1.227672,
+                "drawerHrs": 0,
+                "drawerFrontHrs": 0,
+                "frameHrs": 0,
+                "edgebandHrs": 0,
+                "carcassFinishHrs": 0,
+                "finishHrs": 3.908,
+                "totalHrs": 6.158,
+                "sprayDetail": {
+                  "caulkHrs": 0.406,
+                  "primerHrs": 0.882,
+                  "topCoatHrs": 2.452,
+                  "handlingHrs": 0.168,
+                  "totalHrs": 3.908,
+                  "parts": {
+                    "door": {
+                      "caulkHrs": 0.406,
+                      "primerHrs": 0.882,
+                      "topCoatHrs": 2.452,
+                      "handlingHrs": 0.168,
+                      "totalHrs": 3.908
+                    }
+                  }
+                }
+              },
+              "current": {
+                "assemblyHrs": 1.022260607877835,
+                "doorHrs": 1.227672,
+                "drawerHrs": 0,
+                "drawerFrontHrs": 0,
+                "frameHrs": 0,
+                "edgebandHrs": 0,
+                "carcassFinishHrs": 0,
+                "finishHrs": 3.908,
+                "totalHrs": 6.158,
+                "sprayDetail": {
+                  "caulkHrs": 0.406,
+                  "primerHrs": 0.882,
+                  "topCoatHrs": 2.452,
+                  "handlingHrs": 0.168,
+                  "totalHrs": 3.908,
+                  "parts": {
+                    "door": {
+                      "caulkHrs": 0.406,
+                      "primerHrs": 0.882,
+                      "topCoatHrs": 2.452,
+                      "handlingHrs": 0.168,
+                      "totalHrs": 3.908
+                    }
+                  }
+                }
+              },
+              "changed": false
+            }
+          },
+          {
+            "type": "cabinet",
+            "description": "Drawer stack 900",
+            "qty": 1,
+            "params": {
+              "type": "cabinet",
+              "cabinetTypeKey": "B_DRAWER_3",
+              "widthMm": 900,
+              "heightMm": 770,
+              "depthMm": 560,
+              "carcassMaterialKey": "MAT_BIRCH_UNF_18",
+              "carcassFinish": "none",
+              "doorCount": 0,
+              "doorType": "SHAKER_PNT",
+              "doorProfile": "shaker",
+              "doorFinish": "painted",
+              "sprayFinishOverride": "",
+              "hasStain": false,
+              "drawerCount": 3,
+              "drawerType": "DRW_SHEET",
+              "runnerKey": "HW_RUN_BLUM_SM",
+              "hingeKey": "HW_HINGE_SM",
+              "handleKey": "HW_HDL_BAR128",
+              "shelfCount": 0,
+              "frameKey": "FRAME_NONE",
+              "frameThicknessMm": 22,
+              "frameMemberWidthMm": 30,
+              "frameCustomSpeciesName": "",
+              "frameCustomPricePerM3": 0,
+              "timberSpeciesKey": "TIM_OAK",
+              "timberCustomSpeciesName": "",
+              "timberCustomPricePerM3": 0,
+              "panelMaterialKey": "",
+              "frameStileWidthMm": 70,
+              "doorFrameThicknessMm": 22,
+              "edgebandKey": "EDGE_OAK_05",
+              "qty": 1,
+              "description": "Drawer stack 900",
+              "descriptionTouched": false
+            },
+            "pricing": {
+              "costPerUnit": 877.8159207739975,
+              "sellPerUnit": 1755.631841547995,
+              "totalCost": 877.8159207739975,
+              "totalSellExVAT": 1755.631841547995,
+              "totalSellIncVAT": 2106.758209857594,
+              "breakdown": {
+                "carcassMaterial": 99.02029690000002,
+                "carcassLabour": 111.11056372799746,
+                "carcassHardware": 8,
+                "doors": 0,
+                "drawers": 289.69359429,
+                "drawerFronts": 369.991465856,
+                "frame": 0,
+                "edgeband": 0,
+                "assemblyHrs": 1.6583666228059322,
+                "doorHrs": 0,
+                "drawerHrs": 0.8999999999999999,
+                "drawerFrontHrs": 1.8279359999999998,
+                "frameHrs": 0,
+                "edgebandHrs": 0,
+                "carcassFinishHrs": 0,
+                "finishHrs": 6.204000000000001,
+                "totalHrs": 10.59,
+                "sprayDetail": {
+                  "caulkHrs": 0.672,
+                  "primerHrs": 1.407,
+                  "topCoatHrs": 3.876,
+                  "handlingHrs": 0.249,
+                  "totalHrs": 6.204000000000001,
+                  "parts": {
+                    "drawerFront": {
+                      "caulkHrs": 0.672,
+                      "primerHrs": 1.407,
+                      "topCoatHrs": 3.876,
+                      "handlingHrs": 0.249,
+                      "totalHrs": 6.204000000000001
+                    }
+                  }
+                },
+                "bom": {
+                  "carcass": [
+                    {
+                      "key": "MAT_BIRCH_UNF_18",
+                      "areaM2": 2.9479
+                    }
+                  ],
+                  "doors": [
+                    {
+                      "key": "SHAKER_PNT",
+                      "count": 3,
+                      "areaM2": 0.6559
+                    }
+                  ],
+                  "drawerBoxes": [
+                    {
+                      "key": "DRW_SHEET",
+                      "count": 3
+                    }
+                  ],
+                  "frames": [],
+                  "edgeband": [],
+                  "hardware": [
+                    {
+                      "key": "HW_RUN_BLUM_SM",
+                      "count": 3
+                    }
+                  ],
+                  "handles": [
+                    {
+                      "key": "HW_HDL_BAR128",
+                      "target": "drawer",
+                      "count": 3
+                    }
+                  ]
+                }
+              },
+              "pricedWith": {
+                "engine": "2026-10-09",
+                "settings": "efb500b3"
+              }
+            },
+            "hours": {
+              "priced": {
+                "assemblyHrs": 1.6583666228059322,
+                "doorHrs": 0,
+                "drawerHrs": 0.8999999999999999,
+                "drawerFrontHrs": 1.8279359999999998,
+                "frameHrs": 0,
+                "edgebandHrs": 0,
+                "carcassFinishHrs": 0,
+                "finishHrs": 6.204000000000001,
+                "totalHrs": 10.59,
+                "sprayDetail": {
+                  "caulkHrs": 0.672,
+                  "primerHrs": 1.407,
+                  "topCoatHrs": 3.876,
+                  "handlingHrs": 0.249,
+                  "totalHrs": 6.204000000000001,
+                  "parts": {
+                    "drawerFront": {
+                      "caulkHrs": 0.672,
+                      "primerHrs": 1.407,
+                      "topCoatHrs": 3.876,
+                      "handlingHrs": 0.249,
+                      "totalHrs": 6.204000000000001
+                    }
+                  }
+                }
+              },
+              "current": {
+                "assemblyHrs": 1.6583666228059322,
+                "doorHrs": 0,
+                "drawerHrs": 0.8999999999999999,
+                "drawerFrontHrs": 1.8279359999999998,
+                "frameHrs": 0,
+                "edgebandHrs": 0,
+                "carcassFinishHrs": 0,
+                "finishHrs": 6.204000000000001,
+                "totalHrs": 10.59,
+                "sprayDetail": {
+                  "caulkHrs": 0.672,
+                  "primerHrs": 1.407,
+                  "topCoatHrs": 3.876,
+                  "handlingHrs": 0.249,
+                  "totalHrs": 6.204000000000001,
+                  "parts": {
+                    "drawerFront": {
+                      "caulkHrs": 0.672,
+                      "primerHrs": 1.407,
+                      "topCoatHrs": 3.876,
+                      "handlingHrs": 0.249,
+                      "totalHrs": 6.204000000000001
+                    }
+                  }
+                }
+              },
+              "changed": false
+            }
+          },
+          {
+            "type": "cabinet",
+            "description": "Tall larder 600",
+            "qty": 1,
+            "params": {
+              "type": "cabinet",
+              "cabinetTypeKey": "T_LARDER",
+              "widthMm": 600,
+              "heightMm": 2200,
+              "depthMm": 560,
+              "carcassMaterialKey": "MAT_MDF_FH_18",
+              "carcassFinish": "paint",
+              "doorCount": 2,
+              "doorType": "SHAKER_PNT",
+              "doorProfile": "shaker",
+              "doorFinish": "painted",
+              "sprayFinishOverride": "",
+              "hasStain": false,
+              "drawerCount": 0,
+              "drawerType": "DRW_SHEET",
+              "runnerKey": "HW_RUN_BLUM_SM",
+              "hingeKey": "HW_HINGE_SM",
+              "handleKey": "HW_HDL_BAR128",
+              "shelfCount": 5,
+              "frameKey": "FRAME_NONE",
+              "frameThicknessMm": 22,
+              "frameMemberWidthMm": 30,
+              "frameCustomSpeciesName": "",
+              "frameCustomPricePerM3": 0,
+              "timberSpeciesKey": "TIM_OAK",
+              "timberCustomSpeciesName": "",
+              "timberCustomPricePerM3": 0,
+              "panelMaterialKey": "",
+              "frameStileWidthMm": 70,
+              "doorFrameThicknessMm": 22,
+              "edgebandKey": "EDGE_OAK_05",
+              "qty": 1,
+              "description": "Tall larder 600",
+              "descriptionTouched": false
+            },
+            "pricing": {
+              "costPerUnit": 1098.1088605712753,
+              "sellPerUnit": 2196.2177211425505,
+              "totalCost": 1098.1088605712753,
+              "totalSellExVAT": 2196.2177211425505,
+              "totalSellIncVAT": 2635.4612653710606,
+              "breakdown": {
+                "carcassMaterial": 110.90526720000001,
+                "carcassLabour": 102.32582128594203,
+                "carcassHardware": 15.5,
+                "doors": 563.0734278186667,
+                "drawers": 0,
+                "drawerFronts": 0,
+                "frame": 0,
+                "edgeband": 30.36,
+                "assemblyHrs": 1.527251063969284,
+                "doorHrs": 1.6538119999999998,
+                "drawerHrs": 0,
+                "drawerFrontHrs": 0,
+                "frameHrs": 0,
+                "edgebandHrs": 0.344,
+                "carcassFinishHrs": 8.125,
+                "finishHrs": 18.203,
+                "totalHrs": 21.728,
+                "sprayDetail": {
+                  "primerHrs": 4.065,
+                  "topCoatHrs": 12.737,
+                  "caulkHrs": 1.15,
+                  "handlingHrs": 0.251,
+                  "totalHrs": 18.203,
+                  "parts": {
+                    "carcass": {
+                      "primerHrs": 1.751,
+                      "topCoatHrs": 6.291,
+                      "handlingHrs": 0.083,
+                      "totalHrs": 8.125
+                    },
+                    "door": {
+                      "caulkHrs": 1.15,
+                      "primerHrs": 2.314,
+                      "topCoatHrs": 6.446,
+                      "handlingHrs": 0.168,
+                      "totalHrs": 10.078
+                    }
+                  }
+                },
+                "bom": {
+                  "carcass": [
+                    {
+                      "key": "MAT_MDF_FH_18",
+                      "areaM2": 6.6015
+                    }
+                  ],
+                  "doors": [
+                    {
+                      "key": "SHAKER_PNT",
+                      "count": 2,
+                      "areaM2": 1.3076
+                    }
+                  ],
+                  "drawerBoxes": [],
+                  "frames": [],
+                  "edgeband": [
+                    {
+                      "key": "EDGE_OAK_05",
+                      "linealM": 8.6
+                    }
+                  ],
+                  "hardware": [
+                    {
+                      "key": "HW_HINGE_SM",
+                      "count": 8
+                    }
+                  ],
+                  "handles": [
+                    {
+                      "key": "HW_HDL_BAR128",
+                      "target": "door",
+                      "count": 2
+                    }
+                  ]
+                }
+              },
+              "pricedWith": {
+                "engine": "2026-10-09",
+                "settings": "efb500b3"
+              }
+            },
+            "hours": {
+              "priced": {
+                "assemblyHrs": 1.527251063969284,
+                "doorHrs": 1.6538119999999998,
+                "drawerHrs": 0,
+                "drawerFrontHrs": 0,
+                "frameHrs": 0,
+                "edgebandHrs": 0.344,
+                "carcassFinishHrs": 8.125,
+                "finishHrs": 18.203,
+                "totalHrs": 21.728,
+                "sprayDetail": {
+                  "primerHrs": 4.065,
+                  "topCoatHrs": 12.737,
+                  "caulkHrs": 1.15,
+                  "handlingHrs": 0.251,
+                  "totalHrs": 18.203,
+                  "parts": {
+                    "carcass": {
+                      "primerHrs": 1.751,
+                      "topCoatHrs": 6.291,
+                      "handlingHrs": 0.083,
+                      "totalHrs": 8.125
+                    },
+                    "door": {
+                      "caulkHrs": 1.15,
+                      "primerHrs": 2.314,
+                      "topCoatHrs": 6.446,
+                      "handlingHrs": 0.168,
+                      "totalHrs": 10.078
+                    }
+                  }
+                }
+              },
+              "current": {
+                "assemblyHrs": 1.527251063969284,
+                "doorHrs": 1.6538119999999998,
+                "drawerHrs": 0,
+                "drawerFrontHrs": 0,
+                "frameHrs": 0,
+                "edgebandHrs": 0.344,
+                "carcassFinishHrs": 8.125,
+                "finishHrs": 18.203,
+                "totalHrs": 21.728,
+                "sprayDetail": {
+                  "primerHrs": 4.065,
+                  "topCoatHrs": 12.737,
+                  "caulkHrs": 1.15,
+                  "handlingHrs": 0.251,
+                  "totalHrs": 18.203,
+                  "parts": {
+                    "carcass": {
+                      "primerHrs": 1.751,
+                      "topCoatHrs": 6.291,
+                      "handlingHrs": 0.083,
+                      "totalHrs": 8.125
+                    },
+                    "door": {
+                      "caulkHrs": 1.15,
+                      "primerHrs": 2.314,
+                      "topCoatHrs": 6.446,
+                      "handlingHrs": 0.168,
+                      "totalHrs": 10.078
+                    }
+                  }
+                }
+              },
+              "changed": false
+            }
+          },
+          {
+            "type": "door",
+            "description": "Dishwasher door",
+            "qty": 1,
+            "params": {
+              "doorType": "SHAKER_PNT",
+              "widthMm": 598,
+              "heightMm": 715,
+              "hasStain": false,
+              "sprayFinishOverride": "",
+              "hingeCost": 0,
+              "handleCost": 6.5
+            },
+            "pricing": {
+              "costPerUnit": 151.35502509333332,
+              "sellPerUnit": 302.71005018666665,
+              "totalCost": 151.35502509333332,
+              "totalSellExVAT": 302.71005018666665,
+              "totalSellIncVAT": 363.252060224,
+              "breakdown": {
+                "materialCost": 11.116819999999999,
+                "labourCost": 47.823595,
+                "hingeCost": 0,
+                "handleCost": 6.5,
+                "area": 0.42756999999999995,
+                "labourHours": 0.713785,
+                "doorHrs": 0.713785,
+                "finishHrs": 2.704,
+                "totalHrs": 3.418,
+                "sprayFinish": 85.91461009333332,
+                "sprayDetail": {
+                  "quirkM": 2.066,
+                  "faceAreaM2": 0.8551,
+                  "caulkHrs": 0.269,
+                  "caulkMat": 1.03,
+                  "primerHrs": 0.609,
+                  "topCoatHrs": 1.743,
+                  "primerMat": 0.57,
+                  "topCoatMat": 3.18,
+                  "reworkFactor": 1.33,
+                  "totalHrs": 2.704,
+                  "labourCost": 67.61,
+                  "boothCost": 13.52,
+                  "matCost": 4.79,
+                  "handlingHrs": 0.083
+                }
+              },
+              "pricedWith": {
+                "engine": "2026-10-09",
+                "settings": "efb500b3"
+              }
+            },
+            "hours": {
+              "priced": {
+                "doorHrs": 0.713785,
+                "finishHrs": 2.704,
+                "totalHrs": 3.418,
+                "sprayDetail": {
+                  "quirkM": 2.066,
+                  "faceAreaM2": 0.8551,
+                  "caulkHrs": 0.269,
+                  "caulkMat": 1.03,
+                  "primerHrs": 0.609,
+                  "topCoatHrs": 1.743,
+                  "primerMat": 0.57,
+                  "topCoatMat": 3.18,
+                  "reworkFactor": 1.33,
+                  "totalHrs": 2.704,
+                  "labourCost": 67.61,
+                  "boothCost": 13.52,
+                  "matCost": 4.79,
+                  "handlingHrs": 0.083
+                }
+              },
+              "current": {
+                "doorHrs": 0.713785,
+                "finishHrs": 2.704,
+                "totalHrs": 3.418,
+                "sprayDetail": {
+                  "quirkM": 2.066,
+                  "faceAreaM2": 0.8551,
+                  "caulkHrs": 0.269,
+                  "caulkMat": 1.03,
+                  "primerHrs": 0.609,
+                  "topCoatHrs": 1.743,
+                  "primerMat": 0.57,
+                  "topCoatMat": 3.18,
+                  "reworkFactor": 1.33,
+                  "totalHrs": 2.704,
+                  "labourCost": 67.61,
+                  "boothCost": 13.52,
+                  "matCost": 4.79,
+                  "handlingHrs": 0.083
+                }
+              },
+              "changed": false
+            }
+          },
+          {
+            "type": "endpanel",
+            "description": "End Panel 560×900×18mm — paint",
+            "qty": 2,
+            "params": {
+              "materialKey": "MAT_MDF_FH_18",
+              "widthMm": 560,
+              "heightMm": 900,
+              "thicknessMm": 18,
+              "faces": 1,
+              "exposedEdgeCount": 2,
+              "finishType": "paint",
+              "hasStain": false
+            },
+            "pricing": {
+              "costPerUnit": 94.25468000000001,
+              "sellPerUnit": 188.50936000000002,
+              "totalCost": 188.50936000000002,
+              "totalSellExVAT": 377.01872000000003,
+              "totalSellIncVAT": 452.42246400000005,
+              "breakdown": {
+                "material": 9.483264000000004,
+                "labour": 37.4128,
+                "spray": 47.358616000000005,
+                "panelHrs": 0.558,
+                "finishHrs": 1.505,
+                "totalHrs": 2.063,
+                "sprayDetail": {
+                  "quirkM": 0,
+                  "faceAreaM2": 0.504,
+                  "primerHrs": 0.348,
+                  "topCoatHrs": 1.073,
+                  "primerMat": 0.34,
+                  "topCoatMat": 1.88,
+                  "reworkFactor": 1.33,
+                  "totalHrs": 1.505,
+                  "labourCost": 37.62,
+                  "boothCost": 7.52,
+                  "matCost": 2.21,
+                  "handlingHrs": 0.084
+                }
+              },
+              "pricedWith": {
+                "engine": "2026-10-09",
+                "settings": "efb500b3"
+              }
+            },
+            "hours": {
+              "priced": {
+                "panelHrs": 0.558,
+                "finishHrs": 1.505,
+                "totalHrs": 2.063,
+                "sprayDetail": {
+                  "quirkM": 0,
+                  "faceAreaM2": 0.504,
+                  "primerHrs": 0.348,
+                  "topCoatHrs": 1.073,
+                  "primerMat": 0.34,
+                  "topCoatMat": 1.88,
+                  "reworkFactor": 1.33,
+                  "totalHrs": 1.505,
+                  "labourCost": 37.62,
+                  "boothCost": 7.52,
+                  "matCost": 2.21,
+                  "handlingHrs": 0.084
+                }
+              },
+              "current": {
+                "panelHrs": 0.558,
+                "finishHrs": 1.505,
+                "totalHrs": 2.063,
+                "sprayDetail": {
+                  "quirkM": 0,
+                  "faceAreaM2": 0.504,
+                  "primerHrs": 0.348,
+                  "topCoatHrs": 1.073,
+                  "primerMat": 0.34,
+                  "topCoatMat": 1.88,
+                  "reworkFactor": 1.33,
+                  "totalHrs": 1.505,
+                  "labourCost": 37.62,
+                  "boothCost": 7.52,
+                  "matCost": 2.21,
+                  "handlingHrs": 0.084
+                }
+              },
+              "changed": false
+            }
+          },
+          {
+            "type": "filler",
+            "description": "Filler 50×720mm — Shaker Painted",
+            "qty": 2,
+            "params": {
+              "doorType": "SHAKER_PNT",
+              "doorProfile": "shaker",
+              "doorFinish": "painted",
+              "widthMm": 50,
+              "heightMm": 720,
+              "hasStain": false,
+              "sprayFinishOverride": ""
+            },
+            "excludeFromNumbering": true,
+            "pricing": {
+              "costPerUnit": 46.0252,
+              "sellPerUnit": 92.0504,
+              "totalCost": 92.0504,
+              "totalSellExVAT": 184.1008,
+              "totalSellIncVAT": 220.92095999999998,
+              "breakdown": {
+                "material": 0.94,
+                "labour": 13.4,
+                "spray": 31.69
+              },
+              "pricedWith": {
+                "engine": "2026-10-09",
+                "settings": "efb500b3"
+              }
+            }
+          },
+          {
+            "type": "custom",
+            "description": "Quartz worktop (supplier)",
+            "qty": 1,
+            "params": {
+              "unitCostExVAT": 2400,
+              "notes": ""
+            },
+            "fixedPrice": true,
+            "fixedCostExVAT": 2400,
+            "fixedMarkupPct": 10,
+            "pricing": {
+              "costPerUnit": 2400,
+              "sellPerUnit": 2640,
+              "totalCost": 2400,
+              "totalSellExVAT": 2640,
+              "totalSellIncVAT": 3168,
+              "breakdown": {
+                "fixedCost": 2400,
+                "markupPct": 10
+              },
+              "isFixedPrice": true,
+              "pricedWith": {
+                "engine": "2026-10-09",
+                "settings": "efb500b3"
+              }
+            }
+          },
+          {
+            "type": "wrp_moulding",
+            "description": "WRP cornice — 5.5m",
+            "qty": 1,
+            "params": {
+              "profile_sku": "C-101",
+              "profile_id": 101,
+              "wrp_category": "cornices",
+              "material": "Tulip Wood For Interior",
+              "linear_metres": 5.5,
+              "wrp_price_per_metre": 9.8,
+              "markup_pct": 35,
+              "image_url": null,
+              "product_url": "",
+              "notes": "",
+              "dimensions": "55mm x 52mm",
+              "finishType": "paint",
+              "hasStain": false,
+              "girth_mm_override": null,
+              "paint_rate_per_m_override": ""
+            },
+            "pricing": {
+              "costPerUnit": 216.05288320000005,
+              "sellPerUnit": 291.6713923200001,
+              "totalCost": 216.05288320000005,
+              "totalSellExVAT": 291.6713923200001,
+              "totalSellIncVAT": 350.00567078400013,
+              "breakdown": {
+                "material": 53.900000000000006,
+                "finishing": 162.15288320000005,
+                "paint_rate_per_m": 29.48,
+                "finish_type": "paint",
+                "markup_pct": 35,
+                "finishHrs": 5.302,
+                "totalHrs": 5.302,
+                "spray": {
+                  "quirkM": 0,
+                  "faceAreaM2": 0.1284,
+                  "primerHrs": 0.225,
+                  "topCoatHrs": 0.656,
+                  "primerMat": 0.09,
+                  "topCoatMat": 0.48,
+                  "reworkFactor": 1.33,
+                  "totalHrs": 0.964,
+                  "labourCost": 24.1,
+                  "boothCost": 4.82,
+                  "matCost": 0.56,
+                  "handlingHrs": 0.083
+                },
+                "sprayDetail": {
+                  "primerHrs": 1.238,
+                  "topCoatHrs": 3.608,
+                  "handlingHrs": 0.456,
+                  "totalHrs": 5.302
+                }
+              },
+              "pricedWith": {
+                "engine": "2026-10-09",
+                "settings": "efb500b3"
+              }
+            },
+            "hours": {
+              "priced": {
+                "finishHrs": 5.302,
+                "totalHrs": 5.302,
+                "sprayDetail": {
+                  "primerHrs": 1.238,
+                  "topCoatHrs": 3.608,
+                  "handlingHrs": 0.456,
+                  "totalHrs": 5.302
+                }
+              },
+              "current": {
+                "finishHrs": 5.302,
+                "totalHrs": 5.302,
+                "sprayDetail": {
+                  "primerHrs": 1.238,
+                  "topCoatHrs": 3.608,
+                  "handlingHrs": 0.456,
+                  "totalHrs": 5.302
+                }
+              },
+              "changed": false
+            }
+          }
+        ],
+        "includeDesignTime": true,
+        "designRounds": 2,
+        "designHrsPerRound": 8,
+        "techDays": 2,
+        "designRate": 50,
+        "defaults": {
+          "carcassMaterialKey": "MAT_BIRCH_UNF_18",
+          "carcassFinish": "none",
+          "doorProfile": "shaker",
+          "doorFinish": "painted",
+          "sprayFinishOverride": "",
+          "hasStain": false,
+          "hingeKey": "HW_HINGE_SM",
+          "handleKey": "HW_HDL_BAR128",
+          "drawerType": "DRW_SHEET",
+          "solidDrawerType": "DRW_SOLID_OAK",
+          "useSolidDrawers": false,
+          "runnerKey": "HW_RUN_BLUM_SM",
+          "frameKey": "FRAME_NONE",
+          "edgebandKey": "EDGE_OAK_05",
+          "plinthMm": 100,
+          "worktopMm": 30,
+          "frameThicknessMm": 22,
+          "frameMemberWidthMm": 30,
+          "frameCustomSpeciesName": "",
+          "frameCustomPricePerM3": 0,
+          "timberSpeciesKey": "TIM_OAK",
+          "timberCustomSpeciesName": "",
+          "timberCustomPricePerM3": 0,
+          "panelMaterialKey": "",
+          "frameStileWidthMm": 70,
+          "doorFrameThicknessMm": 22
+        },
+        "designHrs": 32
+      },
+      "Utility": {
+        "items": [
+          {
+            "type": "cabinet",
+            "description": "Base 500 — 1 door",
+            "qty": 2,
+            "params": {
+              "type": "cabinet",
+              "cabinetTypeKey": "B_STD_1D",
+              "widthMm": 500,
+              "heightMm": 770,
+              "depthMm": 560,
+              "carcassMaterialKey": "MAT_BIRCH_UNF_18",
+              "carcassFinish": "none",
+              "doorCount": 1,
+              "doorType": "SHAKER_PNT",
+              "doorProfile": "shaker",
+              "doorFinish": "painted",
+              "sprayFinishOverride": "",
+              "hasStain": false,
+              "drawerCount": 0,
+              "drawerType": "DRW_SHEET",
+              "runnerKey": "HW_RUN_BLUM_SM",
+              "hingeKey": "HW_HINGE_SM",
+              "handleKey": "HW_HDL_BAR128",
+              "shelfCount": 1,
+              "frameKey": "FRAME_NONE",
+              "frameThicknessMm": 22,
+              "frameMemberWidthMm": 30,
+              "frameCustomSpeciesName": "",
+              "frameCustomPricePerM3": 0,
+              "timberSpeciesKey": "TIM_OAK",
+              "timberCustomSpeciesName": "",
+              "timberCustomPricePerM3": 0,
+              "panelMaterialKey": "",
+              "frameStileWidthMm": 70,
+              "doorFrameThicknessMm": 22,
+              "edgebandKey": "EDGE_OAK_05",
+              "qty": 2,
+              "description": "Base 500 — 1 door",
+              "descriptionTouched": false
+            },
+            "pricing": {
+              "costPerUnit": 321.31546482797114,
+              "sellPerUnit": 642.6309296559423,
+              "totalCost": 642.6309296559423,
+              "totalSellExVAT": 1285.2618593118846,
+              "totalSellIncVAT": 1542.3142311742615,
+              "breakdown": {
+                "carcassMaterial": 78.95819914,
+                "carcassLabour": 65.16880943197113,
+                "carcassHardware": 9.5,
+                "doors": 167.688456256,
+                "drawers": 0,
+                "drawerFronts": 0,
+                "frame": 0,
+                "edgeband": 0,
+                "assemblyHrs": 0.9726687974921064,
+                "doorHrs": 0.6902360000000001,
+                "drawerHrs": 0,
+                "drawerFrontHrs": 0,
+                "frameHrs": 0,
+                "edgebandHrs": 0,
+                "carcassFinishHrs": 0,
+                "finishHrs": 2.541,
+                "totalHrs": 4.204,
+                "sprayDetail": {
+                  "caulkHrs": 0.255,
+                  "primerHrs": 0.573,
+                  "topCoatHrs": 1.63,
+                  "handlingHrs": 0.083,
+                  "totalHrs": 2.541,
+                  "parts": {
+                    "door": {
+                      "caulkHrs": 0.255,
+                      "primerHrs": 0.573,
+                      "topCoatHrs": 1.63,
+                      "handlingHrs": 0.083,
+                      "totalHrs": 2.541
+                    }
+                  }
+                },
+                "bom": {
+                  "carcass": [
+                    {
+                      "key": "MAT_BIRCH_UNF_18",
+                      "areaM2": 4.7013
+                    }
+                  ],
+                  "doors": [
+                    {
+                      "key": "SHAKER_PNT",
+                      "count": 2,
+                      "areaM2": 0.7609
+                    }
+                  ],
+                  "drawerBoxes": [],
+                  "frames": [],
+                  "edgeband": [],
+                  "hardware": [
+                    {
+                      "key": "HW_HINGE_SM",
+                      "count": 4
+                    }
+                  ],
+                  "handles": [
+                    {
+                      "key": "HW_HDL_BAR128",
+                      "target": "door",
+                      "count": 2
+                    }
+                  ]
+                }
+              },
+              "pricedWith": {
+                "engine": "2026-10-09",
+                "settings": "efb500b3"
+              }
+            },
+            "hours": {
+              "priced": {
+                "assemblyHrs": 0.9726687974921064,
+                "doorHrs": 0.6902360000000001,
+                "drawerHrs": 0,
+                "drawerFrontHrs": 0,
+                "frameHrs": 0,
+                "edgebandHrs": 0,
+                "carcassFinishHrs": 0,
+                "finishHrs": 2.541,
+                "totalHrs": 4.204,
+                "sprayDetail": {
+                  "caulkHrs": 0.255,
+                  "primerHrs": 0.573,
+                  "topCoatHrs": 1.63,
+                  "handlingHrs": 0.083,
+                  "totalHrs": 2.541,
+                  "parts": {
+                    "door": {
+                      "caulkHrs": 0.255,
+                      "primerHrs": 0.573,
+                      "topCoatHrs": 1.63,
+                      "handlingHrs": 0.083,
+                      "totalHrs": 2.541
+                    }
+                  }
+                }
+              },
+              "current": {
+                "assemblyHrs": 0.9726687974921064,
+                "doorHrs": 0.6902360000000001,
+                "drawerHrs": 0,
+                "drawerFrontHrs": 0,
+                "frameHrs": 0,
+                "edgebandHrs": 0,
+                "carcassFinishHrs": 0,
+                "finishHrs": 2.541,
+                "totalHrs": 4.204,
+                "sprayDetail": {
+                  "caulkHrs": 0.255,
+                  "primerHrs": 0.573,
+                  "topCoatHrs": 1.63,
+                  "handlingHrs": 0.083,
+                  "totalHrs": 2.541,
+                  "parts": {
+                    "door": {
+                      "caulkHrs": 0.255,
+                      "primerHrs": 0.573,
+                      "topCoatHrs": 1.63,
+                      "handlingHrs": 0.083,
+                      "totalHrs": 2.541
+                    }
+                  }
+                }
+              },
+              "changed": false
+            }
+          },
+          {
+            "type": "shelf",
+            "description": "Oak Floating Shelf 900×250mm",
+            "qty": 2,
+            "params": {
+              "materialKey": "TIM_OAK",
+              "lengthMm": 900,
+              "depthMm": 250,
+              "thicknessMm": 18,
+              "visibleThicknessMm": 40,
+              "faces": 1,
+              "finishType": "lacquer",
+              "hasStain": false,
+              "customSpeciesName": "",
+              "customPricePerM3": 0
+            },
+            "pricing": {
+              "costPerUnit": 153.247272,
+              "sellPerUnit": 306.494544,
+              "totalCost": 306.494544,
+              "totalSellExVAT": 612.989088,
+              "totalSellIncVAT": 735.5869056,
+              "breakdown": {
+                "material": 33.802271999999995,
+                "labour": 103.85000000000001,
+                "spray": 15.594999999999999,
+                "isBoxShelf": true,
+                "shelfHrs": 1.55,
+                "finishHrs": 0.472,
+                "totalHrs": 2.022,
+                "sprayDetail": {
+                  "quirkM": 0,
+                  "faceAreaM2": 0.45,
+                  "lacquerHrs": 0.388,
+                  "lacquerMat": 1.44,
+                  "totalHrs": 0.472,
+                  "labourCost": 11.8,
+                  "boothCost": 2.36,
+                  "matCost": 1.44,
+                  "handlingHrs": 0.084
+                }
+              },
+              "pricedWith": {
+                "engine": "2026-10-09",
+                "settings": "efb500b3"
+              }
+            },
+            "hours": {
+              "priced": {
+                "shelfHrs": 1.55,
+                "finishHrs": 0.472,
+                "totalHrs": 2.022,
+                "sprayDetail": {
+                  "quirkM": 0,
+                  "faceAreaM2": 0.45,
+                  "lacquerHrs": 0.388,
+                  "lacquerMat": 1.44,
+                  "totalHrs": 0.472,
+                  "labourCost": 11.8,
+                  "boothCost": 2.36,
+                  "matCost": 1.44,
+                  "handlingHrs": 0.084
+                }
+              },
+              "current": {
+                "shelfHrs": 1.55,
+                "finishHrs": 0.472,
+                "totalHrs": 2.022,
+                "sprayDetail": {
+                  "quirkM": 0,
+                  "faceAreaM2": 0.45,
+                  "lacquerHrs": 0.388,
+                  "lacquerMat": 1.44,
+                  "totalHrs": 0.472,
+                  "labourCost": 11.8,
+                  "boothCost": 2.36,
+                  "matCost": 1.44,
+                  "handlingHrs": 0.084
+                }
+              },
+              "changed": false
+            }
+          }
+        ],
+        "includeDesignTime": false,
+        "designRounds": 2,
+        "designHrsPerRound": 8,
+        "techDays": 2,
+        "designRate": 50,
+        "defaults": {
+          "carcassMaterialKey": "MAT_BIRCH_UNF_18",
+          "carcassFinish": "none",
+          "doorProfile": "shaker",
+          "doorFinish": "painted",
+          "sprayFinishOverride": "",
+          "hasStain": false,
+          "hingeKey": "HW_HINGE_SM",
+          "handleKey": "HW_HDL_BAR128",
+          "drawerType": "DRW_SHEET",
+          "solidDrawerType": "DRW_SOLID_OAK",
+          "useSolidDrawers": false,
+          "runnerKey": "HW_RUN_BLUM_SM",
+          "frameKey": "FRAME_NONE",
+          "edgebandKey": "EDGE_OAK_05",
+          "plinthMm": 100,
+          "worktopMm": 30,
+          "frameThicknessMm": 22,
+          "frameMemberWidthMm": 30,
+          "frameCustomSpeciesName": "",
+          "frameCustomPricePerM3": 0,
+          "timberSpeciesKey": "TIM_OAK",
+          "timberCustomSpeciesName": "",
+          "timberCustomPricePerM3": 0,
+          "panelMaterialKey": "",
+          "frameStileWidthMm": 70,
+          "doorFrameThicknessMm": 22
+        }
+      }
+    },
+    "projectCosts": {
+      "surveyFee": 250,
+      "installDaysByRoom": {
+        "Kitchen": 3,
+        "Utility": 1
+      },
+      "installDayRate": 350,
+      "deliveryFee": 200,
+      "pmPercent": 6,
+      "consumablesPerItem": 60,
+      "contingencyPercent": 7.5,
+      "warrantyPercent": 1.5,
+      "includeSurvey": true,
+      "includeInstall": true,
+      "includeDelivery": true,
+      "includePM": true,
+      "includeConsumables": true,
+      "includeContingency": true,
+      "includeWarranty": false
+    },
+    "pricingLock": {
+      "engineVersion": "2026-10-09",
+      "lockedAt": "2026-10-14T20:31:07.000Z",
+      "settings": {
+        "labourRate": 30,
+        "overheadRate": 37,
+        "margin": 2,
+        "vat": 0.2,
+        "designRoundsPerRoom": 2,
+        "designHoursPerRound": 8,
+        "technicalDrawingDays": 2,
+        "workingHoursPerDay": 8,
+        "designHourlyRate": 50,
+        "carcassBaseHrs": 1,
+        "carcassShelfHrs": 0,
+        "carcassDrawerPrepHrs": 0.5,
+        "surveyFee": 250,
+        "installDayRate": 350,
+        "fittingHoursPerPersonPerDay": 7.5,
+        "deliveryFee": 200,
+        "pmPercent": 6,
+        "consumablesPerItem": 60,
+        "contingencyPercent": 7.5,
+        "warrantyPercent": 1.5,
+        "wrpMouldingMarkupPct": 35,
+        "wrpMouldingGirthMultiplier": 1.2,
+        "wrpMouldingDefaultFinish": "paint",
+        "sprayFinish": {
+          "techLabourRate": 25,
+          "boothCostPerHr": 5,
+          "setupMinsPerDoor": 5,
+          "doorThicknessMm": 19,
+          "sandFaceHrsPerM2": 0.05,
+          "sandEdgeHrsPerM": 0.05,
+          "sandQuirkHrsPerM": 0.08,
+          "edgePolish": {
+            "applyHrsPerM": 0.04,
+            "materialCostPerM": 0.2
+          },
+          "caulkHrsPerM": 0.13,
+          "caulkCostPerM": 0.5,
+          "paint": {
+            "primerCoats": 1,
+            "primerSprayHrsPerM2": 0.12,
+            "primerEdgeHrsPerM": 0.04,
+            "primerQuirkHrsPerM": 0.03,
+            "primerCostPerLitre": 8,
+            "primerCoverageM2PerL": 12,
+            "topCoats": 2,
+            "topCoatSprayHrsPerM2": 0.21,
+            "topCoatEdgeHrsPerM": 0.07,
+            "topCoatQuirkHrsPerM": 0.053,
+            "topCoatCostPerLitre": 14,
+            "topCoatCoverageM2PerL": 10,
+            "topCoatReworkFactor": 1.33,
+            "topCoatSandFaceHrsPerM2": 0.08
+          },
+          "lacquer": {
+            "coats": 2,
+            "sprayHrsPerM2": 0.1,
+            "edgeHrsPerM": 0.035,
+            "quirkHrsPerM": 0.025,
+            "costPerLitre": 16,
+            "coverageM2PerL": 10
+          },
+          "stain": {
+            "applyHrsPerM2": 0.15,
+            "edgeHrsPerM": 0.05,
+            "quirkHrsPerM": 0.06,
+            "costPerLitre": 12,
+            "coverageM2PerL": 15
+          }
+        }
+      }
+    },
+    "hoursCheck": {
+      "pricedHrs": 82.25,
+      "currentHrs": 82.25,
+      "deltaHrs": 0,
+      "itemsChanged": 0,
+      "itemsWithoutPricedHrs": 0
+    },
+    "pricingMixed": false,
+    "totalSellExVAT": 21156.4,
+    "totalSellIncVAT": 25387.68,
+    "materialsBom": {
+      "carcass": [
+        {
+          "key": "MAT_BIRCH_UNF_18",
+          "areaM2": 18.16,
+          "sheets": 7
+        },
+        {
+          "key": "MAT_MDF_FH_18",
+          "areaM2": 6.6,
+          "sheets": 3
+        }
+      ],
+      "doors": [
+        {
+          "key": "SHAKER_PNT",
+          "count": 15,
+          "areaM2": 4.55
+        }
+      ],
+      "drawerBoxes": [
+        {
+          "key": "DRW_SHEET",
+          "count": 3
+        }
+      ],
+      "frames": [],
+      "edgeband": [
+        {
+          "key": "EDGE_OAK_05",
+          "linealM": 8.6
+        }
+      ],
+      "hardware": [
+        {
+          "key": "HW_HINGE_SM",
+          "count": 28
+        },
+        {
+          "key": "HW_RUN_BLUM_SM",
+          "count": 3
+        }
+      ],
+      "handles": [
+        {
+          "key": "HW_HDL_BAR128",
+          "target": "door",
+          "count": 12
+        },
+        {
+          "key": "HW_HDL_BAR128",
+          "target": "drawer",
+          "count": 3
+        }
+      ]
+    },
+    "updated_at": "2026-10-15T09:12:44.120Z",
+    "_serverUpdatedAt": "2026-10-15T09:12:44.512Z"
+  },
+  "Q1779000000002": {
+    "id": "Q1779000000002",
+    "client": "B. Okafor",
+    "project": "Bedroom wardrobes",
+    "ref": "SAB-2026-017",
+    "created": "18/05/2026",
+    "status": "active",
+    "marginOverride": 2.2,
+    "rooms": {
+      "Main bedroom": {
+        "items": [
+          {
+            "type": "cabinet",
+            "description": "Double wardrobe 1000",
+            "qty": 2,
+            "params": {
+              "type": "cabinet",
+              "cabinetTypeKey": "WRDB_DOUBLE",
+              "widthMm": 1000,
+              "heightMm": 2200,
+              "depthMm": 580,
+              "carcassMaterialKey": "MAT_BIRCH_UNF_18",
+              "carcassFinish": "none",
+              "doorCount": 2,
+              "doorType": "SHAKER_PNT",
+              "doorProfile": "shaker",
+              "doorFinish": "painted",
+              "sprayFinishOverride": "",
+              "hasStain": false,
+              "drawerCount": 0,
+              "drawerType": "DRW_SHEET",
+              "runnerKey": "HW_RUN_BLUM_SM",
+              "hingeKey": "HW_HINGE_SM",
+              "handleKey": "HW_HDL_BAR128",
+              "shelfCount": 2,
+              "frameKey": "FRAME_NONE",
+              "frameThicknessMm": 22,
+              "frameMemberWidthMm": 30,
+              "frameCustomSpeciesName": "",
+              "frameCustomPricePerM3": 0,
+              "timberSpeciesKey": "TIM_OAK",
+              "timberCustomSpeciesName": "",
+              "timberCustomPricePerM3": 0,
+              "panelMaterialKey": "",
+              "frameStileWidthMm": 70,
+              "doorFrameThicknessMm": 22,
+              "edgebandKey": "EDGE_OAK_05",
+              "qty": 2,
+              "description": "Double wardrobe 1000",
+              "descriptionTouched": false,
+              "fillerCount": 1
+            },
+            "pricing": {
+              "costPerUnit": 1051.474459,
+              "sellPerUnit": 2313.243809,
+              "totalCost": 2102.948918,
+              "totalSellExVAT": 4626.487619,
+              "totalSellIncVAT": 5551.785143,
+              "breakdown": {
+                "carcassMaterial": 267.84383844,
+                "carcassLabour": 117.86364307308239,
+                "carcassHardware": 11,
+                "doors": 687.2868059520001,
+                "drawers": 0,
+                "drawerFronts": 0,
+                "frame": 0,
+                "edgeband": 0,
+                "assemblyHrs": 1.7591588518370505,
+                "doorHrs": 2.092612,
+                "drawerHrs": 0,
+                "drawerFrontHrs": 0,
+                "frameHrs": 0,
+                "edgebandHrs": 0,
+                "carcassFinishHrs": 0,
+                "finishHrs": 12.208,
+                "totalHrs": 16.06,
+                "sprayDetail": {
+                  "caulkHrs": 1.254,
+                  "primerHrs": 2.774,
+                  "topCoatHrs": 8.014,
+                  "handlingHrs": 0.166,
+                  "totalHrs": 12.208,
+                  "parts": {
+                    "door": {
+                      "caulkHrs": 1.254,
+                      "primerHrs": 2.774,
+                      "topCoatHrs": 8.014,
+                      "handlingHrs": 0.166,
+                      "totalHrs": 12.208
+                    }
+                  }
+                },
+                "bom": {
+                  "carcass": [
+                    {
+                      "key": "MAT_BIRCH_UNF_18",
+                      "areaM2": 15.9478
+                    }
+                  ],
+                  "doors": [
+                    {
+                      "key": "SHAKER_PNT",
+                      "count": 4,
+                      "areaM2": 4.3704
+                    }
+                  ],
+                  "drawerBoxes": [],
+                  "frames": [],
+                  "edgeband": [],
+                  "hardware": [
+                    {
+                      "key": "HW_HINGE_SM",
+                      "count": 16
+                    }
+                  ],
+                  "handles": [
+                    {
+                      "key": "HW_HDL_BAR128",
+                      "target": "door",
+                      "count": 4
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "type": "drawer",
+            "description": "Solid Oak drawer 500w",
+            "qty": 4,
+            "params": {
+              "drawerType": "DRW_SOLID_OAK",
+              "widthMm": 500,
+              "heightMm": 200,
+              "depthMm": 500,
+              "runnerCostOverride": 38,
+              "carcassMaterialKey": "MAT_BIRCH_UNF_18"
+            },
+            "pricing": {
+              "costPerUnit": 355.02,
+              "sellPerUnit": 781.044,
+              "totalCost": 1420.08,
+              "totalSellExVAT": 3124.176,
+              "totalSellIncVAT": 3749.0112,
+              "breakdown": {
+                "materialCost": 60,
+                "labourCost": 268,
+                "runnerCost": 38,
+                "drawerHrs": 4,
+                "totalHrs": 4
+              }
+            }
+          },
+          {
+            "type": "frame",
+            "description": "Oak Frame 826w",
+            "qty": 1,
+            "params": {
+              "species": "TIM_OAK",
+              "widthMm": 826,
+              "heightMm": 2040,
+              "labourHrs": 3
+            },
+            "pricing": {
+              "costPerUnit": 260.761451,
+              "sellPerUnit": 573.675192,
+              "totalCost": 260.761451,
+              "totalSellExVAT": 573.675192,
+              "totalSellIncVAT": 688.41023,
+              "breakdown": {
+                "materialCost": 52.82623808,
+                "labourCost": 201,
+                "hardwareCost": 15,
+                "volumeM3": 0.016405664,
+                "runningM": 5.3966,
+                "frameHrs": 3,
+                "totalHrs": 3
+              }
+            }
+          },
+          {
+            "type": "moulding",
+            "description": "MDF skirting — 6m",
+            "qty": 1,
+            "params": {
+              "mouldingKey": "MLD_SKR_MDF_95",
+              "metres": 6
+            },
+            "pricing": {
+              "costPerUnit": 69.1998,
+              "sellPerUnit": 152.23956,
+              "totalCost": 69.1998,
+              "totalSellExVAT": 152.23956,
+              "totalSellIncVAT": 182.687472,
+              "breakdown": {
+                "material": 23.1,
+                "labour": 48.239999999999995,
+                "mouldingHrs": 0.72,
+                "totalHrs": 0.72
+              }
+            }
+          },
+          {
+            "type": "custom",
+            "description": "LED strip + driver",
+            "qty": 1,
+            "params": {
+              "unitCostExVAT": 180,
+              "notes": "per wardrobe pair"
+            },
+            "pricing": {
+              "costPerUnit": 174.6,
+              "sellPerUnit": 384.12,
+              "totalCost": 174.6,
+              "totalSellExVAT": 384.12,
+              "totalSellIncVAT": 460.944,
+              "breakdown": {}
+            }
+          }
+        ],
+        "includeDesignTime": true,
+        "designRounds": 2,
+        "designHrsPerRound": 8,
+        "techDays": 2,
+        "designRate": 50,
+        "defaults": {
+          "carcassMaterialKey": "MAT_BIRCH_UNF_18",
+          "carcassFinish": "none",
+          "doorProfile": "shaker",
+          "doorFinish": "painted",
+          "sprayFinishOverride": "",
+          "hasStain": false,
+          "hingeKey": "HW_HINGE_SM",
+          "handleKey": "HW_HDL_BAR128",
+          "drawerType": "DRW_SHEET",
+          "solidDrawerType": "DRW_SOLID_OAK",
+          "useSolidDrawers": false,
+          "runnerKey": "HW_RUN_BLUM_SM",
+          "frameKey": "FRAME_NONE",
+          "edgebandKey": "EDGE_OAK_05",
+          "plinthMm": 100,
+          "worktopMm": 30,
+          "frameThicknessMm": 22,
+          "frameMemberWidthMm": 30,
+          "frameCustomSpeciesName": "",
+          "frameCustomPricePerM3": 0,
+          "timberSpeciesKey": "TIM_OAK",
+          "timberCustomSpeciesName": "",
+          "timberCustomPricePerM3": 0,
+          "panelMaterialKey": "",
+          "frameStileWidthMm": 70,
+          "doorFrameThicknessMm": 22
+        }
+      }
+    },
+    "projectCosts": {
+      "surveyFee": 250,
+      "installDayRate": 350,
+      "deliveryFee": 200,
+      "pmPercent": 6,
+      "consumablesPerItem": 60,
+      "contingencyPercent": 7.5,
+      "warrantyPercent": 1.5,
+      "includeSurvey": true,
+      "includeInstall": false,
+      "includeDelivery": true,
+      "includePM": true,
+      "includeConsumables": true,
+      "includeContingency": false,
+      "includeWarranty": false,
+      "installDays": 2
+    },
+    "totalSellExVAT": 12192.34,
+    "totalSellIncVAT": 14630.81,
+    "updated_at": "2026-06-02T16:40:03.010Z",
+    "_serverUpdatedAt": "2026-06-02T16:40:03.333Z"
+  }
+}
