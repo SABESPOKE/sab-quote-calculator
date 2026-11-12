@@ -1201,6 +1201,25 @@ function applySpecToAllItems(quote, field, name) {
   return quote;
 }
 
+// ─── CONFIGURATOR DRAFTS ──────────────────────────────────────────────────────
+// A quote the configurator sent carries `configurator` { designId, designName, version, sentAt, link } and a note line
+// "Sent from the SAB configurator on DD/MM/YYYY. Design: <link>". Shown in the Build view and the list only — never in
+// the Client View or the PDF (the link opens the customer's saved design).
+// Edited here since it was sent? (The configurator sets updated_at = sentAt; every edit here moves updated_at on.)
+const editedSinceSent = q => Date.parse(q && q.updated_at) > Date.parse(q && q.configurator && q.configurator.sentAt);
+// A COPY of a quote is not the configurator's draft: without the block (and its note line) the configurator's
+// "Send again" can never match the copy, so it cannot update or refuse the wrong quote. Any other note is kept.
+function withoutConfigurator(q) {
+  if (!q || !q.configurator) return q;
+  const { configurator, ...rest } = q;
+  if (rest.source === "configurator") delete rest.source;
+  if (typeof rest.notes === "string") {
+    rest.notes = rest.notes.split("\n").filter(l => !/^\s*(Sent from the SAB configurator|From configurator:)/i.test(l)).join("\n").trim();
+    if (!rest.notes) delete rest.notes;
+  }
+  return rest;
+}
+
 // ─── PRINT / PDF ──────────────────────────────────────────────────────────────
 function printQuote(quote, viewMode, roomFilter) {
   const mode = viewMode || "itemised";
@@ -1977,7 +1996,7 @@ function SABQuoteTool() {
   function duplicateQuote(id) {
     const orig = quotes[id];
     if (!orig) return;
-    const clone = JSON.parse(JSON.stringify(orig));
+    const clone = withoutConfigurator(JSON.parse(JSON.stringify(orig)));   // a copy is never the configurator's draft
     const newId = "Q" + Date.now();
     clone.id = newId;
     clone.status = "active";
@@ -2753,6 +2772,12 @@ function SABQuoteTool() {
                   <div style={{ fontSize:11, color:"#777777" }}>{q.project} · {q.ref} · {q.created}</div>
                   <div style={{ fontSize:10, color:"#999999", marginTop:3 }}>{rc} room{rc!==1?"s":""} · {ic} item{ic!==1?"s":""}</div>
                   {isLocked(q) && <div style={{ ...lockedBadge, marginTop:6 }}>From website — price locked</div>}
+                  {q.configurator && !isLocked(q) && (
+                    <div style={{ marginTop:6, display:"flex", gap:6, flexWrap:"wrap" }}>
+                      <span style={lockedBadge}>From configurator</span>
+                      {editedSinceSent(q) && <span style={{ ...lockedBadge, background:"transparent", border:"1px solid #c8a96e", color:"#8a6d2f", padding:"2px 7px" }} title="Changed in the Quote Calculator after the configurator sent it: sending the design again makes a new version instead of replacing this one.">edited since sent</span>}
+                    </div>
+                  )}
                 </div>
                 <div style={{ textAlign:"right", display:"flex", alignItems:"flex-start", gap:8 }}>
                   <div>
@@ -2805,6 +2830,15 @@ function SABQuoteTool() {
               <input value={activeQuote.ref} onChange={e => { const u = { ...quotes }; u[activeQuoteId].ref = e.target.value; saveQuotes(u); }} style={{ fontSize:9, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:3, background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
               <input value={activeQuote.client} onChange={e => { const u = { ...quotes }; u[activeQuoteId].client = e.target.value; saveQuotes(u); }} style={{ fontSize:12, color:"#1a1a1a", background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
               <input value={activeQuote.project} onChange={e => { const u = { ...quotes }; u[activeQuoteId].project = e.target.value; saveQuotes(u); }} style={{ fontSize:10, color:"#999999", marginTop:2, background:"transparent", border:"none", borderBottom:"1px solid transparent", width:"100%", padding:0, fontFamily:"inherit", outline:"none" }} onFocus={e => e.target.style.borderBottomColor="#c8a96e"} onBlur={e => e.target.style.borderBottomColor="transparent"} />
+              {/* A configurator draft: where it came from. Read-only, Build view only — never the Client View or the PDF. */}
+              {activeQuote.configurator && (() => {
+                const c = activeQuote.configurator, name = c.designName || "design", sent = new Date(c.sentAt);
+                return (
+                  <div className="sab-from-configurator" style={{ fontSize:9, color:"#777777", marginTop:6, lineHeight:1.5, overflowWrap:"anywhere" }}>
+                    From the configurator · {/^https?:\/\//.test(c.link || "") ? <a href={c.link} target="_blank" rel="noopener noreferrer" style={{ color:"#8a6d2f" }}>{name}</a> : name} (v{Number(c.version) || 1}){isNaN(sent) ? "" : ` · sent ${sent.toLocaleDateString("en-GB")}`}
+                  </div>
+                );
+              })()}
               {/* Alternatives toggle — when ON, each room is its own self-contained quote (no grand total). */}
               <div onClick={toggleAlternativesMode} title="When ON, each room is treated as an alternative quote option — no grand total. Each room gets its own full project costs (survey, delivery, fitting, etc.)." style={{ marginTop:10, padding:"6px 8px", background: activeQuote.alternativesMode ? "rgba(200,169,110,0.12)" : "transparent", border:`1px solid ${activeQuote.alternativesMode ? "#c8a96e" : "#d8d3cc"}`, borderRadius:4, cursor:"pointer", display:"flex", alignItems:"center", gap:7 }}>
                 <div style={{ width:14, height:14, borderRadius:3, border:`1.5px solid ${activeQuote.alternativesMode ? "#c8a96e" : "#c8c3bc"}`, background: activeQuote.alternativesMode ? "#c8a96e" : "transparent", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:10, lineHeight:1, flexShrink:0 }}>{activeQuote.alternativesMode ? "✓" : ""}</div>
@@ -2877,7 +2911,7 @@ function SABQuoteTool() {
 
           {/* Centre — items */}
           <div className={"sab-items-panel" + (mobilePanel === "items" ? " active" : "")} style={{ flex:1, overflowY:"auto", padding:"22px 26px" }}>
-            {/* The quote's notes, read-only — e.g. a configurator draft's "From configurator: <design link>, sent <date>". */}
+            {/* The quote's notes, read-only — e.g. a configurator draft's "Sent from the SAB configurator on <date>. Design: <link>". Build view only. */}
             {typeof activeQuote.notes === "string" && activeQuote.notes.trim() && (
               <div className="sab-quote-notes" style={{ marginBottom:18, padding:"10px 16px", background:"#ffffff", border:"1px solid #d8d3cc", borderLeft:"3px solid #c8a96e", borderRadius:6 }}>
                 <div style={lbl}>Notes</div>
