@@ -65,7 +65,10 @@ try {
 // a key the pack adds, e.g. HW_HDL_PUSH, is a new field).
 function corpus(P = OLD) {
   const items = [];
-  const cab = (params, qty = 1) => items.push({ type: 'cabinet', qty, params });
+  // A cabinet with drawers and no drawerType was the birch ply box; since the internal-drawers change it is the sheet
+  // box in the carcass board (test/internal-drawers.test.js). The old default is said out loud here, so that this
+  // still compares everything else.
+  const cab = (params, qty = 1) => items.push({ type: 'cabinet', qty, params: params.drawerCount && !params.drawerType ? { ...params, drawerType: 'DRW_BIRCH_PLY' } : params });
   const FIN = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
   for (const carcassMaterialKey of ['MAT_BIRCH_PREF_18', 'MAT_BIRCH_UNF_18', 'MAT_MDF_FH_18', 'MAT_OAK_MDF_UNF_19', 'MAT_SHINNOKI_19', 'MAT_MEL_EGGER_18'])
     for (const doorType of Object.keys(P.DB.doorTypes))

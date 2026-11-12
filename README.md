@@ -221,3 +221,27 @@ Labour).
 End panels and fillers are not part of the cabinet: send each to `POST /api/endpanel-cost` in its board
 (`MAT_MDF_FH_18`, `MAT_MDF_FH_12`, `MAT_MDF_FH_22`). `GET /api/cabinet-cost/keys` lists the timbers and hinges
 (`inframeFront`). Tests: `test/inframe.test.js`.
+
+## Internal drawers — `drawerPosition`
+
+A cabinet's drawers are priced as two separate lines: the boxes with their runners (`breakdown.drawers`) and the fronts
+(`breakdown.drawerFronts`). `drawerPosition` says what the fronts are.
+
+| Field | Values | Default |
+|---|---|---|
+| `drawerPosition` | `"external"` \| `"internal"` | `"external"` — as before |
+
+- **External**: each drawer has a front in the door finish, priced like a door (sized from the cabinet, sprayed, with
+  its handle).
+- **Internal** (drawers behind doors — a wardrobe, a tall cupboard): the same box, and a plain front in the cabinet's
+  **carcass board**: the board (opening wide, the box's 180 mm high unless `drawerFrontHeightsMm` is sent, with the
+  board's waste) plus the CNC cut of it (`DB.settings.cncPerSheetCost`, 1 = the cut costs the sheet again). No door
+  finish, no spray, no handle, no making labour. In the materials list the plain fronts are carcass board.
+
+The box, the runner (`runnerKey`) and the box's assembly time are the existing ones either way. A cabinet with drawers
+and no `drawerType` is priced with the sheet box in its own carcass board (`DRW_SHEET`; it was the birch ply box), and a
+standalone `drawer` item with no `drawerType` is the sheet box too (it had no price at all).
+
+In the calculator: **Drawer fronts** on a cabinet, and **Drawers behind doors** in Room Setup, which new cabinets in
+the room start with and which is applied to the room's cabinets that have both doors and drawers. `POST
+/api/cabinet-cost` takes the field (`drawerPositions` in `/api/cabinet-cost/keys`). Tests: `test/internal-drawers.test.js`.

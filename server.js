@@ -362,7 +362,9 @@ const CABINET_FIELDS = new Set([
   'channelRails', 'binFrameKey', 'legKey', 'legCount', 'carcassFinishOutside',   // configurator pricing pack (README "Configurator pricing fields") — all optional
   'doorHeightsMm', 'drawerFrontHeightsMm',
   'inframeFront',   // in-frame build { timber, thicknessMm, frameMm, hinges } (README "In-frame") — optional
+  'drawerPosition', // "external" (default) | "internal": drawers behind doors, plain fronts in the carcass board (README "Internal drawers")
 ]);
+const DRAWER_POSITIONS = ['external', 'internal'];
 const CARCASS_FINISHES = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
 const SPRAY_OVERRIDES  = ['', 'primed', 'edge_polish', 'none'];
 const INFRAME_HINGES   = ['butt', 'blum'];
@@ -441,6 +443,7 @@ function cabinetSpecErrors(spec) {
   if (spec.carcassFinish !== undefined && !CARCASS_FINISHES.includes(spec.carcassFinish)) errs.push(`carcassFinish must be one of ${CARCASS_FINISHES.join('|')}`);
   if (spec.sprayFinishOverride !== undefined && !SPRAY_OVERRIDES.includes(spec.sprayFinishOverride)) errs.push(`sprayFinishOverride must be one of ""|${SPRAY_OVERRIDES.slice(1).join('|')}`);
   if (spec.hasStain !== undefined && typeof spec.hasStain !== 'boolean') errs.push('hasStain must be a boolean');
+  if (spec.drawerPosition !== undefined && !DRAWER_POSITIONS.includes(spec.drawerPosition)) errs.push(`drawerPosition must be one of ${DRAWER_POSITIONS.join('|')}`);
   if (spec.inframeFront !== undefined) {
     errs.push(...inframeFrontErrors(spec.inframeFront));
     // In-frame the frame's face sizes the doors, so it is checked (without inframeFront it is taken as before).
@@ -546,6 +549,7 @@ app.get('/api/cabinet-cost/keys', (req, res) => {
     carcassFinishes: CARCASS_FINISHES,
     sprayFinishOverrides: SPRAY_OVERRIDES,
     inframeFront: { timbers: inframeTimbers(), hinges: INFRAME_HINGES },   // the cabinet param inframeFront
+    drawerPositions: DRAWER_POSITIONS,                                      // the cabinet param drawerPosition (default external)
     fields: [...CABINET_FIELDS],
     endPanel: { fields: [...ENDPANEL_FIELDS], finishTypes: CARCASS_FINISHES }, // POST /api/endpanel-cost (materials = the same table)
     channelRails: { fields: CHANNEL_RAIL_FIELDS, profiles: namesOf(CHANNEL_PROFILES), finishTypes: CARCASS_FINISHES },   // cabinet param channelRails

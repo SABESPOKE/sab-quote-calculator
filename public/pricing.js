@@ -33,6 +33,10 @@ const DB = {
     channelRailSetupMins: 10,   // one setup per cabinet that has any rail (not per strip)
     // ── In-frame (cabinet param inframeFront) ─────────────────────────────────
     buttHingeHangMins: 30,      // bench mins to hang one in-frame door on butt hinges (Steve, 12 Nov 2026)
+    // ── CNC cutting, as a multiple of the sheet's own material cost (Steve, 12 Nov 2026: cutting ≈ the sheet cost
+    //    again — Cutlist charges about sheet price × 2 in total). Applied to an internal drawer's plain front ONLY:
+    //    every other sheet part is priced as before (its sheet at £/m² × waste, cutting inside its labour hours). ──
+    cncPerSheetCost: 1,
     // ── Project-level cost defaults (all adjustable) ──────────────────────────
     surveyFee: 250,             // £ flat — site survey visit (per project)
     installDayRate: 350,        // £/day — billed PER FITTER per day on site
@@ -484,7 +488,7 @@ function totalInstallDays(pc) {
 // captured at lock time. Engine/Settings changes reach only new quotes, edited items
 // and a deliberate "Reprice to current pricing…". Hours stay live (withPricingStatus).
 // Bump ENGINE_VERSION with any pricing.js change that can move a price.
-const ENGINE_VERSION = "2026-11-12";
+const ENGINE_VERSION = "2026-11-13";
 
 // Short fingerprint (djb2) of the pricing tables + settings an item is priced with.
 function settingsFingerprint() {
@@ -934,8 +938,13 @@ function calcFrameCost({ species, heightMm, widthMm, labourHrs = 3, hardwareCost
   };
 }
 
+// A drawer box's height inside a cabinet (the box only: an external front is sized from the cabinet; an internal
+// drawer's plain front is this high unless its own height is sent).
+const DRAWER_BOX_HEIGHT_MM = 180;
+
+// drawerType unset: the sheet box in the carcass board (as the calculator's own forms default) — it was no price at all.
 function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 500, qty = 1, runnerCostOverride = null, carcassMaterialKey = null, margin = DB.settings.margin }) {
-  const dt = DB.drawerTypes[drawerType];
+  const dt = DB.drawerTypes[drawerType || "DRW_SHEET"];
   if (!dt) return null;
   let materialCost;
   if (dt.usesCarcassMaterial) {
@@ -974,7 +983,8 @@ function calcCabinetCost({
 
   doorCount = 2, doorType = "SLAB_PNT",
   doorHeightsMm,          // actual height of each door leaf (doorCount leaves across, in rows); absent: carcass height − 6
-  drawerCount = 0, drawerType = "DRW_BIRCH_PLY",
+  drawerCount = 0, drawerType,   // unset: DRW_SHEET, the sheet box in this cabinet's carcass board (it was the birch ply box)
+  drawerPosition = "external",   // "internal": drawers behind doors — a plain front in the carcass board, not one in the door finish
   drawerFrontHeightsMm,   // actual height of each drawer front, one per drawer; absent: an equal share
   runnerKey = "HW_RUN_BLUM_SM",
   hingeKey = "HW_HINGE_SM",
@@ -995,6 +1005,7 @@ function calcCabinetCost({
   qty = 1,
   margin = DB.settings.margin,
 }) {
+  if (!drawerType) drawerType = "DRW_SHEET";
   // ── In-frame: the frame, hinge and door the build is made of, from the existing tables ──
   if (inframeFront) {
     const species = INFRAME_SPECIES[inframeFront.timber];   // undefined: an MDF frame
@@ -1081,19 +1092,31 @@ function calcCabinetCost({
   let drawerHrs = 0; // drawer-box-making labour, person-hours per cabinet (all drawers)
   if (drawerCount > 0 && drawerType && DB.drawerTypes[drawerType]) {
     const runner = DB.hardware.runners[runnerKey] || DB.hardware.runners["HW_RUN_BLUM_SM"];
-    const dp = calcDrawerCost({ drawerType, widthMm: widthMm - 26, heightMm: 180, depthMm: depthMm - 50, qty: drawerCount, runnerCostOverride: runner.costPair, carcassMaterialKey });
+    const dp = calcDrawerCost({ drawerType, widthMm: widthMm - 26, heightMm: DRAWER_BOX_HEIGHT_MM, depthMm: depthMm - 50, qty: drawerCount, runnerCostOverride: runner.costPair, carcassMaterialKey });
     drawersCost = dp ? dp.totalCost : 0;
     drawerHrs = dp ? dp.breakdown.drawerHrs * drawerCount : 0;
   }
 
-  // ── Drawer fronts (priced like doors when drawers have a painted/finished door type) ──
+  // ── Drawer fronts — a cost of their own, apart from the boxes above (breakdown.drawers / .drawerFronts).
+  //    External (the default): a front in the door finish, priced like a door.
+  //    Internal (drawerPosition "internal" — drawers behind doors): a plain front in the CARCASS board, its sheet
+  //    and the CNC cut of it only: no door finish, no spray, no handle, no making labour (it goes on with the box,
+  //    inside the box's assembly time). ──
   let drawerFrontsCost = 0;
   let drawerFrontHrs = 0;       // drawer-front-making labour (made like doors), per cabinet
   let drawerFrontFinishHrs = 0; // spray finishing labour on drawer fronts, per cabinet
   let drawerFrontAreaM2 = 0;    // total drawer-front face area (m²) — same doorType as the doors
+  let internalFrontSheetM2 = 0; // plain internal fronts: carcass board to order, waste included (BOM: with the carcass)
   const frontSprays = [];       // [spray breakdown, 1] per drawer front (sprayDetail split)
-  const drawerFrontHeights = [];
-  if (drawerCount > 0 && doorType && DB.doorTypes[doorType]) {
+  const drawerFrontHeights = [];  // external fronts only (each is a handle position and a door-finish panel)
+  if (drawerCount > 0 && drawerPosition === "internal") {
+    // Each front the opening wide (between the carcass sides, less the 4 an external front leaves) and its own
+    // height when sent (drawerFrontHeightsMm), else the box's.
+    const frontW = Math.max(0, widthMm - 2 * t - 4);
+    const heights = Array.isArray(drawerFrontHeightsMm) && drawerFrontHeightsMm.length > 0 ? drawerFrontHeightsMm : Array(drawerCount).fill(DRAWER_BOX_HEIGHT_MM);
+    for (const fh of heights) internalFrontSheetM2 += (frontW / 1000) * (fh / 1000) * (mat.wasteFactor || 1.15);
+    drawerFrontsCost = internalFrontSheetM2 * mat.costPerM2 * (1 + DB.settings.cncPerSheetCost);
+  } else if (drawerCount > 0 && doorType && DB.doorTypes[doorType]) {
     // Each front's actual height when given (drawerFrontHeightsMm — handleless fronts), else an equal share.
     if (Array.isArray(drawerFrontHeightsMm) && drawerFrontHeightsMm.length > 0) drawerFrontHeights.push(...drawerFrontHeightsMm);
     else {
@@ -1265,7 +1288,7 @@ function calcCabinetCost({
     const e = bomCarcass.find(x => x.key === key);
     if (e) e.areaM2 = r4(e.areaM2 + area); else bomCarcass.push({ key, areaM2: r4(area) });
   };
-  addCarcass(carcassKey, mainArea * qty);
+  addCarcass(carcassKey, (mainArea + internalFrontSheetM2) * qty);
   if (backArea > 0) addCarcass(backKey, backArea * qty);
   // Doors + drawer fronts share the door type (both made & finished like doors).
   const bomDoors = [];
