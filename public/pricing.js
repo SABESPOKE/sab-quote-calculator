@@ -28,6 +28,9 @@ const DB = {
     carcassBaseHrs: 1,          // hrs for reference 600×720×560 cabinet
     carcassShelfHrs: 0,         // additional hrs per shelf fitted
     carcassDrawerPrepHrs: 0.5,  // additional hrs when any drawers are present
+    // ── Handleless channel rail (cabinet param channelRails) — DECISION figures, Steve to confirm ──
+    channelRailMinsPerM: 15,    // bench mins per metre of rail: cut, assemble and fix the profile
+    channelRailSetupMins: 10,   // one setup per cabinet that has any rail (not per strip)
     // ── Project-level cost defaults (all adjustable) ──────────────────────────
     surveyFee: 250,             // £ flat — site survey visit (per project)
     installDayRate: 350,        // £/day — billed PER FITTER per day on site
@@ -184,6 +187,34 @@ const DB = {
       "HW_HDL_BAR192": { name: "Bar handle 192mm",   costEach: 16.00 },
       "HW_HDL_BAR256": { name: "Bar handle 256mm",   costEach: 20.00 },
       "HW_HDL_FLUSH":  { name: "Flush pull",         costEach: 18.00 },
+      // Push to open: one Blum Tip-On per front in place of a handle, plus its bench fitting (fitMins per front).
+      // DECISION (Steve to confirm): a tall door (over ~1200 mm) gets one device, like any other front.
+      "HW_HDL_PUSH":   { name: "Push to open (Blum Tip-On)", costEach: 10.00, fitMins: 10 },
+    },
+    // Bin pull-out frame, one per cabinet (cabinet param binFrameKey). fitMins: DECISION (Steve to confirm) —
+    // 30, as the engine's drawer-runner prep (carcassDrawerPrepHrs 0.5 h).
+    binFrames: {
+      "HW_BIN_ECOTOP": { name: "Bin pull-out frame (Blum / LDL Ecotop)", costEach: 200.00, fitMins: 30 },
+    },
+    // Freestanding legs, 150 mm high, 45 mm square tapering to 28 mm, finished, with mounting plate (cabinet params
+    // legKey + legCount). costEach and fitMins: DECISION (Steve to confirm).
+    legs: {
+      "HW_LEG_OAK_150": { name: "Tapered oak leg 150 mm",    costEach: 18.00, fitMins: 10 },
+      "HW_LEG_WAL_150": { name: "Tapered walnut leg 150 mm", costEach: 24.00, fitMins: 10 },
+    },
+    // Soffit LED channel (item type soffit_led, one line per design) — every figure a DECISION, Steve to confirm.
+    soffitLed: {
+      extrusionLengthMm: 2000, extrusionCost: 18.00,  // recessed aluminium profile + opal diffuser, end caps, clips; bought in 2 m
+      reelLengthM: 5,          reelCost: 35.00,       // 24 V COB tape, 5 m reel
+      tapeWattsPerM: 10,
+      driverHeadroom: 1.2,                            // driver sized for the tape's watts + 20%
+      routeMinsPerM: 10,                              // rout the 18 × 8 groove, with set-out and clean-up
+      drivers: {
+        "DRV_24V_30W":  { name: "24 V LED driver 30 W",  watts: 30,  costEach: 18.00 },
+        "DRV_24V_60W":  { name: "24 V LED driver 60 W",  watts: 60,  costEach: 24.00 },
+        "DRV_24V_100W": { name: "24 V LED driver 100 W", watts: 100, costEach: 32.00 },
+        "DRV_24V_150W": { name: "24 V LED driver 150 W", watts: 150, costEach: 45.00 },
+      },
     },
   },
   mouldings: {
@@ -289,6 +320,16 @@ const FRAME_MATERIALS = {
   "FRAME_OAK_18":   { name: "Solid Oak Frame 18mm (legacy)",   pricingMode: "linear", costPerM: 8.50, labourHrsPerM: 0.22, legacy: true },
   "FRAME_ASH_18":   { name: "Solid Ash Frame 18mm (legacy)",   pricingMode: "linear", costPerM: 7.00, labourHrsPerM: 0.22, legacy: true },
   "FRAME_PINE_18":  { name: "Solid Pine Frame 18mm (legacy)",  pricingMode: "linear", costPerM: 4.50, labourHrsPerM: 0.20, legacy: true },
+};
+
+// ─── HANDLELESS CHANNEL PROFILES ──────────────────────────────────────────────
+// The configurator's channel as built (its sabChannelMm, Steve's handleless sections): every piece is cut from the
+// door board, T thick. Board girth of a rail = fixedMm + tCount × T. Floor and flange are 20 + T deep; the upright
+// is 50 tall (70 on a tall split's C, which reaches 20 under and 20 over the 30 gap).
+const CHANNEL_PROFILES = {
+  "L":      { name: "Top channel rail (L)",  fixedMm: 70,  tCount: 1 },  // floor + upright 50
+  "C":      { name: "Mid-rail C-channel",    fixedMm: 90,  tCount: 2 },  // floor + upright 50 + flange
+  "TALL_C": { name: "Tall split C-channel",  fixedMm: 110, tCount: 2 },  // floor + upright 70 + flange
 };
 
 // ─── EDGEBAND TYPES ───────────────────────────────────────────────────────────
@@ -425,7 +466,7 @@ function totalInstallDays(pc) {
 // captured at lock time. Engine/Settings changes reach only new quotes, edited items
 // and a deliberate "Reprice to current pricing…". Hours stay live (withPricingStatus).
 // Bump ENGINE_VERSION with any pricing.js change that can move a price.
-const ENGINE_VERSION = "2026-10-09";
+const ENGINE_VERSION = "2026-10-31";
 
 // Short fingerprint (djb2) of the pricing tables + settings an item is priced with.
 function settingsFingerprint() {
@@ -910,10 +951,13 @@ function calcCabinetCost({
   widthMm, heightMm, depthMm,
   carcassMaterialKey = "MAT_BIRCH_UNF_18",
   carcassFinish = "none",
+  carcassFinishOutside = false,   // also finish the shell's outer faces (sides, top, bottom) — an open painted unit
   backMaterialKey,  // defaults to carcassMaterialKey below — backs match the carcass material
 
   doorCount = 2, doorType = "SLAB_PNT",
+  doorHeightsMm,          // actual height of each door leaf (doorCount leaves across, in rows); absent: carcass height − 6
   drawerCount = 0, drawerType = "DRW_BIRCH_PLY",
+  drawerFrontHeightsMm,   // actual height of each drawer front, one per drawer; absent: an equal share
   runnerKey = "HW_RUN_BLUM_SM",
   hingeKey = "HW_HINGE_SM",
   handleKey = "HW_HDL_BAR128",
@@ -926,6 +970,9 @@ function calcCabinetCost({
   edgebandKey = "EDGE_OAK_05",
   hasStain = false,
   sprayFinishOverride = "",
+  channelRails,     // handleless channel rails per metre: { materialKey, finishType?, thicknessMm?, rails: [{ profile, lengthMm }] }
+  binFrameKey,      // bin pull-out frame (DB.hardware.binFrames), one per cabinet
+  legKey, legCount, // freestanding legs (DB.hardware.legs); count defaults to 4, 6 over 1200 wide
   qty = 1,
   margin = DB.settings.margin,
 }) {
@@ -955,30 +1002,42 @@ function calcCabinetCost({
   // Handle used across doors AND drawer fronts (one handle per panel). Resolved at
   // cabinet scope so drawer-only cabinets are also charged for their handles.
   const handle = DB.hardware.handles[handleKey] || DB.hardware.handles["HW_HDL_BAR128"];
+  // A handle that needs bench fitting (push to open's Tip-On) carries that labour on each front's handle cost.
+  const handleFitHrs = (handle.fitMins || 0) / 60;
+  const handleCostPerFront = handle.costEach + handleFitHrs * er();
 
   // Doors (cost only, margin applied to cabinet total)
   let doorsCost = 0;
   let doorHrs = 0;       // door-making labour, person-hours per cabinet (all doors)
   let doorFinishHrs = 0; // spray finishing labour on doors, person-hours per cabinet
-  let doorSpray = null;  // per-door spray breakdown (sprayDetail split)
+  const doorSprays = []; // [per-door spray breakdown, leaves] per leaf height (sprayDetail split)
   // BOM quantities (per single cabinet — multiplied by qty at the return). These are
   // the SAME geometry the costing above uses, surfaced for the read-only materials BOM.
   let doorAreaM2 = 0;   // total door face area (m²)
   let hingeUnits = 0;   // hinges consumed (matches the hinges priced)
+  let doorLeaves = 0;   // door leaves priced
   if (doorCount > 0 && doorType && DB.doorTypes[doorType]) {
-    const doorW = Math.floor(widthMm / doorCount) - 2;
-    const doorH = heightMm - 6;
+    const doorW = Math.floor(widthMm / doorCount) - 2;   // doorCount leaves across
     const hinge = DB.hardware.hinges[hingeKey] || DB.hardware.hinges["HW_HINGE_SM"];
-    const hingeCostPerDoor = hingeCount(doorH) * hinge.costEach;
-    const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: doorCount, hingeCost: hingeCostPerDoor, handleCost: handle.costEach, hasStain, sprayFinishOverride,
-      timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey,
-      frameStileWidthMm, frameThicknessMm: doorFrameThicknessMm });
-    doorsCost = dp ? dp.totalCost : 0;
-    doorHrs = dp ? dp.breakdown.doorHrs * doorCount : 0;
-    doorFinishHrs = dp ? dp.breakdown.finishHrs * doorCount : 0;
-    doorSpray = dp ? dp.breakdown.sprayDetail : null;
-    doorAreaM2 = (doorW / 1000) * (doorH / 1000) * doorCount;
-    hingeUnits = hingeCount(doorH) * doorCount;
+    // Leaf heights: each leaf's actual height when given (doorHeightsMm — handleless fronts, a split tall's leaves
+    // one over the other), else doorCount leaves at the carcass height less 6. Leaves of one height price together.
+    const leavesByHeight = new Map();
+    const actual = Array.isArray(doorHeightsMm) && doorHeightsMm.length > 0;
+    if (actual) for (const h of doorHeightsMm) leavesByHeight.set(h, (leavesByHeight.get(h) || 0) + 1);
+    else leavesByHeight.set(heightMm - 6, doorCount);
+    doorLeaves = actual ? doorHeightsMm.length : doorCount;
+    for (const [doorH, n] of leavesByHeight) {
+      const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: n, hingeCost: hingeCount(doorH) * hinge.costEach, handleCost: handleCostPerFront, hasStain, sprayFinishOverride,
+        timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey,
+        frameStileWidthMm, frameThicknessMm: doorFrameThicknessMm });
+      if (!dp) continue;
+      doorsCost += dp.totalCost;
+      doorHrs += dp.breakdown.doorHrs * n;
+      doorFinishHrs += dp.breakdown.finishHrs * n;
+      doorSprays.push([dp.breakdown.sprayDetail, n]);
+      doorAreaM2 += (doorW / 1000) * (doorH / 1000) * n;
+      hingeUnits += hingeCount(doorH) * n;
+    }
   }
 
   // Drawers (cost only)
@@ -999,18 +1058,22 @@ function calcCabinetCost({
   const frontSprays = [];       // [spray breakdown, 1] per drawer front (sprayDetail split)
   const drawerFrontHeights = [];
   if (drawerCount > 0 && doorType && DB.doorTypes[doorType]) {
-    const topRailMm = 32;
-    const gapMm = 3;
-    const usableHeight = heightMm - topRailMm;
-    const totalGaps = gapMm * (drawerCount - 1);
-    const availableHeight = usableHeight - totalGaps;
-    const defaultFrontH = Math.round(availableHeight / drawerCount);
-    for (let i = 0; i < drawerCount; i++) drawerFrontHeights.push(defaultFrontH);
+    // Each front's actual height when given (drawerFrontHeightsMm — handleless fronts), else an equal share.
+    if (Array.isArray(drawerFrontHeightsMm) && drawerFrontHeightsMm.length > 0) drawerFrontHeights.push(...drawerFrontHeightsMm);
+    else {
+      const topRailMm = 32;
+      const gapMm = 3;
+      const usableHeight = heightMm - topRailMm;
+      const totalGaps = gapMm * (drawerCount - 1);
+      const availableHeight = usableHeight - totalGaps;
+      const defaultFrontH = Math.round(availableHeight / drawerCount);
+      for (let i = 0; i < drawerCount; i++) drawerFrontHeights.push(defaultFrontH);
+    }
     const frontW = widthMm - 4; // drawer fronts span full cabinet width
     const effFrontW = frontW > 0 ? frontW : widthMm - 4;
     for (const fh of drawerFrontHeights) {
       // One handle per drawer front (no hinges — fronts run on the drawer runners).
-      const dfp = calcDoorCost({ doorType, widthMm: effFrontW, heightMm: fh, qty: 1, hingeCost: 0, handleCost: handle.costEach, sprayFinish: true, hasStain, sprayFinishOverride,
+      const dfp = calcDoorCost({ doorType, widthMm: effFrontW, heightMm: fh, qty: 1, hingeCost: 0, handleCost: handleCostPerFront, sprayFinish: true, hasStain, sprayFinishOverride,
         timberSpeciesKey, timberCustomSpeciesName, timberCustomPricePerM3, panelMaterialKey,
         frameStileWidthMm, frameThicknessMm: doorFrameThicknessMm });
       if (dfp) {
@@ -1077,6 +1140,9 @@ function calcCabinetCost({
       const backArea   = W * H;
       const shelfArea2 = (shelfCount || 0) * 2 * (innerW * shelfD);
       sprayAreaM2Override = sidesArea + topBotArea + backArea + shelfArea2;
+      // Inside and out (an open unit's "match doors" painted carcass): the outer faces of the sides, top and
+      // bottom too. Not the back's outer face, which is against the wall.
+      if (carcassFinishOutside) sprayAreaM2Override += sidesArea + topBotArea;
       let perim = 2 * (W + H);
       if (doorCount === 0) perim += (shelfCount || 0) * innerW;
       perimMOverride = perim;
@@ -1099,20 +1165,41 @@ function calcCabinetCost({
   // Any legacy fillerCount on cabinet items is migrated to separate filler items at
   // quote-load time via migrateLegacyFillers.)
 
-  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total;
+  // ── Handleless channel rails, per metre (its own line, channelRail) ──
+  const rail = channelRails ? calcChannelRailCost(channelRails) : null;
+  const channelRailCost = rail ? rail.cost : 0;
+  const railFinishHrs   = rail ? rail.finishHrs : 0;
+
+  // ── Bin pull-out frame: the frame + its bench fitting (its own line, binFrame) ──
+  const binFrame = binFrameKey ? DB.hardware.binFrames[binFrameKey] : null;
+  const binFrameFitHrs = binFrame ? binFrame.fitMins / 60 : 0;
+  const binFrameCost = binFrame ? binFrame.costEach + binFrameFitHrs * er() : 0;
+
+  // ── Freestanding legs: per leg + its bench fitting (its own line, legs). The engine charges no plinth. ──
+  const leg = legKey ? DB.hardware.legs[legKey] : null;
+  const legs = leg ? (legCount ?? (widthMm > 1200 ? 6 : 4)) : 0;
+  const legFitHrs = leg ? legs * leg.fitMins / 60 : 0;
+  const legsCost = leg ? legs * leg.costEach + legFitHrs * er() : 0;
+
+  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + channelRailCost + binFrameCost + legsCost;
   const totalCost = totalCostPerUnit * qty;
   const sellExVAT = totalCost * margin;
 
   // ── Labour hours roll-up, person-hours per cabinet (additive, for production scheduling) ──
   const frameHrs    = frameResult.labourHrs || 0;     // face-frame-making labour
   const edgebandHrs = edgebandResult.labourHrs || 0;  // edgebanding labour
-  const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs; // total spray finishing labour (doors + fronts + carcass shell)
-  const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs).toFixed(3);
-  // finishHrs split by step, and by part (carcass / door / drawerFront) — parts present only when finished.
+  const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs + railFinishHrs; // total spray finishing labour (doors + fronts + carcass shell + channel rails)
+  // Bench fitting of hardware: push-to-open devices (cost in the fronts' handle cost), the bin frame and legs.
+  const frontCount  = doorLeaves + drawerFrontHeights.length;
+  const hardwareFitHrs = frontCount * handleFitHrs + binFrameFitHrs + legFitHrs;
+  const channelRailHrs = rail ? rail.benchHrs : 0;   // channel rail bench labour (its spray is in finishHrs)
+  const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs + hardwareFitHrs + channelRailHrs).toFixed(3);
+  // finishHrs split by step, and by part (carcass / door / drawerFront / channelRail) — parts present only when finished.
   const sprayParts = {};
   if (carcassFinishHrs > 0)     sprayParts.carcass     = sprayHrsSplit(carcassFinishHrs, [[carcassSpray, 1]]);
-  if (doorFinishHrs > 0)        sprayParts.door        = sprayHrsSplit(doorFinishHrs, [[doorSpray, doorCount]]);
+  if (doorFinishHrs > 0)        sprayParts.door        = sprayHrsSplit(doorFinishHrs, doorSprays);
   if (drawerFrontFinishHrs > 0) sprayParts.drawerFront = sprayHrsSplit(drawerFrontFinishHrs, frontSprays);
+  if (railFinishHrs > 0)        sprayParts.channelRail = sprayHrsSplit(railFinishHrs, rail.sprays);
   const sprayDetail = { ...sprayHrsSplit(finishHrs, Object.values(sprayParts).map(p => [p, 1])), parts: sprayParts };
 
   // ── Bill of materials (read-only, additive) ───────────────────────────────
@@ -1134,7 +1221,7 @@ function calcCabinetCost({
   if (backArea > 0) addCarcass(backKey, backArea * qty);
   // Doors + drawer fronts share the door type (both made & finished like doors).
   const bomDoors = [];
-  const doorPanels = doorCount + drawerFrontHeights.length;
+  const doorPanels = doorLeaves + drawerFrontHeights.length;
   const doorPanelArea = doorAreaM2 + drawerFrontAreaM2;
   if (doorType && DB.doorTypes[doorType] && doorPanels > 0) {
     bomDoors.push({ key: doorType, count: doorPanels * qty, areaM2: r4(doorPanelArea * qty) });
@@ -1148,13 +1235,15 @@ function calcCabinetCost({
   const bomHardware = [];
   if (hingeUnits > 0 && hingeKey && hingeKey !== "HW_HINGE_NONE") bomHardware.push({ key: hingeKey, count: hingeUnits * qty });
   if (drawerCount > 0 && drawerType && DB.drawerTypes[drawerType] && runnerKey) bomHardware.push({ key: runnerKey, count: drawerCount * qty });
+  if (binFrame) bomHardware.push({ key: binFrameKey, count: qty });
+  if (leg && legs > 0) bomHardware.push({ key: legKey, count: legs * qty });
   // Handles — reported as door + drawer POSITIONS regardless of whether a handle is
   // priced (handleKey is often HW_HDL_NONE: bought separately / client's choice). Split
   // by target so a different handle type can be assigned to doors vs drawers downstream.
   // When a real handle IS selected it's also charged in the price (calcDoorCost calls
   // above) on the same positions — one source of truth for the priced case.
   const bomHandles = [];
-  const doorHandlePositions   = (doorCount > 0 && doorType && DB.doorTypes[doorType]) ? doorCount : 0;
+  const doorHandlePositions   = doorLeaves;
   const drawerHandlePositions = drawerFrontHeights.length;
   if (doorHandlePositions > 0)   bomHandles.push({ key: handleKey, target: "door",   count: doorHandlePositions * qty });
   if (drawerHandlePositions > 0) bomHandles.push({ key: handleKey, target: "drawer", count: drawerHandlePositions * qty });
@@ -1166,7 +1255,11 @@ function calcCabinetCost({
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
     breakdown: { carcassMaterial: carcassMaterialCost, carcassLabour: carcassLabourCost, carcassHardware, doors: doorsCost, drawers: drawersCost, drawerFronts: drawerFrontsCost, frame: frameResult.total, edgeband: edgebandResult.total,
-      assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs, totalHrs, sprayDetail,
+      ...(rail ? { channelRail: channelRailCost, channelRailHrs: +channelRailHrs.toFixed(3) } : {}),
+      ...(binFrame ? { binFrame: binFrameCost } : {}),
+      ...(leg ? { legs: legsCost } : {}),
+      assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs,
+      ...(hardwareFitHrs > 0 ? { hardwareFitHrs: +hardwareFitHrs.toFixed(3) } : {}), totalHrs, sprayDetail,
       bom: { carcass: bomCarcass, doors: bomDoors, drawerBoxes: bomDrawerBoxes, frames: bomFrames, edgeband: bomEdgeband, hardware: bomHardware, handles: bomHandles } },
   };
 }
@@ -1381,6 +1474,35 @@ function calcCabinetEdgebandCost({ edgebandKey, widthMm, heightMm, shelfCount = 
   return { costPerUnit: +costPerUnit.toFixed(2), total: +(costPerUnit * qty).toFixed(2), totalM: +totalM.toFixed(3), labourHrs: +labourHrs.toFixed(3) };
 }
 
+// ─── HANDLELESS CHANNEL RAIL (CABINET) ─────────────────────────────────────────
+// Priced per metre run, in place of pricing each channel piece as an end panel. Per rail: the strip's board
+// (girth × length × £/m² × waste) and its spray (girth × length, one face — the end-panel rule; finishType defaults
+// to the board's naturalFinish), plus bench labour per metre and ONE setup per cabinet. thicknessMm (T) defaults
+// to the board's own. Returns null when there is nothing to price.
+function calcChannelRailCost({ materialKey, finishType, thicknessMm, rails } = {}) {
+  const mat = DB.materials[materialKey];
+  if (!mat || !Array.isArray(rails)) return null;
+  const T = thicknessMm || mat.thicknessMm;
+  const finish = finishType || mat.naturalFinish || "none";
+  let material = 0, spray = 0, finishHrs = 0, metres = 0;
+  const sprays = [];
+  for (const r of rails) {
+    const p = r && CHANNEL_PROFILES[r.profile];
+    if (!p || !(r.lengthMm > 0)) continue;
+    const girthMm = p.fixedMm + p.tCount * T;
+    metres += r.lengthMm / 1000;
+    material += (girthMm / 1000) * (r.lengthMm / 1000) * mat.costPerM2 * (mat.wasteFactor || 1.12);
+    const sf = calcSprayFinishCost({ widthMm: girthMm, heightMm: r.lengthMm, qty: 1, finishType: finish, surfaceType: "panel" });
+    spray += sf.costPerDoor;
+    finishHrs += sf.breakdown.totalHrs;
+    sprays.push([sf.breakdown, 1]);
+  }
+  if (!metres) return null;
+  const benchHrs = (metres * DB.settings.channelRailMinsPerM + DB.settings.channelRailSetupMins) / 60;
+  const labour = benchHrs * er();
+  return { cost: material + spray + labour, material, spray, labour, metres, benchHrs, finishHrs, sprays };
+}
+
 // ── FILLER COST ────────────────────────────────────────────────────────────
 // Scribed strip in matching door finish. Self-contained line item (not bundled
 // inside a cabinet). Pricing scales with strip size — bench labour is flat per
@@ -1409,6 +1531,41 @@ function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720,
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
     breakdown: { material: +materialCost.toFixed(2), labour: +labourCost.toFixed(2), spray: +sprayCost.toFixed(2) },
+  };
+}
+
+// ── SOFFIT LED CHANNEL ─────────────────────────────────────────────────────
+// One line for a design's soffit LED runs ({ lengthMm, position: front|back } — position is recorded, not priced).
+// Extrusion is bought in 2 m lengths, rounded up per run; tape in 5 m reels, rounded up for the whole design; one
+// driver from the list, the smallest that covers the tape's watts + headroom (over the largest: several of it);
+// routing labour per metre at the bench rate.
+function calcSoffitLedCost({ runs, qty = 1, margin = DB.settings.margin }) {
+  const led = DB.hardware.soffitLed;
+  const ok = Array.isArray(runs) ? runs.filter(r => r && r.lengthMm > 0) : [];
+  if (!ok.length) return null;
+  const totalMm = ok.reduce((s, r) => s + r.lengthMm, 0);
+  const metres = totalMm / 1000;
+  const extrusions = ok.reduce((s, r) => s + Math.ceil(Math.round(r.lengthMm) / led.extrusionLengthMm), 0);
+  const reels = Math.ceil(Math.round(totalMm) / (led.reelLengthM * 1000));
+  const wattsNeeded = metres * led.tapeWattsPerM * led.driverHeadroom;
+  const drivers = Object.entries(led.drivers).sort((a, b) => a[1].watts - b[1].watts);
+  const fits = drivers.find(([, d]) => d.watts >= wattsNeeded);
+  const [driverKey, driver] = fits || drivers[drivers.length - 1];
+  const driverCount = fits ? 1 : Math.ceil(wattsNeeded / driver.watts);
+  const extrusionCost = extrusions * led.extrusionCost;
+  const tapeCost = reels * led.reelCost;
+  const driverCost = driverCount * driver.costEach;
+  const routeHrs = metres * led.routeMinsPerM / 60;
+  const labourCost = routeHrs * er();
+  const costPerUnit = extrusionCost + tapeCost + driverCost + labourCost;
+  const sellExVAT = costPerUnit * margin;
+  return {
+    costPerUnit, sellPerUnit: sellExVAT,
+    totalCost: costPerUnit * qty, totalSellExVAT: sellExVAT * qty,
+    totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
+    breakdown: { extrusion: extrusionCost, tape: tapeCost, driver: driverCost, labour: labourCost,
+      routeHrs: +routeHrs.toFixed(3), totalHrs: +routeHrs.toFixed(3),
+      led: { metres: +metres.toFixed(3), extrusions, reels, wattsNeeded: +wattsNeeded.toFixed(1), driverKey, driverCount } },
   };
 }
 
@@ -1451,6 +1608,7 @@ function priceItemUnstamped(item, effectiveMargin) {
   if (item.type === "moulding") return calcMouldingCost({ ...item.params, qty: item.qty, margin });
   if (item.type === "wrp_moulding") return calcWRPMouldingCost({ ...item.params, qty: item.qty }); // WRP uses its own markup_pct, not margin
   if (item.type === "filler")   return calcFillerCost({ ...item.params, qty: item.qty, margin });
+  if (item.type === "soffit_led") return calcSoffitLedCost({ ...item.params, qty: item.qty, margin });
   if (item.type === "custom") {
     const cost = (item.params.unitCostExVAT || 0) * item.qty;
     const sell = cost * margin;
@@ -1588,11 +1746,11 @@ function quoteMaterialsBom(quote) {
 
 // ─── Exports / global exposure ──────────────────────────────────────────────
 (function () {
-  const api = { DB, FRAME_MATERIALS, EDGEBAND_TYPES, NO_EDGE_MATERIALS, er, hingeCount, fmt,
+  const api = { DB, FRAME_MATERIALS, EDGEBAND_TYPES, NO_EDGE_MATERIALS, CHANNEL_PROFILES, calcChannelRailCost, er, hingeCount, fmt,
     calcSprayFinishCost, calcDoorCost, calcFrameCost, calcDrawerCost, calcCabinetCost,
     calcEndPanelCost, calcFloatingShelfCost, calcMouldingCost, parseWRPDimensions,
     calcWRPFinishCostPerM, calcWRPMouldingCost, calcCabinetFaceFrameCost,
-    calcCabinetEdgebandCost, calcFillerCost, priceItem,
+    calcCabinetEdgebandCost, calcFillerCost, calcSoffitLedCost, priceItem,
     calcDesignHrsPerRoom, calcDesignTimePerRoom,
     getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
     recomputeQuotePricing, quoteMaterialsBom,

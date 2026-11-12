@@ -1,8 +1,8 @@
-const CACHE_NAME = 'sab-v58';
+const CACHE_NAME = 'sab-v59';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/pricing.js?v=sab-v58',   // versioned like CACHE_NAME, so a new page never pairs with an old cached engine
+  '/pricing.js?v=sab-v59',   // versioned like CACHE_NAME, so a new page never pairs with an old cached engine
   '/fitting-estimate.js',
   '/icons/icon-192.png',
   '/icons/icon-512.png'

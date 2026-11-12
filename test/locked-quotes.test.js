@@ -412,6 +412,13 @@ try {
   BASE = { dir, server: show('server.js'), P: require(path.join(dir, 'public', 'pricing.js')) };
 } catch { /* no git / unknown ref → these tests skip */ }
 const noBase = !BASE && `baseline ${BASE_REF} not loadable`;
+// What moves by design with any engine after the baseline (the configurator pack, in-frame) and is not money: the
+// engine stamp on a price and on a lock, and the settings a later engine adds to a new lock's snapshot. Both sides are
+// compared without them (and without lockedAt, the only wall-clock value).
+const BASE_SETTINGS = BASE && new Set(Object.keys(BASE.P.DB.settings));
+const sameEngine = v => JSON.parse(JSON.stringify(v === undefined ? null : v, (k, x) =>
+  k === 'lockedAt' ? '<time>' : (k === 'pricedWith' || k === 'engineVersion') ? '<engine>'
+  : (k === 'settings' && x && typeof x === 'object') ? Object.fromEntries(Object.entries(x).filter(([s]) => BASE_SETTINGS.has(s))) : x));
 
 async function session(src, dir) {
   const pool = fakePool(REAL);
@@ -444,7 +451,7 @@ async function session(src, dir) {
   try { for (const [method, url, body, headers] of steps) out.push(await s.call(method, url, body, headers)); }
   finally { await s.close(); }
   out.push(Object.fromEntries([...pool.rows].map(([id, r]) => [id, { data: r.data, updated_at: r.updated_at.toISOString() }])));
-  return JSON.parse(JSON.stringify(out, (k, v) => k === 'lockedAt' ? '<time>' : v)); // the only wall-clock value
+  return sameEngine(out);
 }
 
 test('existing quotes: every API path answers and stores exactly as before website orders', { skip: noBase }, async () => {
@@ -467,7 +474,7 @@ test('existing quotes: the engine prices, totals and annotates them exactly as b
     bom: E => q => E.quoteMaterialsBom(E.recomputeQuotePricing(q)),
   };
   for (const q of Object.values(REAL)) for (const [name, view] of Object.entries(views))
-    assert.deepEqual(view(P)(clone(q)), view(BASE.P)(clone(q)), `${q.id}: ${name}`);
+    assert.deepEqual(sameEngine(view(P)(clone(q))), sameEngine(view(BASE.P)(clone(q))), `${q.id}: ${name}`);
 });
 
 // ─── 6. permanent delete: never a website order ──────────────────────────────
