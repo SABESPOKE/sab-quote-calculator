@@ -633,7 +633,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script src="/pricing.js?v=sab-v59"></script>
+  <script src="/pricing.js?v=sab-v60"></script>
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useMemo } = React;
 
@@ -1416,6 +1416,18 @@ const TYPE_TO_PROFILE_FINISH = Object.fromEntries(
     return [type, { profile, finish }];
   })
 );
+
+// In-frame on a cabinet form: what the build is made of, from the build rules (pricing.js inframeDefaults) — a
+// painted shaker is tulipwood, a painted slab the one-piece MDF, a lacquered or oiled door its timber (oak unless
+// one is already picked). Pass a timber to take that one's rules.
+const INFRAME_TIMBER_LABELS = { tulipwood: "Tulipwood (painted)", oak: "Oak", walnut: "Walnut", maple: "Maple", mdf: "MDF, one piece (painted slab)" };
+function inframeForForm(f, timber) {
+  const dt = DB.doorTypes[f.doorType] || {};
+  const slab = !dt.hasQuirk, painted = (dt.finishType || "paint") === "paint";
+  const cur = f.inframeFront && f.inframeFront.timber;
+  const t = timber || (painted ? (slab ? "mdf" : "tulipwood") : (["oak", "walnut", "maple"].includes(cur) ? cur : "oak"));
+  return inframeDefaults(slab, t);
+}
 
 const DEFAULT_ROOM_SETTINGS = {
   carcassMaterialKey: "MAT_BIRCH_UNF_18",
@@ -2295,7 +2307,7 @@ function SABQuoteTool() {
         const ct = DB.cabinetTypes[f.cabinetTypeKey];
         const baseName = ct ? ct.name : "Cabinet";
         const dimStr = (w && h) ? ` ${w}×${h}×${d}mm` : "";
-        return `${baseName}${dimStr} — ${DB.doorTypes[f.doorType]?.name || ""}`;
+        return `${baseName}${dimStr} — ${DB.doorTypes[f.doorType]?.name || ""}${f.inframeFront ? " — In-frame" : ""}`;
       }
       case "door":
         return `${DB.doorTypes[f.doorType]?.name} ${w}×${h}${f.hasStain?" + Stain":""}${f.sprayFinishOverride==="none"?" (no spray)":f.sprayFinishOverride==="edge_polish"?" (edge polish)":f.sprayFinishOverride==="primed"?" (primed only)":""}`;
@@ -2352,6 +2364,8 @@ function SABQuoteTool() {
         // primed / edge_polish / none → matching override. Anything else → no override
         // (use the doorType's natural finishType).
         updated.sprayFinishOverride = FINISH_TO_SPRAY_OVERRIDE[safeFinish] || "";
+        // An in-frame cabinet follows its door: the build rules for the new profile and finish.
+        if (updated.inframeFront) updated.inframeFront = inframeForForm(updated);
       }
       // Pure drawer cabinet (no doors) → default hinge to "No Hinge". When doors are
       // added back to a previously door-less cabinet, restore a real default hinge so
@@ -3548,7 +3562,52 @@ function SABQuoteTool() {
                     </select>
                   </div>
 
-                  {/* Face Frame selector */}
+                  {/* In-frame: the whole build (frame, doors in the opening, hinges, frame finish) from the build rules —
+                      the engine's inframeFront. Takes the place of the Face Frame pick below. */}
+                  <div style={{ marginBottom:14 }}>
+                    <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:11, color: addItemForm.inframeFront ? "#c8a96e" : "#555555" }}>
+                      <input type="checkbox" checked={!!addItemForm.inframeFront} onChange={e => updateForm("inframeFront", e.target.checked ? inframeForForm(addItemForm) : undefined)} style={{ accentColor:"#c8a96e" }} />
+                      In-frame <span style={{ color:"#999999" }}>— face frame, doors inside it, frame finished as the doors</span>
+                    </label>
+                    {addItemForm.inframeFront && (() => {
+                      const inf = addItemForm.inframeFront, bd = formPreview?.breakdown || {};
+                      const setInf = patch => updateForm("inframeFront", { ...inf, ...patch });
+                      const num = k => e => setInf({ [k]: e.target.value === "" ? 0 : +e.target.value });
+                      return (
+                        <div style={{ marginTop:6, padding:"10px 12px", background:"#fbfaf8", border:"1px solid #e0d8cc", borderRadius:4 }}>
+                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:6 }}>
+                            <div>
+                              <label style={lbl}>Timber</label>
+                              <select value={inf.timber} onChange={e => updateForm("inframeFront", inframeForForm(addItemForm, e.target.value))} style={{ ...sel, width:"100%" }}>
+                                {Object.entries(INFRAME_TIMBER_LABELS).map(([k, name]) => <option key={k} value={k}>{name}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label style={lbl}>Hinges</label>
+                              <select value={inf.hinges} onChange={e => setInf({ hinges: e.target.value })} style={{ ...sel, width:"100%" }}>
+                                <option value="butt">Butt hinges</option>
+                                <option value="blum">Blum (the hinge picked)</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+                            <div><label style={lbl}>Door thickness (mm)</label><input type="number" min="15" step="1" value={inf.thicknessMm || ""} onChange={num("thicknessMm")} style={inp} /></div>
+                            <div><label style={lbl}>Frame thickness (mm)</label><input type="number" min="15" step="1" value={inf.frameMm || ""} onChange={num("frameMm")} style={inp} /></div>
+                            <div><label style={lbl}>Frame face (mm)</label><input type="number" min="10" step="1" value={addItemForm.frameMemberWidthMm ?? 30} onChange={e => updateForm("frameMemberWidthMm", e.target.value === "" ? 0 : +e.target.value)} style={inp} /></div>
+                          </div>
+                          {inf.timber === "mdf" && !FRAME_MATERIALS[`FRAME_MDF_${inf.frameMm}`] && (
+                            <div style={{ fontSize:10, color:"#b04a3a", marginTop:6 }}>An MDF frame is priced at 18 or 22 mm — at {inf.frameMm || 0} mm the frame is not priced.</div>
+                          )}
+                          <div style={{ fontSize:10, color:"#999999", marginTop:6 }}>
+                            Frame {fmt(bd.frame || 0)} · frame finish {fmt(bd.frameFinish || 0)} · hanging {fmt(bd.hanging || 0)}{inf.hinges === "butt" ? ` (${DB.settings.buttHingeHangMins} min a door)` : ""} — cost, in the total
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Face Frame selector (lay-on cabinets; an in-frame cabinet's frame is set above) */}
+                  {!addItemForm.inframeFront && (
                   <div style={{ marginBottom:14 }}>
                     <label style={{ fontSize:11, color:"#555555", display:"block", marginBottom:3 }}>Face Frame</label>
                     <select value={addItemForm.frameKey||"FRAME_NONE"} onChange={e=>updateForm("frameKey",e.target.value)}
@@ -3573,9 +3632,10 @@ function SABQuoteTool() {
                       <div style={{fontSize:10,color:"#c8a96e",marginTop:2}}>Butt hinges used · frame covers front edges</div>
                     )}
                   </div>
+                  )}
 
                   {/* Edgeband selector (only shown when frame is FRAME_NONE and material isn't birch ply) */}
-                  {(!addItemForm.frameKey || addItemForm.frameKey==="FRAME_NONE") && !NO_EDGE_MATERIALS.has(addItemForm.carcassMaterialKey||"MAT_BIRCH_UNF_18") && (
+                  {!addItemForm.inframeFront && (!addItemForm.frameKey || addItemForm.frameKey==="FRAME_NONE") && !NO_EDGE_MATERIALS.has(addItemForm.carcassMaterialKey||"MAT_BIRCH_UNF_18") && (
                     <div style={{ marginBottom:14 }}>
                       <label style={{ fontSize:11, color:"#555555", display:"block", marginBottom:3 }}>Edgebanding</label>
                       <select value={addItemForm.edgebandKey||"EDGE_OAK_05"} onChange={e=>updateForm("edgebandKey",e.target.value)}

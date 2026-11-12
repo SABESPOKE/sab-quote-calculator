@@ -14,11 +14,11 @@ let recomputeQuotePricing = null;
 let quoteGrandTotal = null;
 let quoteMaterialsBom = null;
 let withPricingStatus = null, lockQuote = null, quoteSettings = null, applySettings = null, validateSettings = null, ENGINE_VERSION = null, lockedChange = null, lockedMerge = null, onOrderCreate = null;
-let PRICING_DB = null, FRAME_MATERIALS = null, EDGEBAND_TYPES = null, CHANNEL_PROFILES = null; // lookup tables for /api/cabinet-cost
+let PRICING_DB = null, FRAME_MATERIALS = null, EDGEBAND_TYPES = null, CHANNEL_PROFILES = null, INFRAME_SPECIES = null; // lookup tables for /api/cabinet-cost
 let pricingEngineError = null;
 try {
   // Explicit absolute path so it resolves regardless of CWD on the deploy host.
-  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES, CHANNEL_PROFILES,
+  ({ priceItem, calcDesignHrsPerRoom, recomputeQuotePricing, quoteGrandTotal, quoteMaterialsBom, DB: PRICING_DB, FRAME_MATERIALS, EDGEBAND_TYPES, CHANNEL_PROFILES, INFRAME_SPECIES,
      withPricingStatus, lockQuote, quoteSettings, applySettings, validateSettings, ENGINE_VERSION, lockedChange, lockedMerge, onOrderCreate } = require(path.join(__dirname, 'public', 'pricing.js')));
   console.log('[pricing] engine loaded:', typeof priceItem === 'function' ? 'ok' : 'MISSING priceItem export');
 } catch (err) {
@@ -361,11 +361,28 @@ const CABINET_FIELDS = new Set([
   'cabinetTypeKey', // informational — the engine prices from dims/counts, not the type
   'channelRails', 'binFrameKey', 'legKey', 'legCount', 'carcassFinishOutside',   // configurator pricing pack (README "Configurator pricing fields") — all optional
   'doorHeightsMm', 'drawerFrontHeightsMm',
+  'inframeFront',   // in-frame build { timber, thicknessMm, frameMm, hinges } (README "In-frame") — optional
 ]);
 const CARCASS_FINISHES = ['none', 'edge_polish', 'primed', 'paint', 'lacquer', 'stain_lacquer'];
 const SPRAY_OVERRIDES  = ['', 'primed', 'edge_polish', 'none'];
+const INFRAME_HINGES   = ['butt', 'blum'];
+const inframeTimbers   = () => [...Object.keys(INFRAME_SPECIES || {}), 'mdf'];
 const isPos = v => typeof v === 'number' && Number.isFinite(v) && v > 0;
 const has = (table, k) => !!table && Object.prototype.hasOwnProperty.call(table, k);
+
+// Problems with a cabinet's inframeFront: the whole build is named, never guessed (Shinnoki, or any timber not
+// listed, is not made in-frame — a 400).
+function inframeFrontErrors(f) {
+  if (!f || typeof f !== 'object' || Array.isArray(f)) return ['inframeFront must be an object { timber, thicknessMm, frameMm, hinges }'];
+  const errs = [];
+  const unknown = Object.keys(f).filter(k => !['timber', 'thicknessMm', 'frameMm', 'hinges'].includes(k));
+  if (unknown.length) errs.push(`inframeFront: unknown field(s): ${unknown.join(', ')}`);
+  if (!inframeTimbers().includes(f.timber)) errs.push(`inframeFront.timber must be one of ${inframeTimbers().join('|')}`);
+  for (const k of ['thicknessMm', 'frameMm']) if (!isPos(f[k])) errs.push(`inframeFront.${k} must be a positive number`);
+  if (!INFRAME_HINGES.includes(f.hinges)) errs.push(`inframeFront.hinges must be one of ${INFRAME_HINGES.join('|')}`);
+  if (f.timber === 'mdf' && !has(FRAME_MATERIALS, `FRAME_MDF_${f.frameMm}`)) errs.push('inframeFront.frameMm for an MDF frame must be 18 or 22 (FRAME_MDF_18 / FRAME_MDF_22)');
+  return errs;
+}
 
 // channelRails: { materialKey, finishType?, thicknessMm?, rails: [{ profile, lengthMm }] } — the handleless channel per metre.
 const CHANNEL_RAIL_FIELDS = ['materialKey', 'finishType', 'thicknessMm', 'rails'];
@@ -424,6 +441,11 @@ function cabinetSpecErrors(spec) {
   if (spec.carcassFinish !== undefined && !CARCASS_FINISHES.includes(spec.carcassFinish)) errs.push(`carcassFinish must be one of ${CARCASS_FINISHES.join('|')}`);
   if (spec.sprayFinishOverride !== undefined && !SPRAY_OVERRIDES.includes(spec.sprayFinishOverride)) errs.push(`sprayFinishOverride must be one of ""|${SPRAY_OVERRIDES.slice(1).join('|')}`);
   if (spec.hasStain !== undefined && typeof spec.hasStain !== 'boolean') errs.push('hasStain must be a boolean');
+  if (spec.inframeFront !== undefined) {
+    errs.push(...inframeFrontErrors(spec.inframeFront));
+    // In-frame the frame's face sizes the doors, so it is checked (without inframeFront it is taken as before).
+    if (spec.frameMemberWidthMm !== undefined && !isPos(spec.frameMemberWidthMm)) errs.push('frameMemberWidthMm must be a positive number');
+  }
   if (spec.channelRails !== undefined) errs.push(...channelRailErrors(spec.channelRails));
   if (spec.carcassFinishOutside !== undefined && typeof spec.carcassFinishOutside !== 'boolean') errs.push('carcassFinishOutside must be a boolean');
   // Actual front heights: one per door leaf (whole rows of doorCount leaves across), one per drawer front.
@@ -523,6 +545,7 @@ app.get('/api/cabinet-cost/keys', (req, res) => {
     cabinetTypes: namesOf(PRICING_DB.cabinetTypes),
     carcassFinishes: CARCASS_FINISHES,
     sprayFinishOverrides: SPRAY_OVERRIDES,
+    inframeFront: { timbers: inframeTimbers(), hinges: INFRAME_HINGES },   // the cabinet param inframeFront
     fields: [...CABINET_FIELDS],
     endPanel: { fields: [...ENDPANEL_FIELDS], finishTypes: CARCASS_FINISHES }, // POST /api/endpanel-cost (materials = the same table)
     channelRails: { fields: CHANNEL_RAIL_FIELDS, profiles: namesOf(CHANNEL_PROFILES), finishTypes: CARCASS_FINISHES },   // cabinet param channelRails

@@ -31,6 +31,8 @@ const DB = {
     // ── Handleless channel rail (cabinet param channelRails) — DECISION figures, Steve to confirm ──
     channelRailMinsPerM: 15,    // bench mins per metre of rail: cut, assemble and fix the profile
     channelRailSetupMins: 10,   // one setup per cabinet that has any rail (not per strip)
+    // ── In-frame (cabinet param inframeFront) ─────────────────────────────────
+    buttHingeHangMins: 30,      // bench mins to hang one in-frame door on butt hinges (Steve, 12 Nov 2026)
     // ── Project-level cost defaults (all adjustable) ──────────────────────────
     surveyFee: 250,             // £ flat — site survey visit (per project)
     installDayRate: 350,        // £/day — billed PER FITTER per day on site
@@ -332,6 +334,22 @@ const CHANNEL_PROFILES = {
   "TALL_C": { name: "Tall split C-channel",  fixedMm: 110, tCount: 2 },  // floor + upright 70 + flange
 };
 
+// ─── IN-FRAME (cabinet param inframeFront) ────────────────────────────────────
+// inframeFront: { timber, thicknessMm, frameMm, hinges } — an in-frame cabinet as SAB builds it, priced from the
+// rates already here: the face frame in the timber at frameMm (FRAME_TIM_*; timber "mdf": the MDF frame,
+// FRAME_MDF_<frameMm>); a shaker door as the solid-timber shaker in that timber at thicknessMm; butt hinges unless
+// hinges is "blum", each door hung at DB.settings.buttHingeHangMins; the fronts sized to the frame's opening; the
+// frame finished as the doors are. No centre mullion on a pair of doors (Steve, 12 Nov 2026).
+// Absent, a cabinet prices exactly as before. timber → its DB.solidTimber key:
+const INFRAME_SPECIES = { tulipwood: "TIM_TUL", oak: "TIM_OAK", walnut: "TIM_WAL", maple: "TIM_MAPLE" };
+// What an in-frame build is made of, by door profile and timber (Steve, 13 Nov 2026) — the calculator's defaults when
+// In-frame is switched on; the configurator sends the same.
+function inframeDefaults(slab, timber) {
+  if (timber === "mdf") return { timber, thicknessMm: 22, frameMm: 22, hinges: "blum" };   // painted slab: 22 MDF, one piece, Blum
+  return slab ? { timber, thicknessMm: 19, frameMm: 20, hinges: "butt" }                    // veneered slab in a 20 frame
+              : { timber, thicknessMm: 28, frameMm: 28, hinges: "butt" };                   // solid shaker, 28 in 28
+}
+
 // ─── EDGEBAND TYPES ───────────────────────────────────────────────────────────
 const EDGEBAND_TYPES = {
   "EDGE_NONE":        { name: "None",                    costPerM: 0,    labourHrsPerM: 0    },
@@ -466,7 +484,7 @@ function totalInstallDays(pc) {
 // captured at lock time. Engine/Settings changes reach only new quotes, edited items
 // and a deliberate "Reprice to current pricing…". Hours stay live (withPricingStatus).
 // Bump ENGINE_VERSION with any pricing.js change that can move a price.
-const ENGINE_VERSION = "2026-10-31";
+const ENGINE_VERSION = "2026-11-12";
 
 // Short fingerprint (djb2) of the pricing tables + settings an item is priced with.
 function settingsFingerprint() {
@@ -973,9 +991,27 @@ function calcCabinetCost({
   channelRails,     // handleless channel rails per metre: { materialKey, finishType?, thicknessMm?, rails: [{ profile, lengthMm }] }
   binFrameKey,      // bin pull-out frame (DB.hardware.binFrames), one per cabinet
   legKey, legCount, // freestanding legs (DB.hardware.legs); count defaults to 4, 6 over 1200 wide
+  inframeFront,     // in-frame build: { timber, thicknessMm, frameMm, hinges } — see INFRAME_SPECIES
   qty = 1,
   margin = DB.settings.margin,
 }) {
+  // ── In-frame: the frame, hinge and door the build is made of, from the existing tables ──
+  if (inframeFront) {
+    const species = INFRAME_SPECIES[inframeFront.timber];   // undefined: an MDF frame
+    frameKey = species ? `FRAME_${species}` : `FRAME_MDF_${inframeFront.frameMm}`;
+    frameThicknessMm = inframeFront.frameMm;
+    if (inframeFront.hinges !== "blum") hingeKey = "HW_HINGE_BUTT";
+    if (species) {
+      // A shaker door in-frame is solid timber: the solid-timber shaker of the same finish, in the frame's timber.
+      const dt = DB.doorTypes[doorType];
+      if (dt && dt.hasQuirk && !dt.pricingMode) doorType = dt.finishType === "paint" ? "SHAKER_TIM_PNT" : "SHAKER_TIM_LAC";
+      timberSpeciesKey = species;
+      doorFrameThicknessMm = inframeFront.thicknessMm;
+    }
+  }
+  // In-frame, the fronts sit inside the frame's opening: a frame member less on each side (0 for lay-on).
+  const frameInsetMm = inframeFront ? 2 * (frameMemberWidthMm ?? 30) : 0;
+
   const mat = DB.materials[carcassMaterialKey];
   // Back panels match the carcass material by default. Caller can still pass an
   // explicit backMaterialKey to override (legacy quotes that set HDF still work).
@@ -1017,14 +1053,14 @@ function calcCabinetCost({
   let hingeUnits = 0;   // hinges consumed (matches the hinges priced)
   let doorLeaves = 0;   // door leaves priced
   if (doorCount > 0 && doorType && DB.doorTypes[doorType]) {
-    const doorW = Math.floor(widthMm / doorCount) - 2;   // doorCount leaves across
+    const doorW = Math.floor((widthMm - frameInsetMm) / doorCount) - 2;   // doorCount leaves across (in-frame: the opening)
     const hinge = DB.hardware.hinges[hingeKey] || DB.hardware.hinges["HW_HINGE_SM"];
     // Leaf heights: each leaf's actual height when given (doorHeightsMm — handleless fronts, a split tall's leaves
     // one over the other), else doorCount leaves at the carcass height less 6. Leaves of one height price together.
     const leavesByHeight = new Map();
     const actual = Array.isArray(doorHeightsMm) && doorHeightsMm.length > 0;
     if (actual) for (const h of doorHeightsMm) leavesByHeight.set(h, (leavesByHeight.get(h) || 0) + 1);
-    else leavesByHeight.set(heightMm - 6, doorCount);
+    else leavesByHeight.set(heightMm - frameInsetMm - 6, doorCount);
     doorLeaves = actual ? doorHeightsMm.length : doorCount;
     for (const [doorH, n] of leavesByHeight) {
       const dp = calcDoorCost({ doorType, widthMm: doorW, heightMm: doorH, qty: n, hingeCost: hingeCount(doorH) * hinge.costEach, handleCost: handleCostPerFront, hasStain, sprayFinishOverride,
@@ -1063,13 +1099,13 @@ function calcCabinetCost({
     else {
       const topRailMm = 32;
       const gapMm = 3;
-      const usableHeight = heightMm - topRailMm;
+      const usableHeight = heightMm - (inframeFront ? frameInsetMm : topRailMm);
       const totalGaps = gapMm * (drawerCount - 1);
       const availableHeight = usableHeight - totalGaps;
       const defaultFrontH = Math.round(availableHeight / drawerCount);
       for (let i = 0; i < drawerCount; i++) drawerFrontHeights.push(defaultFrontH);
     }
-    const frontW = widthMm - 4; // drawer fronts span full cabinet width
+    const frontW = widthMm - frameInsetMm - 4; // drawer fronts span full cabinet width (in-frame: the opening)
     const effFrontW = frontW > 0 ? frontW : widthMm - 4;
     for (const fh of drawerFrontHeights) {
       // One handle per drawer front (no hinges — fronts run on the drawer runners).
@@ -1093,10 +1129,17 @@ function calcCabinetCost({
     frameThicknessMm, frameMemberWidthMm,
     frameCustomSpeciesName, frameCustomPricePerM3,
   });
-  // If frame fitted, override hinge to butt hinge (similar cost bracket to Blum SM)
-  const effectiveHingeKey = (frameKey && frameKey !== "FRAME_NONE")
-    ? (hingeKey || "HW_HINGE_BUTT")
-    : (hingeKey || "HW_HINGE_SM");
+  // In-frame, the frame is finished as the doors are — its face (run × member width) and the reveal the doors sit
+  // in (run) — at the spray rates. A frame without inframeFront carries no finish, as before.
+  let frameFinishCost = 0, frameFinishHrs = 0, frameSpray = null;
+  if (inframeFront && frameResult.perimM > 0) {
+    const fin = sprayFinishOverride || DB.doorTypes[doorType]?.finishType || "paint";
+    const ff = calcSprayFinishCost({ doorType: null, widthMm, heightMm, qty: 1, finishType: fin === "oil" ? "lacquer" : fin, hasStain, surfaceType: "panel",
+      sprayAreaM2Override: frameResult.perimM * (frameMemberWidthMm ?? 30) / 1000, perimMOverride: frameResult.perimM });
+    frameFinishCost = ff.costPerDoor;
+    frameFinishHrs  = ff.breakdown.totalHrs;
+    frameSpray      = ff.breakdown;
+  }
 
   // ── Edgebanding ─────────────────────────────────────────────────────────
   // Skip if: frame is fitted, or material is birch ply
@@ -1181,25 +1224,30 @@ function calcCabinetCost({
   const legFitHrs = leg ? legs * leg.fitMins / 60 : 0;
   const legsCost = leg ? legs * leg.costEach + legFitHrs * er() : 0;
 
-  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + channelRailCost + binFrameCost + legsCost;
+  // ── In-frame doors on butt hinges: the bench time to hang each leaf (its own line, hanging) ──
+  const hangHrs  = inframeFront && inframeFront.hinges !== "blum" ? doorLeaves * DB.settings.buttHingeHangMins / 60 : 0;
+  const hangCost = hangHrs * er();
+
+  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + channelRailCost + binFrameCost + legsCost + frameFinishCost + hangCost;
   const totalCost = totalCostPerUnit * qty;
   const sellExVAT = totalCost * margin;
 
   // ── Labour hours roll-up, person-hours per cabinet (additive, for production scheduling) ──
   const frameHrs    = frameResult.labourHrs || 0;     // face-frame-making labour
   const edgebandHrs = edgebandResult.labourHrs || 0;  // edgebanding labour
-  const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs + railFinishHrs; // total spray finishing labour (doors + fronts + carcass shell + channel rails)
+  const finishHrs   = doorFinishHrs + drawerFrontFinishHrs + carcassFinishHrs + railFinishHrs + frameFinishHrs; // total spray finishing labour (doors + fronts + carcass shell + channel rails + an in-frame face frame)
   // Bench fitting of hardware: push-to-open devices (cost in the fronts' handle cost), the bin frame and legs.
   const frontCount  = doorLeaves + drawerFrontHeights.length;
   const hardwareFitHrs = frontCount * handleFitHrs + binFrameFitHrs + legFitHrs;
   const channelRailHrs = rail ? rail.benchHrs : 0;   // channel rail bench labour (its spray is in finishHrs)
-  const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs + hardwareFitHrs + channelRailHrs).toFixed(3);
-  // finishHrs split by step, and by part (carcass / door / drawerFront / channelRail) — parts present only when finished.
+  const totalHrs    = +(assemblyHrs + doorHrs + drawerHrs + drawerFrontHrs + frameHrs + edgebandHrs + finishHrs + hardwareFitHrs + channelRailHrs + hangHrs).toFixed(3);
+  // finishHrs split by step, and by part (carcass / door / drawerFront / channelRail / frame) — parts present only when finished.
   const sprayParts = {};
   if (carcassFinishHrs > 0)     sprayParts.carcass     = sprayHrsSplit(carcassFinishHrs, [[carcassSpray, 1]]);
   if (doorFinishHrs > 0)        sprayParts.door        = sprayHrsSplit(doorFinishHrs, doorSprays);
   if (drawerFrontFinishHrs > 0) sprayParts.drawerFront = sprayHrsSplit(drawerFrontFinishHrs, frontSprays);
   if (railFinishHrs > 0)        sprayParts.channelRail = sprayHrsSplit(railFinishHrs, rail.sprays);
+  if (frameFinishHrs > 0)       sprayParts.frame       = sprayHrsSplit(frameFinishHrs, [[frameSpray, 1]]);
   const sprayDetail = { ...sprayHrsSplit(finishHrs, Object.values(sprayParts).map(p => [p, 1])), parts: sprayParts };
 
   // ── Bill of materials (read-only, additive) ───────────────────────────────
@@ -1258,6 +1306,7 @@ function calcCabinetCost({
       ...(rail ? { channelRail: channelRailCost, channelRailHrs: +channelRailHrs.toFixed(3) } : {}),
       ...(binFrame ? { binFrame: binFrameCost } : {}),
       ...(leg ? { legs: legsCost } : {}),
+      ...(inframeFront ? { frameFinish: frameFinishCost, frameFinishHrs, hanging: hangCost, hangHrs } : {}),
       assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs,
       ...(hardwareFitHrs > 0 ? { hardwareFitHrs: +hardwareFitHrs.toFixed(3) } : {}), totalHrs, sprayDetail,
       bom: { carcass: bomCarcass, doors: bomDoors, drawerBoxes: bomDrawerBoxes, frames: bomFrames, edgeband: bomEdgeband, hardware: bomHardware, handles: bomHandles } },
@@ -1431,7 +1480,7 @@ function calcWRPMouldingCost({
 // Linear-priced (MDF): cost = perimeter × costPerM.
 // Volume-priced (solid timber): cost = perimeter × memberWidth × thickness × £/m³.
 // Corner joints (pocket screw / cope-and-stick): 0.1 hrs per corner (4 corners).
-// Changes hinge from Blum cup to butt hinge — handled in priceItem hinge override.
+// A frame alone changes no hinge and carries no finish; an in-frame build (inframeFront) sets both in calcCabinetCost.
 function calcCabinetFaceFrameCost({ frameKey, widthMm, heightMm, qty = 1, frameThicknessMm, frameMemberWidthMm, frameCustomSpeciesName, frameCustomPricePerM3 }) {
   const fm = FRAME_MATERIALS[frameKey];
   if (!fm) return { costPerUnit: 0, total: 0, perimM: 0 };
@@ -1746,7 +1795,7 @@ function quoteMaterialsBom(quote) {
 
 // ─── Exports / global exposure ──────────────────────────────────────────────
 (function () {
-  const api = { DB, FRAME_MATERIALS, EDGEBAND_TYPES, NO_EDGE_MATERIALS, CHANNEL_PROFILES, calcChannelRailCost, er, hingeCount, fmt,
+  const api = { DB, FRAME_MATERIALS, INFRAME_SPECIES, inframeDefaults, EDGEBAND_TYPES, NO_EDGE_MATERIALS, CHANNEL_PROFILES, calcChannelRailCost, er, hingeCount, fmt,
     calcSprayFinishCost, calcDoorCost, calcFrameCost, calcDrawerCost, calcCabinetCost,
     calcEndPanelCost, calcFloatingShelfCost, calcMouldingCost, parseWRPDimensions,
     calcWRPFinishCostPerM, calcWRPMouldingCost, calcCabinetFaceFrameCost,
