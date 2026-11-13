@@ -395,6 +395,91 @@ test('UI: a website order shows the badge and its paid figures, is read-only, an
   });
 });
 
+// ─── Configurator drafts: where a quote came from, shown to SAB only; a copy is never the draft ───
+// The quote exactly as the configurator sends it (its server/services/qcDraft.js): source, updated_at = sentAt,
+// `configurator` { designId, designName, version, sentAt, link, lines, manual } and its note line.
+test('UI: a configurator draft shows its header line, notes and list badges (never in Client View or the PDF); a copy drops the configurator block', {
+  skip: (!CHROME && 'Chrome not found (set CHROME_PATH)') || (typeof WebSocket === 'undefined' && 'needs Node 22+ (global WebSocket)'),
+  timeout: 180000,
+}, () => {
+  const LINK = 'https://configurator.example/d/abc123?rev=2', SENT = '2026-11-12T12:00:00.000Z';
+  const NOTE = `Sent from the SAB configurator on 12/11/2026. Design: ${LINK}`;
+  const quote = (id, ref, extra) => P.lockQuote({ id, client: 'Jane Example', project: 'Kitchen', ref, created: '12/11/2026', updated_at: SENT, ...extra,
+    rooms: { Kitchen: { includeDesignTime: false, items: [{ type: 'door', description: 'Shaker door', qty: 1, params: { doorType: 'SHAKER_PNT', widthMm: 500, heightMm: 720 } }].map(it => ({ ...it, pricing: P.priceItem(it) })) } },
+    projectCosts: P.getDefaultProjectCosts() });
+  const cfg = (designId, version) => ({ source: 'configurator', notes: NOTE, configurator: { designId, designName: 'Utility run', version, sentAt: SENT, link: LINK, lines: 1, manual: 0 } });
+  const DRAFT = quote('Q1790000000001', 'SAB-2026-201', cfg('d1', 2));
+  const EDITED = quote('Q1790000000002', 'SAB-2026-202', { ...cfg('d2', 1), updated_at: '2026-11-13T09:00:00.000Z' });   // changed in the QC the day after
+  const PLAIN = quote('Q1790000000003', 'SAB-2026-203', {});
+  const seeded = [DRAFT.id, EDITED.id, PLAIN.id];
+  const BOX = sel => `(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el && { text: el.textContent, links: [...el.querySelectorAll('a')].map(a => [a.getAttribute('href'), a.target]),
+    inputs: el.querySelectorAll('input, textarea, select, button').length }; })()`;
+  const row = ref => `[...document.querySelectorAll('div')].filter(e => e.textContent.includes(${JSON.stringify(ref)}) && /\\d rooms? ·/.test(e.textContent)).pop().textContent`;
+  const open = async (b, ref) => { await b.click('div', ref); await b.until(`!!document.querySelector('.sab-items-panel')`); await settle(300); };
+  return withServer({ [DRAFT.id]: DRAFT, [EDITED.id]: EDITED, [PLAIN.id]: PLAIN }, async (s, pool) => {
+    const b = await browser();
+    try {
+      await b.send('Page.navigate', { url: `${s.base}/` });
+      await b.until(`!!document.getElementById('root') && ${rootText}.includes('Active (3)')`, 90000);
+      await b.js(`window.__alerts = []; window.alert = m => { window.__alerts.push(String(m)); }; true`);
+
+      // List: "From configurator" on both drafts; "edited since sent" only where updated_at is later than sentAt.
+      await b.click('div', 'Jane Example', '3 quotes');
+      await b.until(`${rootText}.includes('SAB-2026-203')`);
+      const rows = await b.js(`[${['SAB-2026-201', 'SAB-2026-202', 'SAB-2026-203'].map(row).join(', ')}]`);
+      assert.deepEqual(rows.map(t => [t.includes('From configurator'), t.includes('edited since sent')]), [[true, false], [true, true], [false, false]]);
+      await b.shot('7-list-configurator-badges.png');
+
+      // Build view: the read-only header line with the design's link, and the notes box.
+      await open(b, 'SAB-2026-201');
+      assert.deepEqual(await b.js(BOX('.sab-rooms-panel .sab-from-configurator')), { text: 'From the configurator · Utility run (v2) · sent 12/11/2026', links: [[LINK, '_blank']], inputs: 0 });
+      assert.deepEqual(await b.js(BOX('.sab-items-panel .sab-quote-notes')), { text: `Notes${NOTE}`, links: [[LINK, '_blank']], inputs: 0 });
+      await b.shot('8-build-configurator-line.png');
+
+      // Client View and the PDF: neither the line, the note nor the link.
+      await b.click('button', 'Client View');
+      await b.until(`${rootText}.includes('Total (inc VAT)')`);
+      assert.equal(await b.js(`/configurator/i.test(${rootText}) || ${rootText}.includes(${JSON.stringify(LINK)})`), false, 'Client View shows nothing of the configurator');
+      await b.js(`URL.createObjectURL = blob => { window.__pdf = blob; return 'blob:test'; }; window.open = () => ({}); true`);
+      await b.click('button', '↓ PDF');
+      const pdf = await b.js(`window.__pdf.text()`);
+      assert.ok(pdf.includes('SAB-2026-201'), 'the PDF was built');
+      assert.equal(/configurator/i.test(pdf) || pdf.includes(LINK), false, 'the PDF shows nothing of the configurator');
+
+      // A quote with neither: no line, no box.
+      await b.click('button', '← All');
+      await b.until(`${rootText}.includes('SAB-2026-203')`);
+      await open(b, 'SAB-2026-203');
+      assert.deepEqual(await b.js(`[${BOX('.sab-from-configurator')}, ${BOX('.sab-quote-notes')}]`), [null, null]);
+
+      // Opening quotes is not an edit: the drafts are stored as sent, so the configurator can still update them.
+      await settle(900);
+      assert.deepEqual(pool.rows.get(DRAFT.id).data, jsonb(clone(DRAFT)));
+
+      // ⋮ → Duplicate: the copy is an ordinary quote — no configurator block, no source, no "Sent from…" note —
+      // so the configurator's "Send again" (which matches on configurator.designId) can only ever find the original.
+      await b.click('button', '← All');
+      await b.until(`${rootText}.includes('SAB-2026-201')`);
+      await b.js(`(() => { const card = e => { while (!e.textContent.includes('Jane Example')) e = e.parentElement; return e; };
+        [...document.querySelectorAll('button')].find(e => e.textContent.trim() === '⋮' && card(e).textContent.includes('SAB-2026-201')).click(); return true; })()`);
+      await b.click('div', 'Duplicate quote');
+      await b.until(`!!document.querySelector('.sab-rooms-panel')`);
+      let copy;
+      for (const t0 = Date.now(); !copy && Date.now() - t0 < 10000; await settle(100)) copy = [...pool.rows].find(([id]) => !seeded.includes(id));
+      assert.ok(copy, 'the copy was saved');
+      const { configurator, source, notes, ref, rooms } = copy[1].data;
+      assert.deepEqual([configurator, source, notes, ref], [undefined, undefined, undefined, 'SAB-2026-201 (copy)']);
+      assert.deepEqual(rooms.Kitchen.items.map(i => i.pricing.totalSellExVAT), DRAFT.rooms.Kitchen.items.map(i => i.pricing.totalSellExVAT), 'at the same prices');
+      assert.deepEqual(await b.js(`[${BOX('.sab-from-configurator')}, ${BOX('.sab-quote-notes')}]`), [null, null], 'and shows neither on its screen');
+      assert.deepEqual(pool.rows.get(DRAFT.id).data, jsonb(clone(DRAFT)), 'the original draft is untouched');
+      // Only the configurator's own note line goes; anything else written in the notes is kept. A quote that is not a draft is returned as it is.
+      assert.deepEqual(await b.js(`withoutConfigurator({ id: 'x', source: 'configurator', notes: 'Client wants oak\\n${NOTE}', configurator: { designId: 'd9' } })`), { id: 'x', notes: 'Client wants oak' });
+      assert.equal(await b.js(`(q => withoutConfigurator(q) === q)({ id: 'y', notes: 'Sent from the SAB configurator on 01/01/2026.' })`), true);
+      assert.deepEqual(await b.js('window.__alerts'), []);
+    } finally { b.close(); }
+  });
+});
+
 // ─── 5. every other quote behaves exactly as before ──────────────────────────
 // test/fixtures/real-shaped-quotes.json: two SYNTHETIC quotes in the shape the calculator
 // stores them (no live data) — a price-locked sold kitchen, and a legacy unlocked quote
