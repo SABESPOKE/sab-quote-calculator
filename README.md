@@ -276,3 +276,22 @@ What came out, because Cutlist does it:
 Carcass assembly (1 h), drawer prep (0.5 h) and board waste (12%) are unchanged. Price-locked quotes do not move.
 Tests: `test/cnc-cut.test.js`; the other files' regression tests put the cut, edging and bench times back as they were
 (`test/as-before.js`) and still match their baselines, so nothing else changed.
+
+## Margin page — `quoteMargin`, `actualCosts`
+
+Internal only (never in the Client View or the PDF), display only: nothing on it changes a price, a total or a lock.
+
+`quoteMargin(quote)` (pricing.js) lists every line of the total ex VAT — manufacturing, design, survey, installation,
+delivery, PM, consumables, contingency, warranty — with what it is charged, what it costs and its margin:
+
+- **Manufacturing:** the engine's real cost.
+- **Every other line:** assumed to cost 50% of its charge (Steve, 13 Nov 2026), until a real cost is recorded.
+- **Gross margin (assumed 50% on add-ons)** = total ex VAT − all those costs. At ×2 with no own-markup lines it is
+  exactly half the total; a margin override or WRP / fixed-price lines move it.
+- **Manufacturing profit** = manufacturing sell − manufacturing cost (the page's old "Gross Profit").
+
+`quote.actualCosts` (optional, `{ design?, survey?, install?, delivery?, pm?, consumables?, contingency?, warranty? }`,
+£ ex VAT, each ≥ 0; absent = none) is entered on the page. A recorded cost replaces the assumption on its line, which
+is marked "actual", and a second figure, **Gross margin (with actual costs)**, appears. A copy of a quote starts
+without them. The page's rates and margin come from the quote's own settings (its lock), not the current Settings.
+Tests: `test/margin.test.js`, and the margin-page UI test in `test/locked-quotes.test.js`.

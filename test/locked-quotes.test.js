@@ -480,6 +480,101 @@ test('UI: a configurator draft shows its header line, notes and list badges (nev
   });
 });
 
+// ─── Margin page: one table, add-ons assumed at 50%, actual costs kept on the quote (pricing.js → quoteMargin) ───
+test('UI: the margin page — every line with its cost, the headline, actual costs stored without moving a price; header from the lock; never in Client View or the PDF', {
+  skip: (!CHROME && 'Chrome not found (set CHROME_PATH)') || (typeof WebSocket === 'undefined' && 'needs Node 22+ (global WebSocket)'),
+  timeout: 180000,
+}, () => {
+  // Locked at ×2.4; the Settings the page loads say ×2. The page must use the lock's.
+  const was = P.DB.settings.margin;
+  let Q;
+  try {
+    P.DB.settings.margin = 2.4;
+    const it = { type: 'door', description: 'Shaker door', qty: 2, params: { doorType: 'SHAKER_PNT', widthMm: 500, heightMm: 720 } };
+    Q = P.lockQuote({ id: 'Q1790000000021', client: 'Jane Example', project: 'Kitchen', ref: 'SAB-2026-301', created: '13/11/2026', updated_at: '2026-11-13T09:00:00.000Z',
+      rooms: { Kitchen: { includeDesignTime: true, designRounds: 2, designHrsPerRound: 6, techDays: 1, items: [{ ...it, pricing: P.priceItem(it) }] } },
+      projectCosts: { ...P.getDefaultProjectCosts(), includeInstall: true, installDaysByRoom: { Kitchen: 2 }, includeContingency: true, includeWarranty: true } });
+  } finally { P.DB.settings.margin = was; }
+  const M = P.quoteMargin(Q), M2 = P.quoteMargin({ ...Q, actualCosts: { install: 450 } });
+  const pct = p => `${(p * 100).toFixed(1)}%`;
+  const design = P.calcDesignHrsPerRoom(Q.rooms.Kitchen, P.quoteSettings(Q));
+  const text = sel => `(document.querySelector(${JSON.stringify(sel)}) || {}).textContent || null`;
+  const ROWS = `[...document.querySelectorAll('.sab-margin-table tr[data-line]')].map(r => [r.dataset.line, r.dataset.basis, r.cells[1].textContent])`;
+  // Type a value and leave the box (headless Chrome has no window focus, so send the focusout a real click-away fires).
+  const setActual = v => `(() => { const el = document.querySelector('tr[data-line="install"] input'); el.value = ${JSON.stringify(v)};
+    el.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); return true; })()`;
+  const MARGIN_WORDS = /Gross margin|Manufacturing profit|assumed 50%|Actual cost|Cost & Margin/;
+  return withServer({ [Q.id]: Q }, async (s, pool) => {
+    const b = await browser();
+    const stored = () => pool.rows.get(Q.id).data;
+    const waitFor = async (ok, what) => { for (const t0 = Date.now(); !ok(); await settle(100)) if (Date.now() - t0 > 10000) throw new Error(`timed out: ${what}`); };
+    try {
+      await b.send('Page.navigate', { url: `${s.base}/` });
+      await b.until(`!!document.getElementById('root') && ${rootText}.includes('Active (1)')`, 90000);
+      await b.js(`window.__alerts = []; window.alert = m => { window.__alerts.push(String(m)); }; true`);
+      await b.click('div', 'Jane Example', '1 quote');
+      await b.until(`${rootText}.includes('SAB-2026-301')`);
+      await b.click('div', 'SAB-2026-301');
+      await b.until(`!!document.querySelector('.sab-items-panel')`);
+      await b.click('button', 'Margin');
+      await b.until(`${rootText}.includes('Cost & Margin Analysis')`);
+
+      // Header from the lock; the design line with the room's real hours.
+      assert.ok((await b.js(text('.sab-margin-rates'))).endsWith('Margin: 2.4× (as locked)'));
+      assert.equal(await b.js(text('.sab-margin-design')), `Design & Drawing Service (${design.designHrs} h × £50/h)`);
+      // Headline, then manufacturing profit underneath; no second figure yet.
+      assert.equal(await b.js(text('.sab-margin-assumed')), `Gross margin (assumed 50% on add-ons)${P.fmt(M.grossMargin.amount)} ${pct(M.grossMargin.pct)}`);
+      assert.equal(await b.js(text('.sab-margin-actual')), null);
+      assert.ok((await b.js(text('.sab-margin-mfg'))).includes(P.fmt(M.mfgProfit)));
+      // One table, every line: manufacturing at the engine's cost, every add-on assumed.
+      assert.deepEqual(await b.js(ROWS), M.lines.map(l => [l.key, l.basis, P.fmt(l.charged)]));
+      await b.shot('9-margin-page.png');
+
+      // An actual installation cost: that line turns "actual", the second figure appears, and only actualCosts is stored.
+      await b.js(setActual('450'));
+      await b.until(`!!document.querySelector('.sab-margin-actual')`);
+      assert.equal(await b.js(text('.sab-margin-actual')), `Gross margin (with actual costs)${P.fmt(M2.withActual.amount)} ${pct(M2.withActual.pct)}`);
+      assert.equal(await b.js(text('.sab-margin-assumed')), `Gross margin (assumed 50% on add-ons)${P.fmt(M.grossMargin.amount)} ${pct(M.grossMargin.pct)}`, 'the assumed figure stays');
+      assert.deepEqual((await b.js(ROWS)).find(r => r[0] === 'install').slice(0, 2), ['install', 'actual']);
+      await waitFor(() => stored().actualCosts, 'actual cost saved');
+      assert.deepEqual(stored().actualCosts, { install: 450 });
+      assert.deepEqual(stored().pricingLock, jsonb(clone(Q.pricingLock)), 'the lock is untouched');
+      assert.deepEqual(stored().rooms.Kitchen.items.map(i => i.pricing), jsonb(clone(Q.rooms.Kitchen.items.map(i => i.pricing))), 'no item price moved');
+      assert.deepEqual([stored().totalSellExVAT, stored().totalSellIncVAT], [P.quoteGrandTotal(Q).totalSellExVAT, P.quoteGrandTotal(Q).totalSellIncVAT], 'the total is the same');
+      await b.shot('10-margin-actual.png');
+
+      // Cleared: back to the assumption, nothing stored.
+      await b.js(setActual(''));
+      await waitFor(() => !stored().actualCosts, 'actual cost cleared');
+      await b.until(`!document.querySelector('.sab-margin-actual')`);
+      await b.js(setActual('450'));
+      await waitFor(() => stored().actualCosts, 'actual cost saved again');
+
+      // Internal only: nothing of it in the Client View or the PDF.
+      await b.click('button', 'Client View');
+      await b.until(`${rootText}.includes('Total (inc VAT)')`);
+      assert.equal(MARGIN_WORDS.test(await b.js(rootText)), false, 'Client View');
+      await b.js(`URL.createObjectURL = blob => { window.__pdf = blob; return 'blob:test'; }; window.open = () => ({}); true`);
+      await b.click('button', '↓ PDF');
+      const pdf = await b.js(`window.__pdf.text()`);
+      assert.ok(pdf.includes('SAB-2026-301'), 'the PDF was built');
+      assert.equal(MARGIN_WORDS.test(pdf), false, 'PDF');
+
+      // A copy of the quote starts with no actual costs (they were spent on the original job).
+      await b.click('button', '← All');
+      await b.until(`${rootText}.includes('SAB-2026-301')`);
+      await b.click('button', '⋮');
+      await b.click('div', 'Duplicate quote');
+      let copy;
+      for (const t0 = Date.now(); !copy && Date.now() - t0 < 10000; await settle(100)) copy = [...pool.rows].find(([id]) => id !== Q.id);
+      assert.ok(copy, 'the copy was saved');
+      assert.equal(copy[1].data.actualCosts, undefined);
+      assert.deepEqual(stored().actualCosts, { install: 450 }, 'the original keeps its own');
+      assert.deepEqual(await b.js('window.__alerts'), []);
+    } finally { b.close(); }
+  });
+});
+
 // ─── 5. every other quote behaves exactly as before ──────────────────────────
 // test/fixtures/real-shaped-quotes.json: two SYNTHETIC quotes in the shape the calculator
 // stores them (no live data) — a price-locked sold kitchen, and a legacy unlocked quote

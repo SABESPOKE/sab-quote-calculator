@@ -633,7 +633,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script src="/pricing.js?v=sab-v63"></script>
+  <script src="/pricing.js?v=sab-v64"></script>
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useCallback, useMemo } = React;
 
@@ -1997,6 +1997,7 @@ function SABQuoteTool() {
     const orig = quotes[id];
     if (!orig) return;
     const clone = withoutConfigurator(JSON.parse(JSON.stringify(orig)));   // a copy is never the configurator's draft
+    delete clone.actualCosts;   // costs recorded against the original job are not the copy's
     const newId = "Q" + Date.now();
     clone.id = newId;
     clone.status = "active";
@@ -4611,47 +4612,96 @@ function SABQuoteTool() {
         </div>
       )}
 
-      {/* ── MARGIN VIEW ── */}
+      {/* ── MARGIN VIEW ── internal only: nothing here is in the Client View or the PDF */}
       {view === "margin" && activeQuote && (() => {
-        const t = quoteTotals(activeQuote);
+        // Every figure from the quote's own settings (its lock, when price-locked) — never the current Settings.
+        const M = quoteMargin(activeQuote);
+        const pct = p => `${(p * 100).toFixed(1)}%`;
+        const tag = basis => ({ fontSize:8, letterSpacing:"0.08em", textTransform:"uppercase", marginLeft:6, padding:"1px 5px", borderRadius:3, whiteSpace:"nowrap",
+          border:`1px solid ${basis === "actual" ? "#7a9f7a" : "#d8d3cc"}`, color: basis === "actual" ? "#4f7a4f" : "#999999" });
+        const tableCost = M.lines.reduce((s, l) => s + l.cost, 0);
+        // A recorded cost for an add-on line, £ ex VAT (blank = none: the 50% assumption). Stored on the quote as
+        // actualCosts; it changes no price and no total.
+        const setActualCost = (key, raw) => {
+          const n = String(raw).trim() === "" ? null : Number(raw);
+          const q = { ...quotes[activeQuoteId] }, a = { ...(q.actualCosts || {}) };
+          if (n === null || !Number.isFinite(n) || n < 0) delete a[key]; else a[key] = Math.round(n * 100) / 100;
+          if (JSON.stringify(a) === JSON.stringify(q.actualCosts || {})) return;   // nothing changed: no save
+          if (Object.keys(a).length) q.actualCosts = a; else delete q.actualCosts;
+          saveQuotes({ ...quotes, [activeQuoteId]: q });
+        };
         return (
           <div style={{ maxWidth:920, margin:"0 auto", padding:"40px 24px" }}>
             <div style={{ fontSize:10, letterSpacing:"0.15em", color:"#c8a96e", textTransform:"uppercase", marginBottom:5 }}>Internal — Not for Client</div>
             <div style={{ fontSize:22, marginBottom:8 }}>{activeQuote.client} — Cost &amp; Margin Analysis</div>
-            <div style={{ fontSize:10, color:"#777777", marginBottom:28 }}>Effective hourly rate: £{DB.settings.labourRate}/hr direct + £{DB.settings.overheadRate}/hr overhead = £{DB.settings.labourRate + DB.settings.overheadRate}/hr total · Margin: {DB.settings.margin}×</div>
+            <div className="sab-margin-rates" style={{ fontSize:10, color:"#777777", marginBottom:22 }}>Effective hourly rate: £{pricingS.labourRate}/hr direct + £{pricingS.overheadRate}/hr overhead = £{pricingS.labourRate + pricingS.overheadRate}/hr total · Margin: {activeQuote.marginOverride ?? pricingS.margin}×{isPricingLock(activeQuote.pricingLock) ? " (as locked)" : ""}</div>
 
-            {/* Project Costs breakdown */}
-            {(() => {
-              const t = quoteTotals(activeQuote);
-              const costRows = [
-                ["Spray Finishing", "(built into door pricing × 2.25 margin)", null, true],
-                ["Site Survey",        fmt(t.survey),      t.survey > 0],
-                ["Installation",       fmt(t.install),     t.install > 0],
-                ["Delivery & Transport", fmt(t.delivery),  t.delivery > 0],
-                ["Project Management", fmt(t.pm),          t.pm > 0],
-                ["Consumables & Fixings", fmt(t.consumables), t.consumables > 0],
-                ["Contingency",        fmt(t.contingency), t.contingency > 0],
-                ["Warranty & Aftercare", fmt(t.warranty),  t.warranty > 0],
-              ];
-              return (
-                <div style={{ background:"#f5f5f5", border:"1px solid #d8d3cc", borderRadius:6, padding:"14px 18px", marginBottom:24 }}>
-                  <div style={{ fontSize:10, letterSpacing:"0.12em", color:"#c8a96e", textTransform:"uppercase", marginBottom:10 }}>Project Costs (configure in Build view)</div>
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:"6px 28px" }}>
-                    {costRows.map(([label, val, active]) => (
-                      <div key={label} style={{ display:"flex", gap:8, alignItems:"baseline", minWidth:220 }}>
-                        <span style={{ fontSize:10, color: active ? "#777777" : "#888888" }}>{label}</span>
-                        <span style={{ fontSize:11, color: active ? "#c8a96e" : "#d8d3cc", marginLeft:"auto" }}>{val}</span>
-                      </div>
-                    ))}
+            {/* Headline */}
+            <div className="sab-margin-headline" style={{ background:"#f0eeeb", border:"1px solid #c8a96e", borderRadius:8, padding:"18px 22px", marginBottom:18 }}>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:"14px 40px" }}>
+                {[["Gross margin (assumed 50% on add-ons)", M.grossMargin, "sab-margin-assumed"], M.withActual && ["Gross margin (with actual costs)", M.withActual, "sab-margin-actual"]].filter(Boolean).map(([label, g, cls]) => (
+                  <div key={cls} className={cls}>
+                    <div style={{ fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase", marginBottom:3 }}>{label}</div>
+                    <div style={{ fontSize:24, color:"#7a9f7a" }}>{fmt(g.amount)} <span style={{ fontSize:14, color:"#777777" }}>{pct(g.pct)}</span></div>
                   </div>
-                </div>
-              );
-            })()}
+                ))}
+              </div>
+              <div className="sab-margin-mfg" style={{ marginTop:12, fontSize:11, color:"#777777" }}>Manufacturing profit <span style={{ fontSize:13, color:"#1a1a1a" }}>{fmt(M.mfgProfit)}</span> · manufacturing sell − manufacturing cost</div>
+            </div>
 
+            {/* Every line: charged, cost, margin — and the actual cost, once known */}
+            <div style={{ overflowX:"auto", marginBottom:8 }}>
+              <table className="sab-margin-table" style={{ width:"100%", borderCollapse:"collapse", fontSize:11, background:"#f5f5f5", border:"1px solid #d8d3cc" }}>
+                <thead>
+                  <tr style={{ fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase", textAlign:"right" }}>
+                    <th style={{ textAlign:"left", padding:"10px 14px", fontWeight:400 }}>Line</th>
+                    <th style={{ padding:"10px 8px", fontWeight:400 }}>Charged</th>
+                    <th style={{ padding:"10px 8px", fontWeight:400 }}>Cost</th>
+                    <th style={{ padding:"10px 8px", fontWeight:400 }}>Margin</th>
+                    <th style={{ padding:"10px 14px", fontWeight:400 }}>Actual cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {M.lines.map(l => (
+                    <tr key={l.key} data-line={l.key} data-basis={l.basis} style={{ borderTop:"1px solid #e0ddd8", color: l.charged || l.actualCost !== null ? "#1a1a1a" : "#aaaaaa" }}>
+                      <td style={{ padding:"8px 14px" }}>{l.label}</td>
+                      <td style={{ padding:"8px", textAlign:"right" }}>{fmt(l.charged)}</td>
+                      <td style={{ padding:"8px", textAlign:"right", whiteSpace:"nowrap" }}>{fmt(l.cost)}<span style={tag(l.basis)}>{l.basis === "assumed" ? "assumed 50%" : l.basis}</span></td>
+                      <td style={{ padding:"8px", textAlign:"right", color:"#7a9f7a" }}>{fmt(l.margin)}</td>
+                      <td style={{ padding:"5px 14px", textAlign:"right" }}>
+                        {l.key === "mfg" ? <span style={{ color:"#aaaaaa" }}>—</span> : (
+                          <input key={`${activeQuoteId}-${l.key}-${l.actualCost}`} type="number" min="0" step="0.01" inputMode="decimal" placeholder="—"
+                            defaultValue={l.actualCost ?? ""} disabled={ro} aria-label={`Actual cost: ${l.label}`}
+                            onBlur={e => setActualCost(l.key, e.target.value)} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+                            style={{ ...inp, width:96, textAlign:"right", fontSize:11, padding:"4px 6px" }} />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop:"1px solid #c8a96e", fontWeight:600 }}>
+                    <td style={{ padding:"9px 14px" }}>Total ex VAT</td>
+                    <td style={{ padding:"9px 8px", textAlign:"right", color:"#c8a96e" }}>{fmt(M.totalExVAT)}</td>
+                    <td style={{ padding:"9px 8px", textAlign:"right" }}>{fmt(tableCost)}</td>
+                    <td style={{ padding:"9px 8px", textAlign:"right", color:"#7a9f7a" }}>{fmt(M.totalExVAT - tableCost)}</td>
+                    <td />
+                  </tr>
+                  <tr style={{ color:"#777777" }}><td style={{ padding:"4px 14px" }}>VAT ({+(pricingS.vat * 100).toFixed(2)}%)</td><td style={{ padding:"4px 8px", textAlign:"right" }}>{fmt(M.vat)}</td><td colSpan={3} /></tr>
+                  <tr style={{ color:"#1a1a1a" }}><td style={{ padding:"4px 14px 10px" }}>Total inc VAT</td><td style={{ padding:"4px 8px 10px", textAlign:"right" }}>{fmt(M.totalIncVAT)}</td><td colSpan={3} /></tr>
+                </tfoot>
+              </table>
+            </div>
+            <div style={{ fontSize:10, color:"#999999", marginBottom:28, lineHeight:1.5 }}>
+              Manufacturing cost is the engine's (spray finishing included). Each add-on is assumed to cost 50% of its charge until an actual cost is entered; actual costs are kept on this quote and never change a price. Project lines are set in the Build view.
+            </div>
+
+            <div style={{ fontSize:10, letterSpacing:"0.12em", color:"#c8a96e", textTransform:"uppercase", marginBottom:10 }}>By room</div>
             {Object.entries(activeQuote.rooms || {}).map(([room, data]) => {
               const rCost = data.items.reduce((s,i) => s+(i.pricing?.totalCost||0), 0);
               const rSell = data.items.reduce((s,i) => s+(i.pricing?.totalSellExVAT||0), 0);
               const rDTCalc = calcDesignTimePerRoom(data, pricingS); const rDT = data.includeDesignTime !== false ? rDTCalc : 0;
+              const rDesignHrs = calcDesignHrsPerRoom(data, pricingS).designHrs, rDesignRate = data.designRate ?? pricingS.designHourlyRate;
               return (
                 <div key={room} style={{ background:"#f0eeeb", border:"1px solid #d8d3cc", borderRadius:8, marginBottom:14, overflow:"hidden" }}>
                   <div style={{ padding:"13px 18px", background:"#f0eeeb", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -4676,7 +4726,7 @@ function SABQuoteTool() {
                   ))}
                   {rDT > 0 && (
                     <div style={{ padding:"9px 18px", borderTop:"1px solid #1a1815", display:"flex", justifyContent:"space-between", fontSize:11 }}>
-                      <span style={{ color:"#888888", fontStyle:"italic" }}>Design &amp; Drawing Service (40hrs × £50/hr)</span>
+                      <span className="sab-margin-design" style={{ color:"#888888", fontStyle:"italic" }}>Design &amp; Drawing Service ({+rDesignHrs.toFixed(2)} h × £{rDesignRate}/h)</span>
                       <div style={{ display:"flex", gap:18 }}>
                         <span style={{ color:"#999999", width:80, textAlign:"right" }}>{fmt(rDT)}</span>
                         <span style={{ color:"#888888", width:80, textAlign:"right" }}>{fmt(rDT)}</span>
@@ -4687,31 +4737,6 @@ function SABQuoteTool() {
                 </div>
               );
             })}
-            <div style={{ background:"#f0eeeb", border:"1px solid #c8a96e", borderRadius:8, padding:"18px 22px", marginTop:8 }}>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:16, paddingBottom:16, borderBottom:"1px solid #d8d3cc" }}>
-                {[["Mfg Cost (inc spray)",fmt(t.mfgCost),"#999999"],["Mfg Sell ex VAT",fmt(t.mfgSellExVAT),"#c8a96e"],["Design Fee",fmt(t.designFee),"#888888"],["Mfg Margin",`${t.margin.toFixed(2)}×`,"#7a9f7a"]].map(([l,v,c]) => (
-                  <div key={l}><div style={{ fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase", marginBottom:3 }}>{l}</div><div style={{ fontSize:16, color:c }}>{v}</div></div>
-                ))}
-              </div>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:16, marginBottom:16, paddingBottom:16, borderBottom:"1px solid #d8d3cc" }}>
-                {[
-                  t.survey > 0      && ["Site Survey",      fmt(t.survey),      "#888888"],
-                  t.install > 0     && ["Installation",     fmt(t.install),     "#888888"],
-                  t.delivery > 0    && ["Delivery",         fmt(t.delivery),    "#888888"],
-                  t.pm > 0          && ["Project Mgmt",     fmt(t.pm),          "#888888"],
-                  t.consumables > 0 && ["Consumables",      fmt(t.consumables), "#888888"],
-                  t.contingency > 0 && ["Contingency",      fmt(t.contingency), "#c8a96e"],
-                  t.warranty > 0    && ["Warranty",         fmt(t.warranty),    "#888888"],
-                ].filter(Boolean).map(([l,v,c]) => (
-                  <div key={l}><div style={{ fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase", marginBottom:3 }}>{l}</div><div style={{ fontSize:15, color:c }}>{v}</div></div>
-                ))}
-              </div>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:16 }}>
-                {[["Total ex VAT",fmt(t.totalExVAT),"#c8a96e"],["VAT (20%)",fmt(t.vat),"#777777"],["Total inc VAT",fmt(t.totalIncVAT),"#1a1a1a"],["Gross Profit",fmt(t.mfgSellExVAT-t.mfgCost),"#7a9f7a"]].map(([l,v,c]) => (
-                  <div key={l}><div style={{ fontSize:9, letterSpacing:"0.12em", color:"#999999", textTransform:"uppercase", marginBottom:3 }}>{l}</div><div style={{ fontSize:19, color:c }}>{v}</div></div>
-                ))}
-              </div>
-            </div>
           </div>
         );
       })()}
