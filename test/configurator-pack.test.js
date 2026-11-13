@@ -117,17 +117,21 @@ function compareQuote(q) {
   return out;
 }
 
-test('regression: with every new field absent, every item and quote prices exactly as master', { skip: !OLD && `baseline ${BASE_REF} not loadable` }, () => {
+// The Cutlist change moved the cut, edging and three bench times by design (test/as-before.js). Put back as they
+// were, the engine must still price exactly as the baseline: nothing else moved.
+const noCnc = fn => require('./as-before.js')(P, OLD, fn);
+
+test('regression: with every new field absent, every item and quote prices exactly as master', { skip: !OLD && `baseline ${BASE_REF} not loadable` }, () => noCnc(() => {
   const items = corpus();
   assert.ok(items.length > 200, `corpus too small (${items.length})`);
   assert.deepEqual(compareQuote({ rooms: { All: { items } } }), []);
   assert.deepEqual(compareQuote({ marginOverride: 1.6, rooms: { A: { items: items.slice(0, 40) }, B: { items: items.slice(40, 90) } } }), []);
-});
+}));
 
 const SNAP = process.env.QUOTES_SNAPSHOT;
 test('regression: every saved quote prices exactly as master', { skip: (!OLD && `baseline ${BASE_REF} not loadable`) || (!SNAP && 'QUOTES_SNAPSHOT not set') }, () => {
   const quotes = Object.values(JSON.parse(fs.readFileSync(SNAP, 'utf8')));
-  const diffs = quotes.flatMap(q => compareQuote(q).map(d => `${q.ref || q.id}: ${d}`));
+  const diffs = noCnc(() => quotes.flatMap(q => compareQuote(q).map(d => `${q.ref || q.id}: ${d}`)));
   console.log(`[configurator-pack regression] ${quotes.length} quotes, ${diffs.length} differences (baseline ${BASE_REF})`);
   assert.deepEqual(diffs, []);
 });
@@ -177,16 +181,18 @@ test('channel rail: board + spray per strip, bench labour per metre, ONE setup p
   const mat = P.DB.materials.MAT_MDF_FH_22;
   for (const { cab, rails } of Object.values(HL)) {
     const without = cabinet(cab), withRail = cabinet({ ...cab, channelRails: RAILS(rails) });
-    let expected = 0, metres = 0;
+    let expected = 0, metres = 0, board = 0;
     for (const r of rails) {
       const girth = { L: 92, C: 134, TALL_C: 154 }[r.profile];
       metres += r.lengthMm / 1000;
-      expected += (girth / 1000) * (r.lengthMm / 1000) * mat.costPerM2 * mat.wasteFactor
-        + P.calcSprayFinishCost({ widthMm: girth, heightMm: r.lengthMm, finishType: 'primed', surfaceType: 'panel' }).costPerDoor;
+      board += (girth / 1000) * (r.lengthMm / 1000) * mat.costPerM2 * mat.wasteFactor;
+      expected += P.calcSprayFinishCost({ widthMm: girth, heightMm: r.lengthMm, finishType: 'primed', surfaceType: 'panel' }).costPerDoor;
     }
-    expected += (metres * 15 + 10) / 60 * ER;
+    expected += board + (metres * 15 + 10) / 60 * ER;
     assert.ok(near(withRail.breakdown.channelRail, expected), `${withRail.breakdown.channelRail} vs ${expected}`);
-    assert.ok(near(withRail.totalCost - without.totalCost, expected));
+    // The rails' board is Cutlist's: its cut (the board again) is on the cabinet's cnc line.
+    assert.ok(near(withRail.breakdown.cnc - without.breakdown.cnc, board));
+    assert.ok(near(withRail.totalCost - without.totalCost, expected + board));
     assert.ok(near(withRail.totalSellExVAT, withRail.totalCost * P.DB.settings.margin));
     assert.ok(near(withRail.breakdown.channelRailHrs, (metres * 15 + 10) / 60, 1e-3));
     // Doors and drawer lines unchanged (the configurator's split-tall sub-lines read only those).

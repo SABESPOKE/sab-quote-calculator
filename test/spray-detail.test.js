@@ -103,10 +103,14 @@ function compareQuote(q) {
   return { items, out };
 }
 
-test('regression: synthetic matrix prices identically to the baseline engine', { skip: !OLD && `baseline ${BASE_REF} not loadable` }, () => {
+// The Cutlist change moved the cut, edging and three bench times by design (test/as-before.js). Put back as they
+// were, the engine must still price exactly as the baseline: nothing else moved.
+const noCnc = fn => require('./as-before.js')(NEW, OLD, fn);
+
+test('regression: synthetic matrix prices identically to the baseline engine', { skip: !OLD && `baseline ${BASE_REF} not loadable` }, () => noCnc(() => {
   const { out } = compareQuote({ rooms: { All: { items: matrix() } } });
   assert.deepEqual(out, []);
-});
+}));
 
 const SNAP = process.env.QUOTES_SNAPSHOT;
 test('regression: every saved quote prices identically to the baseline engine', { skip: (!OLD && `baseline ${BASE_REF} not loadable`) || (!SNAP && 'QUOTES_SNAPSHOT not set') }, () => {
@@ -114,7 +118,7 @@ test('regression: every saved quote prices identically to the baseline engine', 
   let items = 0;
   const diffs = [];
   for (const q of quotes) {
-    const r = compareQuote(q);
+    const r = noCnc(() => compareQuote(q));
     items += r.items;
     r.out.forEach(d => diffs.push(`${q.ref || q.id}: ${d}`));
   }

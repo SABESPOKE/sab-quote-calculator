@@ -61,7 +61,8 @@ test('regression: every cabinet without inframeFront prices exactly as the basel
   cab({ widthMm: 600, heightMm: 770, depthMm: 560 });         // engine defaults throughout
   // priceItem without its pricedWith stamp (the engine version moves by design).
   const priced = (E, item) => { const { pricedWith, ...p } = E.priceItem(item); return p; };
-  for (const item of items) assert.deepStrictEqual(priced(P, item), priced(OLD, item), JSON.stringify(item.params));
+  // (with the Cutlist cut, edging and bench times put back as they were — test/as-before.js: they moved by design)
+  require('./as-before.js')(P, OLD, () => { for (const item of items) assert.deepStrictEqual(priced(P, item), priced(OLD, item), JSON.stringify(item.params)); });
   assert.ok(items.length > 500);
 });
 
@@ -86,7 +87,7 @@ test('painted shaker: solid tulipwood 28 doors in a tulipwood 28 frame on butt h
   assert.equal(b.hangHrs, 1);
   assert.ok(near(b.hanging, 2 * 0.5 * P.er()));
   // The total is its lines; hours and the spray split include the frame.
-  assert.ok(near(r.totalCost, b.carcassMaterial + b.carcassLabour + b.carcassHardware + b.doors + b.drawers + b.drawerFronts + b.frame + b.frameFinish + b.hanging));
+  assert.ok(near(r.totalCost, b.carcassMaterial + b.carcassLabour + b.carcassHardware + b.doors + b.drawers + b.drawerFronts + b.frame + b.frameFinish + b.hanging + b.cnc));
   assert.equal(b.totalHrs, +(b.assemblyHrs + b.doorHrs + b.frameHrs + b.finishHrs + b.hangHrs).toFixed(3));
   assert.ok(near(b.finishHrs, b.sprayDetail.parts.door.totalHrs + b.sprayDetail.parts.frame.totalHrs, 1e-3));
   assert.equal(b.sprayDetail.parts.frame.totalHrs, b.frameFinishHrs);

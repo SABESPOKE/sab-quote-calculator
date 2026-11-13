@@ -33,17 +33,26 @@ const DB = {
     channelRailSetupMins: 10,   // one setup per cabinet that has any rail (not per strip)
     // ── In-frame (cabinet param inframeFront) ─────────────────────────────────
     buttHingeHangMins: 30,      // bench mins to hang one in-frame door on butt hinges (Steve, 12 Nov 2026)
-    // ── CNC cutting, as a multiple of the sheet's own material cost (Steve, 12 Nov 2026: cutting ≈ the sheet cost
-    //    again — Cutlist charges about sheet price × 2 in total). Applied to an internal drawer's plain front ONLY:
-    //    every other sheet part is priced as before (its sheet at £/m² × waste, cutting inside its labour hours). ──
-    cncPerSheetCost: 1,
+    // ── Cutlist (Steve, 12 Nov 2026). All sheet cutting is outsourced: Cutlist delivers every part cut, edged, drilled
+    //    and jointed, ready to assemble, and charges about the sheet price again for it (sheet × 2 in total). So every
+    //    board Cutlist supplies carries a cut = its sheet cost (board + waste: they charge whole sheets) × cutlistCut,
+    //    on its own line (breakdown.cnc), never inside the material: carcass board, drawer box board, internal drawer
+    //    fronts, end panels, fillers, sheet shelves, channel-rail board. NOT doors or external drawer fronts (made
+    //    in-house), nor solid timber, face frames, veneer premiums, finishing or labour. Edging is inside the cut: no
+    //    edging tape or labour is charged anywhere (EDGEBAND_TYPES). ──
+    cutlistCut: 1,              // × the sheet cost. 1 = the sheet again; 0 = no cut
+    // Bench time on a part that arrives cut and edged: sand, fit and finish prep only (each was cut + sand + edge band).
+    endPanelBenchHrs: 0.25,     // per end panel (was 0.5 h)
+    endPanelEdgeHrsPerM: 0,     // edge banding an end panel's exposed edges in-house, h per metre (was 0.04): 0, Cutlist edges it
+    shelfBenchHrs: 0.25,        // per floating shelf (was 0.5 h); a box shelf's assembly and solid-timber prep are on top, as before
+    fillerBenchHrs: 0.10,       // per filler (was 0.20 h)
     // ── Project-level cost defaults (all adjustable) ──────────────────────────
     surveyFee: 250,             // £ flat — site survey visit (per project)
     installDayRate: 350,        // £/day — billed PER FITTER per day on site
     fittingHoursPerPersonPerDay: 7.5,  // effective fitting hours per fitter per day (8h - 0.5h clean-down)
     deliveryFee: 200,           // £ flat — delivery & transport (per project)
     pmPercent: 6,               // % of mfg sell ex VAT — project management
-    consumablesPerItem: 60,     // £ per line item — fixings, glue, edge tape, abrasives
+    consumablesPerItem: 60,     // £ per line item — fixings, glue, abrasives
     contingencyPercent: 7.5,    // % uplift on project subtotal (optional)
     warrantyPercent: 1.5,       // % of total ex VAT — warranty & aftercare allowance (optional)
     // ── WRP Mouldings ─────────────────────────────────────────────────────────
@@ -170,7 +179,7 @@ const DB = {
   },
   drawerTypes: {
     "DRW_SHEET":     { name: "Sheet Material Box (matches carcass)", materialCostPer: 0, labourHrs: 0.3, usesCarcassMaterial: true },
-    "DRW_BIRCH_PLY": { name: "Birch Ply Box",    materialCostPer: 25, labourHrs: 0.5 },
+    "DRW_BIRCH_PLY": { name: "Birch Ply Box",    materialCostPer: 25, labourHrs: 0.5, sheetMaterial: true },   // (sheetMaterial: board Cutlist supplies, so it carries the Cutlist cut)
     "DRW_SOLID_OAK": { name: "Solid Oak Box",    materialCostPer: 60, labourHrs: 4.0 },
     "DRW_SOLID_TUL": { name: "Solid Tulip Box",  materialCostPer: 35, labourHrs: 4.0 },
     "DRW_SOLID_WAL": { name: "Solid Walnut Box", materialCostPer: 90, labourHrs: 4.0 },
@@ -355,13 +364,17 @@ function inframeDefaults(slab, timber) {
 }
 
 // ─── EDGEBAND TYPES ───────────────────────────────────────────────────────────
+// Edging is Cutlist's (Steve, 12 Nov 2026): every part arrives edged, inside the Cutlist cut, so NOTHING is charged
+// here — no tape, no labour. The tape is a specification only: the edge Cutlist is asked to apply, with its run in the
+// materials list. (Before: oak veneer 0.85/m + 0.04 h/m, 2 mm oak 2.20 + 0.08, ABS 0.45 + 0.03, melamine 0.35 + 0.03,
+// iron-on oak 0.75 + 0.03.)
 const EDGEBAND_TYPES = {
-  "EDGE_NONE":        { name: "None",                    costPerM: 0,    labourHrsPerM: 0    },
-  "EDGE_OAK_05":      { name: "0.5mm Oak Veneer",        costPerM: 0.85, labourHrsPerM: 0.04 },
-  "EDGE_OAK_2MM":     { name: "2mm Solid Oak",           costPerM: 2.20, labourHrsPerM: 0.08 },
-  "EDGE_ABS_PAINT":   { name: "Paintable ABS 0.4mm",     costPerM: 0.45, labourHrsPerM: 0.03 },
-  "EDGE_MELAMINE":    { name: "Melamine Matching",       costPerM: 0.35, labourHrsPerM: 0.03 },
-  "EDGE_IRON_OAK":    { name: "Iron-on Oak 0.5mm",       costPerM: 0.75, labourHrsPerM: 0.03 },
+  "EDGE_NONE":        { name: "None",                    costPerM: 0, labourHrsPerM: 0 },
+  "EDGE_OAK_05":      { name: "0.5mm Oak Veneer",        costPerM: 0, labourHrsPerM: 0 },
+  "EDGE_OAK_2MM":     { name: "2mm Solid Oak",           costPerM: 0, labourHrsPerM: 0 },
+  "EDGE_ABS_PAINT":   { name: "Paintable ABS 0.4mm",     costPerM: 0, labourHrsPerM: 0 },
+  "EDGE_MELAMINE":    { name: "Melamine Matching",       costPerM: 0, labourHrsPerM: 0 },
+  "EDGE_IRON_OAK":    { name: "Iron-on Oak 0.5mm",       costPerM: 0, labourHrsPerM: 0 },
 };
 
 // Materials that DON'T need edgebanding (natural ply edge is fine / pre-edged)
@@ -424,6 +437,8 @@ try {
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 const fmt = n => `£${(n || 0).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const er = () => DB.settings.labourRate + DB.settings.overheadRate; // effective hourly rate £87/hr
+// The Cutlist cut of a board Cutlist supplies, from its sheet cost with waste (DB.settings.cutlistCut; 0 or unset = no cut).
+const cncCut = sheetCost => sheetCost * Math.max(0, DB.settings.cutlistCut ?? 0);
 
 function hingeCount(doorHeightMm) {
   if (doorHeightMm <= 900) return 2;
@@ -488,7 +503,7 @@ function totalInstallDays(pc) {
 // captured at lock time. Engine/Settings changes reach only new quotes, edited items
 // and a deliberate "Reprice to current pricing…". Hours stay live (withPricingStatus).
 // Bump ENGINE_VERSION with any pricing.js change that can move a price.
-const ENGINE_VERSION = "2026-11-13";
+const ENGINE_VERSION = "2026-11-14";
 
 // Short fingerprint (djb2) of the pricing tables + settings an item is priced with.
 function settingsFingerprint() {
@@ -884,6 +899,7 @@ function calcDoorCost({ doorType, widthMm, heightMm, qty = 1, hingeCost = 0, han
   } else {
     materialCost = area * (dt.baseCostPerM2 + materialFinishPerM2);
   }
+  // (No Cutlist cut on a door or an external drawer front: they are made in-house — Steve, 12 Nov 2026.)
   const labourHours = (area * dt.extraLabourPerM2) + (dt.baseLabourHrs || 0.75);
   const labourCost = labourHours * er();
   // Area-based spray finish: faces + edges + quirks (shaker profile), primer + topcoats separately
@@ -960,7 +976,9 @@ function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 5
   }
   const labourCost = dt.labourHrs * er();
   const runnerCost = runnerCostOverride !== null ? runnerCostOverride : 40;
-  const totalCostPerDrawer = materialCost + labourCost + runnerCost;
+  // A box in board Cutlist supplies (the sheet box, the ply box) carries the Cutlist cut; a solid-timber box does not.
+  const cncCost = (dt.usesCarcassMaterial || dt.sheetMaterial) ? cncCut(materialCost) : 0;
+  const totalCostPerDrawer = materialCost + labourCost + runnerCost + cncCost;
   const sellExVAT = totalCostPerDrawer * margin;
   return {
     costPerUnit: totalCostPerDrawer,
@@ -969,6 +987,7 @@ function calcDrawerCost({ drawerType, widthMm = 500, heightMm = 200, depthMm = 5
     totalSellExVAT: sellExVAT * qty,
     totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
     breakdown: { materialCost, labourCost, runnerCost,
+      ...(cncCost ? { cnc: cncCost } : {}),  // the Cutlist cut of the box's board, per drawer
       drawerHrs: dt.labourHrs,              // drawer-box-making labour, person-hours per unit
       totalHrs: +(+dt.labourHrs).toFixed(3) },
   };
@@ -985,6 +1004,7 @@ function calcCabinetCost({
   doorHeightsMm,          // actual height of each door leaf (doorCount leaves across, in rows); absent: carcass height − 6
   drawerCount = 0, drawerType,   // unset: DRW_SHEET, the sheet box in this cabinet's carcass board (it was the birch ply box)
   drawerPosition = "external",   // "internal": drawers behind doors — a plain front in the carcass board, not one in the door finish
+  drawerBoxMaterialKey,          // the board of a sheet drawer box and of an internal front; absent: the carcass board
   drawerFrontHeightsMm,   // actual height of each drawer front, one per drawer; absent: an equal share
   runnerKey = "HW_RUN_BLUM_SM",
   hingeKey = "HW_HINGE_SM",
@@ -1037,6 +1057,13 @@ function calcCabinetCost({
   const mainArea    = (sidesArea + topBotArea + shelfArea) * (mat.wasteFactor || 1.15);
   const backArea    = (widthMm / 1000) * (heightMm / 1000) * (backMat.wasteFactor || 1.10);
   const carcassMaterialCost = mainArea * mat.costPerM2 + backArea * backMat.costPerM2;
+  // The Cutlist cut of every board of this cabinet that Cutlist supplies, gathered on its own line (breakdown.cnc):
+  // the carcass, the drawer boxes, internal drawer fronts and channel-rail board — each of those lines is WITHOUT its
+  // cut. Doors, external drawer fronts and face frames are made in-house: no cut.
+  let cncCost = cncCut(carcassMaterialCost);
+  // The board of a sheet drawer box and of an internal drawer's plain front: the carcass board unless one is named.
+  const boxKey = drawerBoxMaterialKey && DB.materials[drawerBoxMaterialKey] ? drawerBoxMaterialKey : carcassMaterialKey;
+  const boxMat = DB.materials[boxKey];
 
   // Assembly labour: scale from DB.settings.carcassBaseHrs for a reference 600×720×560 cabinet
   const refSurfMM2 = 2*(720*560) + 2*(600*560) + 600*720; // 1,910,400 mm²
@@ -1092,16 +1119,18 @@ function calcCabinetCost({
   let drawerHrs = 0; // drawer-box-making labour, person-hours per cabinet (all drawers)
   if (drawerCount > 0 && drawerType && DB.drawerTypes[drawerType]) {
     const runner = DB.hardware.runners[runnerKey] || DB.hardware.runners["HW_RUN_BLUM_SM"];
-    const dp = calcDrawerCost({ drawerType, widthMm: widthMm - 26, heightMm: DRAWER_BOX_HEIGHT_MM, depthMm: depthMm - 50, qty: drawerCount, runnerCostOverride: runner.costPair, carcassMaterialKey });
-    drawersCost = dp ? dp.totalCost : 0;
+    const dp = calcDrawerCost({ drawerType, widthMm: widthMm - 26, heightMm: DRAWER_BOX_HEIGHT_MM, depthMm: depthMm - 50, qty: drawerCount, runnerCostOverride: runner.costPair, carcassMaterialKey: boxKey });
+    const boxCnc = dp ? (dp.breakdown.cnc || 0) * drawerCount : 0;
+    drawersCost = dp ? dp.totalCost - boxCnc : 0;
+    cncCost += boxCnc;
     drawerHrs = dp ? dp.breakdown.drawerHrs * drawerCount : 0;
   }
 
   // ── Drawer fronts — a cost of their own, apart from the boxes above (breakdown.drawers / .drawerFronts).
   //    External (the default): a front in the door finish, priced like a door.
-  //    Internal (drawerPosition "internal" — drawers behind doors): a plain front in the CARCASS board, its sheet
-  //    and the CNC cut of it only: no door finish, no spray, no handle, no making labour (it goes on with the box,
-  //    inside the box's assembly time). ──
+  //    Internal (drawerPosition "internal" — drawers behind doors): a plain front in the box's board (the CARCASS
+  //    board unless drawerBoxMaterialKey names one), its sheet and the Cutlist cut of it only: no door finish, no spray,
+  //    no handle, no making labour (it goes on with the box, inside the box's assembly time). ──
   let drawerFrontsCost = 0;
   let drawerFrontHrs = 0;       // drawer-front-making labour (made like doors), per cabinet
   let drawerFrontFinishHrs = 0; // spray finishing labour on drawer fronts, per cabinet
@@ -1114,8 +1143,9 @@ function calcCabinetCost({
     // height when sent (drawerFrontHeightsMm), else the box's.
     const frontW = Math.max(0, widthMm - 2 * t - 4);
     const heights = Array.isArray(drawerFrontHeightsMm) && drawerFrontHeightsMm.length > 0 ? drawerFrontHeightsMm : Array(drawerCount).fill(DRAWER_BOX_HEIGHT_MM);
-    for (const fh of heights) internalFrontSheetM2 += (frontW / 1000) * (fh / 1000) * (mat.wasteFactor || 1.15);
-    drawerFrontsCost = internalFrontSheetM2 * mat.costPerM2 * (1 + DB.settings.cncPerSheetCost);
+    for (const fh of heights) internalFrontSheetM2 += (frontW / 1000) * (fh / 1000) * (boxMat.wasteFactor || 1.15);
+    drawerFrontsCost = internalFrontSheetM2 * boxMat.costPerM2;
+    cncCost += cncCut(drawerFrontsCost);
   } else if (drawerCount > 0 && doorType && DB.doorTypes[doorType]) {
     // Each front's actual height when given (drawerFrontHeightsMm — handleless fronts), else an equal share.
     if (Array.isArray(drawerFrontHeightsMm) && drawerFrontHeightsMm.length > 0) drawerFrontHeights.push(...drawerFrontHeightsMm);
@@ -1233,6 +1263,7 @@ function calcCabinetCost({
 
   // ── Handleless channel rails, per metre (its own line, channelRail) ──
   const rail = channelRails ? calcChannelRailCost(channelRails) : null;
+  if (rail) cncCost += cncCut(rail.material);   // the rails' board is Cutlist's
   const channelRailCost = rail ? rail.cost : 0;
   const railFinishHrs   = rail ? rail.finishHrs : 0;
 
@@ -1251,7 +1282,7 @@ function calcCabinetCost({
   const hangHrs  = inframeFront && inframeFront.hinges !== "blum" ? doorLeaves * DB.settings.buttHingeHangMins / 60 : 0;
   const hangCost = hangHrs * er();
 
-  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + channelRailCost + binFrameCost + legsCost + frameFinishCost + hangCost;
+  const totalCostPerUnit = carcassMaterialCost + carcassLabourCost + carcassHardware + carcassFinishCost + doorsCost + drawersCost + drawerFrontsCost + frameResult.total + edgebandResult.total + channelRailCost + binFrameCost + legsCost + frameFinishCost + hangCost + cncCost;
   const totalCost = totalCostPerUnit * qty;
   const sellExVAT = totalCost * margin;
 
@@ -1288,7 +1319,8 @@ function calcCabinetCost({
     const e = bomCarcass.find(x => x.key === key);
     if (e) e.areaM2 = r4(e.areaM2 + area); else bomCarcass.push({ key, areaM2: r4(area) });
   };
-  addCarcass(carcassKey, (mainArea + internalFrontSheetM2) * qty);
+  addCarcass(carcassKey, mainArea * qty);
+  if (internalFrontSheetM2 > 0) addCarcass(boxKey, internalFrontSheetM2 * qty);
   if (backArea > 0) addCarcass(backKey, backArea * qty);
   // Doors + drawer fronts share the door type (both made & finished like doors).
   const bomDoors = [];
@@ -1330,6 +1362,7 @@ function calcCabinetCost({
       ...(binFrame ? { binFrame: binFrameCost } : {}),
       ...(leg ? { legs: legsCost } : {}),
       ...(inframeFront ? { frameFinish: frameFinishCost, frameFinishHrs, hanging: hangCost, hangHrs } : {}),
+      ...(cncCost ? { cnc: cncCost } : {}),   // the Cutlist cut of every board of the cabinet Cutlist supplies — in no other line
       assemblyHrs, doorHrs, drawerHrs, drawerFrontHrs, frameHrs, edgebandHrs, carcassFinishHrs: +carcassFinishHrs.toFixed(3), finishHrs,
       ...(hardwareFitHrs > 0 ? { hardwareFitHrs: +hardwareFitHrs.toFixed(3) } : {}), totalHrs, sprayDetail,
       bom: { carcass: bomCarcass, doors: bomDoors, drawerBoxes: bomDrawerBoxes, frames: bomFrames, edgeband: bomEdgeband, hardware: bomHardware, handles: bomHandles } },
@@ -1341,23 +1374,26 @@ function calcEndPanelCost({ materialKey, widthMm, heightMm, thicknessMm = 18, fa
   if (!mat) return null;
   const areaM2  = (widthMm / 1000) * (heightMm / 1000);
   const matCost = areaM2 * mat.costPerM2 * (mat.wasteFactor || 1.12);
-  // Labour: cut + sand + edge banding on exposed edges
+  // Labour: the panel arrives from Cutlist cut and edged — bench time is sand, fit and finish prep only
+  // (DB.settings.endPanelBenchHrs). Its exposed edges cost nothing more: the edging is inside the Cutlist cut
+  // (endPanelEdgeHrsPerM is 0).
   const perimM     = 2 * (widthMm + heightMm) / 1000;
-  const edgeRateM  = 0.04; // hrs per linear metre of exposed edge
-  const labourHrs  = 0.5 + (exposedEdgeCount * (perimM / 4) * edgeRateM);
+  const labourHrs  = DB.settings.endPanelBenchHrs + (exposedEdgeCount * (perimM / 4) * DB.settings.endPanelEdgeHrsPerM);
   const labourCost = labourHrs * er();
   // Spray finish (treat as door — same faces/edges logic, no quirk)
   const spray = calcSprayFinishCost({ doorType: finishType === "lacquer" ? "SLAB_VEN" : "SLAB_PNT",
     widthMm, heightMm, qty: 1, finishType, hasStain, surfaceType: faces >= 2 ? "door" : "panel" });
   const sprayC = spray.costPerDoor;
   const finishHrs = spray.breakdown ? spray.breakdown.totalHrs : 0; // spray finishing labour, per panel
-  const totalCostPerUnit = matCost + labourCost + sprayC;
+  const cncCost = cncCut(matCost);   // the panel's board is Cutlist's
+  const totalCostPerUnit = matCost + labourCost + sprayC + cncCost;
   const sellExVAT = totalCostPerUnit * margin;
   return {
     costPerUnit: totalCostPerUnit, sellPerUnit: sellExVAT,
     totalCost: totalCostPerUnit * qty, totalSellExVAT: sellExVAT * qty,
     totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
     breakdown: { material: matCost, labour: labourCost, spray: sprayC,
+      ...(cncCost ? { cnc: cncCost } : {}),
       panelHrs: +labourHrs.toFixed(3),      // end-panel build labour, person-hours per unit
       finishHrs,                            // spray finishing labour
       totalHrs: +(labourHrs + finishHrs).toFixed(3),
@@ -1389,8 +1425,10 @@ function calcFloatingShelfCost({ materialKey, lengthMm, depthMm, thicknessMm = 1
     totalAreaM2 = (topAreaM2 + frontReturnAreaM2 + bottomAreaM2) * (mat.wasteFactor || 1.12);
     matCost     = totalAreaM2 * mat.costPerM2;
   }
-  // Labour: cut + sand + assembly (extra for mitre, extra for solid timber prep)
-  const labourHrs   = 0.5 + (isBoxShelf ? 0.75 : 0) + (isTimber ? 0.3 : 0);
+  // Labour. A sheet shelf arrives from Cutlist cut and edged: sand, fit and finish prep only
+  // (DB.settings.shelfBenchHrs). A solid-timber shelf is cut in-house, as before (0.5 h + 0.3 h timber prep).
+  // A box shelf's assembly (mitre) is on top either way.
+  const labourHrs   = (isTimber ? 0.5 : DB.settings.shelfBenchHrs) + (isBoxShelf ? 0.75 : 0) + (isTimber ? 0.3 : 0);
   const labourCost  = labourHrs * er();
   // Spray finish: 1 or 2 faces — top face always, bottom face if box shelf
   const sprayFaces  = faces >= 2 || isBoxShelf ? "door" : "panel";
@@ -1398,13 +1436,15 @@ function calcFloatingShelfCost({ materialKey, lengthMm, depthMm, thicknessMm = 1
     widthMm: depthMm, heightMm: lengthMm, qty: 1, finishType, hasStain, surfaceType: sprayFaces });
   const sprayC = spray.costPerDoor;
   const finishHrs = spray.breakdown ? spray.breakdown.totalHrs : 0; // spray finishing labour, per shelf
-  const totalCostPerUnit = matCost + labourCost + sprayC;
+  const cncCost = isTimber ? 0 : cncCut(matCost);   // a sheet shelf's board is Cutlist's; a solid-timber one is made in-house
+  const totalCostPerUnit = matCost + labourCost + sprayC + cncCost;
   const sellExVAT = totalCostPerUnit * margin;
   return {
     costPerUnit: totalCostPerUnit, sellPerUnit: sellExVAT,
     totalCost: totalCostPerUnit * qty, totalSellExVAT: sellExVAT * qty,
     totalSellIncVAT: sellExVAT * qty * (1 + DB.settings.vat),
     breakdown: { material: matCost, labour: labourCost, spray: sprayC, isBoxShelf,
+      ...(cncCost ? { cnc: cncCost } : {}),
       shelfHrs: +labourHrs.toFixed(3),      // floating-shelf build labour, person-hours per unit
       finishHrs,                            // spray finishing labour
       totalHrs: +(labourHrs + finishHrs).toFixed(3),
@@ -1533,7 +1573,8 @@ function calcCabinetFaceFrameCost({ frameKey, widthMm, heightMm, qty = 1, frameT
 // Edges: 2×height (sides) + 2×width (top+bottom) + width per shelf + width per drawer box.
 function calcCabinetEdgebandCost({ edgebandKey, widthMm, heightMm, shelfCount = 0, drawerCount = 0, qty = 1 }) {
   const eb = EDGEBAND_TYPES[edgebandKey];
-  if (!eb || eb.costPerM === 0) return { costPerUnit: 0, total: 0, totalM: 0, labourHrs: 0 };
+  // (The run is kept even at no charge: it is what Cutlist edges, and goes in the materials list.)
+  if (!eb || edgebandKey === "EDGE_NONE") return { costPerUnit: 0, total: 0, totalM: 0, labourHrs: 0 };
   // Carcass front perimeter + shelves + drawer box front edges
   const carcassM = 2 * (widthMm + heightMm) / 1000;
   const shelvesM = shelfCount * (widthMm / 1000);
@@ -1578,14 +1619,14 @@ function calcChannelRailCost({ materialKey, finishType, thicknessMm, rails } = {
 // ── FILLER COST ────────────────────────────────────────────────────────────
 // Scribed strip in matching door finish. Self-contained line item (not bundled
 // inside a cabinet). Pricing scales with strip size — bench labour is flat per
-// filler since cut/sand/drill prep is constant regardless of length.
+// filler (DB.settings.fillerBenchHrs): the strip arrives from Cutlist cut and edged, so it is sand, fit and finish
+// prep only. Its board carries the Cutlist cut.
 function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720, qty = 1, hasStain = false, sprayFinishOverride = "", margin = DB.settings.margin }) {
   const dt = DB.doorTypes[doorType];
   if (!dt) return null;
-  const FILLER_BENCH_LABOUR_HRS = 0.20;  // 12 min — cut, sand, edge ease, drill for fixings
   const area = (widthMm / 1000) * (heightMm / 1000);
   const materialCost = area * dt.baseCostPerM2;
-  const labourCost = FILLER_BENCH_LABOUR_HRS * er();
+  const labourCost = DB.settings.fillerBenchHrs * er();
   const finishType = sprayFinishOverride || dt.finishType || "paint";
   const spray = calcSprayFinishCost({
     doorType, widthMm, heightMm, qty: 1, finishType, hasStain,
@@ -1593,7 +1634,8 @@ function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720,
     disableTopcoatRework: true,   // flat strip = low re-spray risk
   });
   const sprayCost = spray ? spray.costPerDoor : 0;
-  const costPerUnit = materialCost + labourCost + sprayCost;
+  const cncCost = cncCut(materialCost);   // the filler's board is Cutlist's
+  const costPerUnit = materialCost + labourCost + sprayCost + cncCost;
   const totalCost = costPerUnit * qty;
   const sellExVAT = totalCost * margin;
   return {
@@ -1602,7 +1644,7 @@ function calcFillerCost({ doorType = "SHAKER_PNT", widthMm = 50, heightMm = 720,
     totalCost,
     totalSellExVAT: sellExVAT,
     totalSellIncVAT: sellExVAT * (1 + DB.settings.vat),
-    breakdown: { material: +materialCost.toFixed(2), labour: +labourCost.toFixed(2), spray: +sprayCost.toFixed(2) },
+    breakdown: { material: +materialCost.toFixed(2), labour: +labourCost.toFixed(2), spray: +sprayCost.toFixed(2), ...(cncCost ? { cnc: +cncCost.toFixed(2) } : {}) },
   };
 }
 
