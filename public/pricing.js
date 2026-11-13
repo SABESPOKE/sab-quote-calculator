@@ -678,6 +678,41 @@ function quoteGrandTotal(quote) {
   };
 }
 
+// ─── MARGIN (internal, display only — the Margin page) ───────────────────────
+// Every line of the quote's total ex VAT, with what it costs. Manufacturing: the engine's real cost. Every project line
+// (design, survey, installation, delivery, PM, consumables, contingency, warranty) is ASSUMED to cost half of what is
+// charged — a 50% margin, like the manufacturing lines (Steve, 13 Nov 2026) — until a real cost is recorded on the
+// quote: quote.actualCosts[key], £ ex VAT, absent = none. A recorded cost replaces the assumption on that line only.
+// Reads quoteTotals; never changes a price, a total or the quote.
+const ADDON_ASSUMED_COST_SHARE = 0.5;
+const MARGIN_LINES = [   // [key (actualCosts key), label, quoteTotals field]
+  ["mfg", "Manufacturing (incl. spray finishing)", "mfgSellExVAT"], ["design", "Design & drawing", "designFee"],
+  ["survey", "Site survey", "survey"], ["install", "Installation", "install"], ["delivery", "Delivery", "delivery"],
+  ["pm", "Project management", "pm"], ["consumables", "Consumables", "consumables"],
+  ["contingency", "Contingency", "contingency"], ["warranty", "Warranty & aftercare", "warranty"],
+];
+const isActualCost = v => typeof v === "number" && Number.isFinite(v) && v >= 0;
+function quoteMargin(quote) {
+  const t = quoteTotals(quote), recorded = (quote && quote.actualCosts) || {};
+  const lines = MARGIN_LINES.map(([key, label, field]) => {
+    const charged = t[field] || 0;
+    const assumedCost = key === "mfg" ? t.mfgCost : charged * ADDON_ASSUMED_COST_SHARE;
+    const actualCost = key !== "mfg" && isActualCost(recorded[key]) ? recorded[key] : null;
+    const cost = actualCost ?? assumedCost;
+    return { key, label, charged, assumedCost, actualCost, cost, margin: charged - cost,
+      basis: key === "mfg" ? "engine" : actualCost !== null ? "actual" : "assumed" };
+  });
+  // (The lines' charged amounts add up to totalExVAT, so each figure is the sum of the lines' margins.)
+  const figure = costOf => { const cost = lines.reduce((s, l) => s + costOf(l), 0), amount = t.totalExVAT - cost;
+    return { cost, amount, pct: t.totalExVAT ? amount / t.totalExVAT : 0 }; };
+  return {
+    lines, totalExVAT: t.totalExVAT, vat: t.vat, totalIncVAT: t.totalIncVAT,
+    grossMargin: figure(l => l.assumedCost),                                                  // every add-on at 50%
+    withActual: lines.some(l => l.actualCost !== null) ? figure(l => l.cost) : null,          // recorded costs where there are any
+    mfgProfit: t.mfgSellExVAT - t.mfgCost,                                                    // manufacturing sell − cost
+  };
+}
+
 // ─── PRICING ENGINE ───────────────────────────────────────────────────────────
 
 // Spray-finish hours split (sprayDetail). Named steps, in shop order; handlingHrs —
@@ -1866,7 +1901,7 @@ function quoteMaterialsBom(quote) {
     calcWRPFinishCostPerM, calcWRPMouldingCost, calcCabinetFaceFrameCost,
     calcCabinetEdgebandCost, calcFillerCost, calcSoffitLedCost, priceItem,
     calcDesignHrsPerRoom, calcDesignTimePerRoom,
-    getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal,
+    getDefaultProjectCosts, totalInstallDays, quoteTotals, quoteGrandTotal, quoteMargin,
     recomputeQuotePricing, quoteMaterialsBom,
     ENGINE_VERSION, applySettings, settingsDiff, validateSettings, settingsFingerprint, pricingId, isPricingLock, isLocked, lockedChange, lockedMerge, withWorkshopHours, onOrderCreate, lockQuote, quoteSettings, rescaleMargin, withPricingStatus };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
